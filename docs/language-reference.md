@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.5.0.
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.5.1.
 
 ## 1. What it looks like
 
@@ -138,7 +138,7 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter must name a defined error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. The uncatchable kinds `resource_exhausted` and `internal_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
 
 The catchable kinds are:
 

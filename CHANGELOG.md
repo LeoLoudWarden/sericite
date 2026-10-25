@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-26
+
+### Security
+- 闭合绑定方法的跨 VM 计费逃逸：`list.append`/`list.pop`/`dict.keys`/`dict.values`/`dict.get`/`dict.pop` 与计费型 VM 句柄方法（`snapshot`/`stdout`/`list_dir`/`run`）的绑定方法此前未登记 `home`，经授予函数泄漏到其他 VM 后，调用时跳过因果镜像计费，调用方可借定义方 VM 的账本放大自身消耗；现在这些绑定方法一律登记定义方 VM，跨 VM 调用时其资源增量按设计镜像进触发方配额。同 VM 调用的行为与账本数值不变。
+- `except` 过滤条件在编译期拒绝 `resource_exhausted`/`internal_error` 两个不可捕获 kind：此前它们能编译通过但运行时永不命中，造成可以捕获的假象。报错消息同时区分了"不可捕获"与"未知 kind"两种情况。
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

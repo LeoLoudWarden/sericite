@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 
 from . import isa
-from .errors import ERROR_KINDS, SericiteError
+from .errors import CATCHABLE_ERROR_KINDS, UNCATCHABLE_ERROR_KINDS, SericiteError
 
 RESERVED_NAMES = {
     "input",
@@ -481,18 +481,22 @@ def _validate(tree: ast.Module, filename: str) -> None:
                 filename,
                 "except clause must name an error kind",
             )
-        if (
-            isinstance(node, ast.ExceptHandler)
-            and isinstance(node.type, ast.Name)
-            and node.type.id not in ERROR_KINDS
-        ):
-            _reject(
-                node.type,
-                filename,
-                f"unknown error kind: '{node.type.id}'; "
-                "use 'except <kind> as name' to filter and bind a message, "
-                "or bare 'except:' to catch all catchable errors",
-            )
+        if isinstance(node, ast.ExceptHandler) and isinstance(node.type, ast.Name):
+            if node.type.id in UNCATCHABLE_ERROR_KINDS:
+                _reject(
+                    node.type,
+                    filename,
+                    f"error kind '{node.type.id}' is not catchable; "
+                    "it cannot be caught even by a bare 'except:'",
+                )
+            if node.type.id not in CATCHABLE_ERROR_KINDS:
+                _reject(
+                    node.type,
+                    filename,
+                    f"unknown error kind: '{node.type.id}'; "
+                    "use 'except <kind> as name' to filter and bind a message, "
+                    "or bare 'except:' to catch all catchable errors",
+                )
         if isinstance(node, ast.FunctionDef):
             if node.name.startswith("__"):
                 _reject(node, filename, "dunder names are not available")
