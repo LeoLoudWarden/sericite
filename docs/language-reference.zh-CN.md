@@ -150,7 +150,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 ## 6. 内建函数
 
-- `input()` / `print(...)`：一行输入 / 一行输出。
+- `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
 - `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`range(...)`（返回 list）。
 - 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。

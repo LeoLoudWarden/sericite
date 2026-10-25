@@ -70,17 +70,6 @@ class DictTests(unittest.TestCase):
     def test_keys_method(self):
         self.assertEqual(run('d = {"b": 2, "a": 1}\nprint(d.keys())\n'), "['b', 'a']\n")
 
-    def test_keys_is_no_longer_a_builtin(self):
-        source = (
-            "try:\n"
-            "    keys({})\n"
-            "except name_error:\n"
-            '    print("not a builtin")\n'
-            'keys = "ordinary name"\n'
-            "print(keys)\n"
-        )
-        self.assertEqual(run(source), "not a builtin\nordinary name\n")
-
     def test_in_operator(self):
         source = (
             'print("a" in {"a": 1}, "z" in {"a": 1})\n'

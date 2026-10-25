@@ -48,7 +48,7 @@
 内建函数：
 
 - `input()`：读取当前 VM 的一行输入。
-- `print(value, ...)`：写入当前 VM 的 stdout 缓冲区。
+- `print(value, ..., end="\n")`：写入当前 VM 的 stdout 缓冲区；仅关键字字符串参数 `end` 控制末尾文本。
 - `len(x)`、`int(x)`、`float(x)`、`str(x)`、`range(...)`。
 - `read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`：操作本 VM 的私有文件系统（仅文本）。
 - `VM(code, **limits)`：创建子 VM，可选资源配额参数（只能收紧）；特殊参数 `functions={name: fn}` 向子 VM 授予函数（sericite 函数或已持有的授予函数）。

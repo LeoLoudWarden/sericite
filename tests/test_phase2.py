@@ -216,6 +216,32 @@ class ListTests(unittest.TestCase):
 
 
 class BuiltinTests(unittest.TestCase):
+    def test_print_end(self):
+        source = (
+            'print("a")\nprint("b", end="")\nprint("c", "d", end="!")\nprint(end="?")\n'
+        )
+        self.assertEqual(run(source), "a\nbc d!?")
+
+    def test_print_end_must_be_string(self):
+        for value in ("None", "1", "[]"):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as ctx:
+                    run(f'print("x", end={value})\n')
+                self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_print_rejects_unknown_keyword(self):
+        with self.assertRaises(SericiteError) as ctx:
+            run('print("x", sep=" ")\n')
+        self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_print_end_counts_toward_output_limit(self):
+        limits = SericiteLimits(max_output_bytes=3)
+        engine = SericiteEngine(limits=limits)
+        vm = engine.create_root('print("ab", end="cd")')
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
     def test_len(self):
         self.assertEqual(run('print(len("abcd"))\nprint(len([1, 2]))\n'), "4\n2\n")
 

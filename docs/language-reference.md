@@ -150,7 +150,7 @@ Exceptions propagate across functions. `resource_exhausted` (quota exhaustion) a
 
 ## 6. Built-in functions
 
-- `input()` / `print(...)`: read a line / write a line.
+- `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
 - `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `range(...)` (returns a list).
 - Files (text only): `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
