@@ -738,6 +738,47 @@ class ClosureAndVMTests(unittest.TestCase):
         else:
             raise AssertionError("expected resource_exhausted")
 
+    def test_nested_schema_contract_check_is_charged(self):
+        # A D-deep schema chain: a param contract check against it traverses the
+        # whole chain (O(D) work). Charging must scale with depth, not just the
+        # top-level field count (regression for depth under-charging).
+        depth = 60
+        lines = []
+        for i in range(depth - 1, -1, -1):
+            contract = "int" if i == depth - 1 else f"R{i + 1}"
+            lines.append(f"class R{i}:\n    f: {contract}")
+        lines.append(f"v = R{depth - 1}(7)")
+        for i in range(depth - 2, -1, -1):
+            lines.append(f"v = R{i}(v)")
+        lines.append("def g(x: R0):\n    return x")
+        lines.append("i = 0")
+        lines.append("while i < 2000:")
+        lines.append("    g(v)")
+        lines.append("    i = i + 1")
+        source = "\n".join(lines)
+        limits = SericiteLimits(max_instructions=100000)
+        try:
+            run(source, limits=limits)
+        except SericiteError as exc:
+            self.assertEqual(exc.kind, "resource_exhausted")
+        else:
+            raise AssertionError("expected resource_exhausted")
+
+    def test_snapshot_deep_nested_schema_does_not_raise_recursion(self):
+        # Deeply nested schemas in module locals used to make snapshot() raise a
+        # raw RecursionError through repr() of the schema chain.
+        depth = 800
+        lines = []
+        for i in range(depth - 1, -1, -1):
+            contract = "int" if i == depth - 1 else f"S{i + 1}"
+            lines.append(f"class S{i}:\n    f: {contract}")
+        engine = SericiteEngine()
+        vm = engine.create_root("\n".join(lines))
+        vm.run()
+        snap = vm.snapshot()
+        self.assertEqual(snap["state"], "done")
+        self.assertIn("...", snap["locals"]["S0"])
+
     def test_check_annot_label_erased_in_child_vm(self):
         source = (
             "class Secret:\n"

@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-25
+
+### Security
+- 嵌套 schema 契约检查补齐深度计费：`_contract_cost` 现按 schema 的全部嵌套字段数计费（`size` 在创建 schema 时一次性预计算），修复此前 D 层嵌套 schema 链构造与单次检查分别只按 O(D)/O(1) 计费、却做 O(D²)/O(D) 实际工作的欠计费放大。
+- schema 文本渲染（`_contract_text`/`SericiteSchema.__repr__`）加 64 层深度上限：快照/单步调试不再因局部变量里的深层嵌套 schema 向宿主抛出原始 `RecursionError`。
+
 ## [0.4.3] - 2026-10-25
 
 ### Fixed
