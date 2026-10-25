@@ -15,11 +15,11 @@
 | 模块 | 职责 |
 |---|---|
 | `isa` | 指令、代码单元与异常 handler 表定义（栈式虚拟机） |
-| `compiler` | AST 白名单校验 + 编译为指令流（唯一源码入口）；含静态栈深度分析，保证异常捕获时栈可安全截断 |
+| `compiler` | AST 白名单与 except kind 校验 + 编译为指令流（唯一源码入口）；含静态栈深度分析，保证异常捕获时栈可安全截断 |
 | `engine` | 调度循环、帧/求值栈、运算语义、异常展开（跨帧/跨 VM）、内建函数、VM 生命周期、资源配额、调试快照 |
 | `vfs` | 单 VM 私有虚拟文件系统（纯内存、纯文本；平坦路径字典，目录隐式） |
 | `io` | 每个 VM 独立的虚拟输入与输出（含输出字节上限） |
-| `errors` | `SericiteError` 与错误分类 |
+| `errors` | `SericiteError` 与集中管理的错误 kind 注册表 |
 | `cli` / `__main__` | 命令行入口 |
 
 ## 3. 设计不变量
@@ -58,7 +58,7 @@ VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_i
 
 VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
 
-错误分类：`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`resource_exhausted`、`input_error`、`internal_error`。除 `resource_exhausted`/`internal_error` 外均可被 try/except 按 kind 过滤捕获。
+错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字拒绝为 `validation_error`。
 
 ## 5. 资源配额
 

@@ -138,7 +138,15 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-Common error kinds: `type_error`, `name_error`, `index_error`, `key_error`, `zero_division`, `conversion_error`, `arity_error`, `raise_error`, `file_not_found`, `ffi_error`, `attribute_error` (missing/forbidden record member), `contract_error` (contract check failed: construction, annotation, wrap, field write). Exceptions propagate across functions. `resource_exhausted` (quota exhaustion) is not catchable.
+An `except` filter must name a defined error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+
+The catchable kinds are:
+
+- General: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
+- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
+- Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
+
+Exceptions propagate across functions. `resource_exhausted` (quota exhaustion) and `internal_error` are defined kinds but are not catchable.
 
 ## 6. Built-in functions
 

@@ -6,12 +6,12 @@ from dataclasses import dataclass, field
 
 from . import isa
 from .compiler import RESERVED_NAMES, VM_METHODS, compile_source
+from .errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from .errors import SericiteError
 from .io import InputRequired, OutputLimitExceeded, VirtualIO
 from .vfs import VirtualFileSystem
 
 _TERMINAL_STATES = {"done", "error", "resource_exhausted", "terminated"}
-_UNCATCHABLE_KINDS = {"resource_exhausted", "internal_error"}
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 _VM_OPTIONS = {
     "max_instructions",

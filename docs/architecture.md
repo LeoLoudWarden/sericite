@@ -15,11 +15,11 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | Module | Responsibility |
 |---|---|
 | `isa` | Instruction, code-unit, and exception-handler-table definitions (stack machine) |
-| `compiler` | AST whitelist validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
+| `compiler` | AST whitelist and except-kind validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle, resource quotas, debug snapshots |
 | `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat path dictionary, implicit directories) |
 | `io` | Per-VM virtual input and output (with output byte cap) |
-| `errors` | `SericiteError` and error kinds |
+| `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points |
 
 ## 3. Design invariants
@@ -58,7 +58,7 @@ VM handle methods (identical on the script and host sides): `run(inputs)`, `feed
 
 VM states: `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, `terminated`.
 
-Error kinds: `syntax_error`, `validation_error`, `type_error`, `zero_division`, `conversion_error`, `index_error`, `key_error`, `name_error`, `arity_error`, `raise_error`, `file_not_found`, `is_directory`, `not_directory`, `ffi_error`, `resource_exhausted`, `input_error`, `internal_error`. All except `resource_exhausted`/`internal_error` can be caught by `try/except` with kind filtering.
+Error kinds: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `zero_division`, `conversion_error`, `index_error`, `key_error`, `name_error`, `arity_error`, `raise_error`, `file_not_found`, `is_directory`, `not_directory`, `ffi_error`, `input_error`, `attribute_error`, `contract_error`, `resource_exhausted`, `internal_error`. The `errors` module is their single registry. All except `resource_exhausted`/`internal_error` can be caught by `try/except` with kind filtering; the compiler rejects unknown filter names as `validation_error`.
 
 ## 5. Resource quotas
 

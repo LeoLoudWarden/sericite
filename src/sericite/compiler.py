@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 
 from . import isa
-from .errors import SericiteError
+from .errors import ERROR_KINDS, SericiteError
 
 RESERVED_NAMES = {
     "input",
@@ -481,6 +481,18 @@ def _validate(tree: ast.Module, filename: str) -> None:
                 node,
                 filename,
                 "except clause must name an error kind",
+            )
+        if (
+            isinstance(node, ast.ExceptHandler)
+            and isinstance(node.type, ast.Name)
+            and node.type.id not in ERROR_KINDS
+        ):
+            _reject(
+                node.type,
+                filename,
+                f"unknown error kind: '{node.type.id}'; "
+                "use 'except <kind> as name' to filter and bind a message, "
+                "or bare 'except:' to catch all catchable errors",
             )
         if isinstance(node, ast.FunctionDef):
             if node.name.startswith("__"):

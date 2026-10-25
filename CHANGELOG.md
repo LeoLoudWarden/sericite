@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Changed
+- `except` 过滤条件现在必须是已定义的错误 kind；未知名字及拼写错误在编译期以 `validation_error` 拒绝，错误消息提示按 kind 绑定消息与裸 `except:` 兜底的正确写法，不再让无效 handler 留到运行期静默失配。
+
 ## [0.4.4] - 2026-10-25
 
 ### Security

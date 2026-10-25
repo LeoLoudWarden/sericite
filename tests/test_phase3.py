@@ -45,6 +45,64 @@ class TryExceptTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "name_error")
 
+    def test_unknown_except_kind_rejected_at_compile_time(self):
+        engine = SericiteEngine()
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root("try:\n    pass\nexcept e:\n    pass\n")
+        exc = ctx.exception
+        self.assertEqual(exc.kind, "validation_error")
+        self.assertIn("unknown error kind: 'e'", exc.message)
+        self.assertIn("except <kind> as name", exc.message)
+        self.assertIn("bare 'except:'", exc.message)
+        self.assertEqual(exc.line, 3)
+        self.assertEqual(exc.column, 8)
+
+    def test_misspelled_except_kind_rejected_at_compile_time(self):
+        engine = SericiteEngine()
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root("try:\n    pass\nexcept zero_divsion:\n    pass\n")
+        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertIn("zero_divsion", ctx.exception.message)
+
+    def test_all_defined_except_kinds_are_accepted(self):
+        kinds = (
+            "arity_error",
+            "attribute_error",
+            "contract_error",
+            "conversion_error",
+            "ffi_error",
+            "file_not_found",
+            "index_error",
+            "input_error",
+            "internal_error",
+            "is_directory",
+            "key_error",
+            "name_error",
+            "not_directory",
+            "raise_error",
+            "resource_exhausted",
+            "runtime_error",
+            "syntax_error",
+            "type_error",
+            "validation_error",
+            "zero_division",
+        )
+        for kind in kinds:
+            with self.subTest(kind=kind):
+                SericiteEngine().create_root(
+                    f"try:\n    pass\nexcept {kind}:\n    pass\n"
+                )
+
+    def test_child_vm_unknown_except_kind_is_validation_error(self):
+        child = "try:\n    pass\nexcept unknown_kind:\n    pass\n"
+        source = (
+            "try:\n"
+            f"    sub = VM({child!r})\n"
+            "except validation_error as e:\n"
+            '    print("caught: " + e)\n'
+        )
+        self.assertIn("caught: unknown error kind: 'unknown_kind'", run(source))
+
     def test_exception_across_function_frames(self):
         source = (
             "def f():\n"
