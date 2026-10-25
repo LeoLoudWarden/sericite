@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-26
+
+### Security
+- 补全 VM 句柄方法的资源计费与因果镜像：`feed_input`/`step`/`step_instruction`/`terminate`/`read_file`/`write_file`/`path_exists` 不再绕过统一计费包装；读取结果按大小计费，`write_file`/`feed_input`/`run(inputs)` 的输入字符串按长度计费，绑定方法逃逸到其他 VM 后也会计入实际触发方配额。
+- 跨 VM 原生调用的镜像计费改为在 `finally` 路径执行：目标 VM 运行或子 VM 编译抛出可捕获异常、参数校验失败前已发生预计费时，调用方仍需承担相应指令与分配成本；镜像超额以不可捕获的 `resource_exhausted` 终止，`InputRequired` 的暂停与恢复语义保持不变。
+- `list.pop(i)` 按索引之后的元素搬移量计入指令配额，负索引先规范化；`pop()`/`pop(-1)` 保持 O(1) 路径，不再能以固定指令账在大列表上反复执行线性搬移。
+
 ## [0.5.1] - 2026-10-26
 
 ### Security

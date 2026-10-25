@@ -940,28 +940,30 @@ class SericiteEngine:
                 before_home = (home.instruction_count, home.alloc_bytes)
                 before_self = (context.instruction_count, context.alloc_bytes)
             try:
-                result = function.callback(*args, **kwargs)
-            except InputRequired:
-                raise
-            except SericiteError:
-                raise
-            except TypeError:
-                raise SericiteError(
-                    f"invalid arguments for {function.name}", kind="type_error"
-                ) from None
-            if mirror:
-                # World services belong to home, but their resource cost causally
-                # belongs to the triggering caller: mirror home's ledger delta into
-                # the layers between the caller and home, minus what was already
-                # charged along the caller's ancestor chain during the callback
-                # (e.g. a new child VM's initial allocation), to avoid double charging.
-                work_done = home.instruction_count - before_home[0]
-                alloc_done = home.alloc_bytes - before_home[1]
-                work_done -= context.instruction_count - before_self[0]
-                alloc_done -= context.alloc_bytes - before_self[1]
-                self._mirror_charge(
-                    context, home, max(work_done, 0), max(alloc_done, 0)
-                )
+                try:
+                    result = function.callback(*args, **kwargs)
+                except InputRequired:
+                    raise
+                except SericiteError:
+                    raise
+                except TypeError:
+                    raise SericiteError(
+                        f"invalid arguments for {function.name}", kind="type_error"
+                    ) from None
+            finally:
+                if mirror:
+                    # World services belong to home, but their resource cost causally
+                    # belongs to the triggering caller: mirror home's ledger delta into
+                    # the layers between the caller and home, minus what was already
+                    # charged along the caller's ancestor chain during the callback
+                    # (e.g. a new child VM's initial allocation), to avoid double charging.
+                    work_done = home.instruction_count - before_home[0]
+                    alloc_done = home.alloc_bytes - before_home[1]
+                    work_done -= context.instruction_count - before_self[0]
+                    alloc_done -= context.alloc_bytes - before_self[1]
+                    self._mirror_charge(
+                        context, home, max(work_done, 0), max(alloc_done, 0)
+                    )
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(result)
@@ -1740,13 +1742,11 @@ class SericiteEngine:
                 kind="attribute_error",
             )
         if isinstance(value, VMHandle) and attr in VMHandle._METHODS:
-            if attr in ("snapshot", "stdout", "list_dir", "run"):
-                return _NativeFunction(
-                    f"VM.{attr}",
-                    lambda *a, **k: self._charged_vm_method(context, value, attr, a, k),
-                    context,
-                )
-            return _NativeFunction(f"VM.{attr}", getattr(value, attr))
+            return _NativeFunction(
+                f"VM.{attr}",
+                lambda *a, **k: self._charged_vm_method(context, value, attr, a, k),
+                context,
+            )
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
         if type(value) is list:
@@ -1818,6 +1818,9 @@ class SericiteEngine:
             )
         if not -len(target) <= index < len(target):
             raise SericiteError("pop index out of range", kind="index_error")
+        if index < 0:
+            index += len(target)
+        self._charge_work(context, len(target) - index - 1)
         return target.pop(index)
 
     def _dict_snapshot(
@@ -1928,6 +1931,19 @@ class SericiteEngine:
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> object:
+        if attr == "write_file":
+            inputs = (args[1] if len(args) > 1 else kwargs.get("text"),)
+        elif attr == "feed_input":
+            inputs = (args[0] if args else kwargs.get("value"),)
+        elif attr == "run":
+            inputs = args[0] if args else kwargs.get("inputs", ())
+            if not isinstance(inputs, (list, tuple)):
+                inputs = ()
+        else:
+            inputs = ()
+        for value in inputs:
+            if isinstance(value, str):
+                self._charge_alloc(context, len(value) * 4)
         result = getattr(handle, attr)(*args, **kwargs)
         budget = [10_000]
         size = _estimate_size(result, budget)
