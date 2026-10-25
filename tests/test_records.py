@@ -93,10 +93,10 @@ class AttributeAccessTests(unittest.TestCase):
         self.assertEqual(exc.kind, "attribute_error")
         self.assertIn("'y'", exc.message)
 
-    def test_dict_has_no_dot_access(self):
+    def test_dict_unknown_method_is_attribute_error(self):
         exc = run_error("d = {'a': 1}\nprint(d.a)\n")
-        self.assertEqual(exc.kind, "type_error")
-        self.assertIn("d[key]", exc.message)
+        self.assertEqual(exc.kind, "attribute_error")
+        self.assertIn("no method 'a'", exc.message)
 
     def test_chained_access(self):
         out = run(

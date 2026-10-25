@@ -67,15 +67,19 @@ class DictTests(unittest.TestCase):
         )
         self.assertEqual(run(source), "1 two t n f\n")
 
-    def test_keys_builtin(self):
-        self.assertEqual(run('d = {"b": 2, "a": 1}\nprint(keys(d))\n'), "['b', 'a']\n")
+    def test_keys_method(self):
+        self.assertEqual(run('d = {"b": 2, "a": 1}\nprint(d.keys())\n'), "['b', 'a']\n")
 
-    def test_keys_rejects_non_dict(self):
-        engine = SericiteEngine()
-        vm = engine.create_root("print(keys([1]))\n")
-        with self.assertRaises(SericiteError) as ctx:
-            vm.run()
-        self.assertEqual(ctx.exception.kind, "type_error")
+    def test_keys_is_no_longer_a_builtin(self):
+        source = (
+            "try:\n"
+            "    keys({})\n"
+            "except name_error:\n"
+            '    print("not a builtin")\n'
+            'keys = "ordinary name"\n'
+            "print(keys)\n"
+        )
+        self.assertEqual(run(source), "not a builtin\nordinary name\n")
 
     def test_in_operator(self):
         source = (

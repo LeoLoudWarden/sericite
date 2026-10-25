@@ -151,11 +151,19 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 ## 6. 内建函数
 
 - `input()` / `print(...)`：一行输入 / 一行输出。
-- `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`range(...)`（返回 list）、`keys(d)`（返回 dict 键的 list）。
+- `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`range(...)`（返回 list）。
 - 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
-**没有方法**：list/dict/str 一律没有方法——`append`、`get`、`join`、`split`、`strip` 全都不存在。追加元素用 `lst = lst + [x]`，取字典键用 `d[k] if k in d else 默认`。
+列表与字典方法：
+
+- `lst.append(x)`：原地追加一个元素，返回 `None`。
+- `lst.pop()` / `lst.pop(i)`：删除并返回末尾或索引 `i` 处的元素；负索引与下标读取一致。空列表或无效索引报 `index_error`。
+- `d.keys()` / `d.values()`：按插入顺序返回新的键/值列表；之后修改字典不会改变已返回的列表。
+- `d.get(key)` / `d.get(key, default)`：返回键对应的值；键不存在时返回 `None` 或 `default`。
+- `d.pop(key)` / `d.pop(key, default)`：删除并返回键对应的值；未提供默认值时，缺键报 `key_error`，否则返回默认值。
+
+方法集合是封闭的：其他列表/字典方法报 `attribute_error`，字符串仍没有方法。
 
 ## 7. 记录（record）：自定义含成员的对象
 
@@ -233,7 +241,7 @@ sub.run()                        # 输出 42
 
 ## 9. 明确不能写（编译期直接拒绝）
 
-`import`、`del`、列表/字典/字符串方法、`*args/**kwargs`、链式比较、切片、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
+`import`、`del`、字符串方法、`*args/**kwargs`、链式比较、切片、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
 
 ## 10. 一个完整例子
 

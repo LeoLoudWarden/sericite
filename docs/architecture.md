@@ -49,10 +49,12 @@ Built-in functions:
 
 - `input()`: read one line of the current VM's input.
 - `print(value, ...)`: write to the current VM's stdout buffer.
-- `len(x)`, `int(x)`, `float(x)`, `str(x)`, `range(...)`, `keys(d)`.
+- `len(x)`, `int(x)`, `float(x)`, `str(x)`, `range(...)`.
 - `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`: operate on this VM's private filesystem (text only).
 - `VM(code, **limits)`: create a child VM, optionally with resource-quota arguments (tightening only); the special argument `functions={name: fn}` grants functions (sericite functions or already-held granted functions) to the child VM.
 - Host injection: `SericiteEngine.create_root(source, functions={name: python_callable})` grants host functions to the root VM.
+
+Container methods: list `append`/`pop`; dict `keys`/`values`/`get`/`pop`. Dispatch is closed and native — arbitrary Python attributes are never exposed. Appending charges the new list slot; key/value snapshots charge O(n) work and list allocation.
 
 VM handle methods (identical on the script and host sides): `run(inputs)`, `feed_input(text)`, `step()`, `step_instruction()`, `snapshot()`, `stdout()`, `terminate()`, plus `read_file` / `write_file` / `list_dir` / `path_exists` (configure/read that VM's filesystem).
 
@@ -97,7 +99,7 @@ The instruction figure is a workload-weighted average, not a uniform per-opcode 
 - Resource governance: see the previous section. The prototype went through one round of adversarial security review (including an independent third-party perspective); all discovered denial-of-service and information-leak paths were fixed and locked in with regression tests.
 - Every VM has its own private virtual filesystem, configurable before the run and harvestable after.
 
-Deliberate trade-offs: list/dict methods, variadic arguments, chained comparisons, `import` are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
+Deliberate trade-offs: additional container methods, variadic arguments, chained comparisons, `import` are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
 
 ## 8. Known limits and semantic deviations
 
@@ -112,4 +114,4 @@ Deliberate trade-offs: list/dict methods, variadic arguments, chained comparison
 
 ## 9. Explicitly not supported yet
 
-List/dict/string methods, variadic/keyword-only parameters, `**` unpacking, chained comparisons, slicing, tuples, f-strings, `import`, `del`, class field defaults/methods/inheritance.
+String methods and list/dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slicing, tuples, f-strings, `import`, `del`, class field defaults/methods/inheritance.

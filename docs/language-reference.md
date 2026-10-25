@@ -151,11 +151,19 @@ Exceptions propagate across functions. `resource_exhausted` (quota exhaustion) a
 ## 6. Built-in functions
 
 - `input()` / `print(...)`: read a line / write a line.
-- `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `range(...)` (returns a list), `keys(d)` (returns a list of the dict's keys).
+- `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `range(...)` (returns a list).
 - Files (text only): `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
-**No methods**: list/dict/str have no methods at all — `append`, `get`, `join`, `split`, `strip` do not exist. Append with `lst = lst + [x]`; read dict keys with `d[k] if k in d else default`.
+List and dict methods:
+
+- `lst.append(x)`: append one item in place and return `None`.
+- `lst.pop()` / `lst.pop(i)`: remove and return the last item or the item at `i`; negative indices work as in indexing. An empty list or invalid index raises `index_error`.
+- `d.keys()` / `d.values()`: return a new list of keys or values in insertion order; later dict mutations do not change that list.
+- `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
+- `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
+
+These are closed method sets: other list/dict methods raise `attribute_error`, and strings still have no methods.
 
 ## 7. Records: custom objects with members
 
@@ -233,7 +241,7 @@ A granted sericite function retains its definition-side module variables, closur
 
 ## 9. Explicitly not writable (rejected at compile time)
 
-`import`, `del`, list/dict/string methods, `*args/**kwargs`, chained comparisons, slicing, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
+`import`, `del`, string methods, `*args/**kwargs`, chained comparisons, slicing, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
 
 ## 10. A complete example
 

@@ -18,7 +18,6 @@ RESERVED_NAMES = {
     "write_file",
     "list_dir",
     "path_exists",
-    "keys",
     "any",
     "bool",
     "list",
