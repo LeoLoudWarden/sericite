@@ -64,7 +64,9 @@ class TryExceptTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "validation_error")
         self.assertIn("zero_divsion", ctx.exception.message)
 
-    def test_all_defined_except_kinds_are_accepted(self):
+    def test_all_catchable_except_kinds_are_accepted(self):
+        # syntax_error/validation_error stay accepted: nested-VM compilation raises
+        # them at runtime (e.g. a child VM whose source fails to parse/validate).
         kinds = (
             "arity_error",
             "attribute_error",
@@ -74,13 +76,11 @@ class TryExceptTests(unittest.TestCase):
             "file_not_found",
             "index_error",
             "input_error",
-            "internal_error",
             "is_directory",
             "key_error",
             "name_error",
             "not_directory",
             "raise_error",
-            "resource_exhausted",
             "runtime_error",
             "syntax_error",
             "type_error",
@@ -92,6 +92,15 @@ class TryExceptTests(unittest.TestCase):
                 SericiteEngine().create_root(
                     f"try:\n    pass\nexcept {kind}:\n    pass\n"
                 )
+
+    def test_uncatchable_except_kinds_rejected_at_compile_time(self):
+        for kind in ("resource_exhausted", "internal_error"):
+            with self.subTest(kind=kind):
+                engine = SericiteEngine()
+                with self.assertRaises(SericiteError) as ctx:
+                    engine.create_root(f"try:\n    pass\nexcept {kind}:\n    pass\n")
+                self.assertEqual(ctx.exception.kind, "validation_error")
+                self.assertIn(kind, ctx.exception.message)
 
     def test_child_vm_unknown_except_kind_is_validation_error(self):
         child = "try:\n    pass\nexcept unknown_kind:\n    pass\n"
@@ -140,13 +149,13 @@ class TryExceptTests(unittest.TestCase):
         )
         self.assertEqual(run(source), "out\n")
 
-    def test_resource_exhausted_not_catchable(self):
+    def test_resource_exhausted_not_catchable_by_bare_except(self):
         limits = SericiteLimits(max_instructions=500)
         source = (
             "try:\n"
             "    while True:\n"
             "        x = 1\n"
-            "except resource_exhausted:\n"
+            "except:\n"
             '    print("must not happen")\n'
         )
         engine = SericiteEngine(limits=limits)

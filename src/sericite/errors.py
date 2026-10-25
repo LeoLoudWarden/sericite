@@ -1,31 +1,35 @@
 from __future__ import annotations
 
 UNCATCHABLE_ERROR_KINDS = frozenset({"internal_error", "resource_exhausted"})
-ERROR_KINDS = (
-    frozenset(
-        {
-            "arity_error",
-            "attribute_error",
-            "contract_error",
-            "conversion_error",
-            "ffi_error",
-            "file_not_found",
-            "index_error",
-            "input_error",
-            "is_directory",
-            "key_error",
-            "name_error",
-            "not_directory",
-            "raise_error",
-            "runtime_error",
-            "syntax_error",
-            "type_error",
-            "validation_error",
-            "zero_division",
-        }
-    )
-    | UNCATCHABLE_ERROR_KINDS
+# Kinds a script can catch at runtime with an `except <kind>` filter. `syntax_error`
+# and `validation_error` are included because nested-VM compilation raises them at
+# runtime (e.g. a child VM whose source fails to parse or validate).
+CATCHABLE_ERROR_KINDS = frozenset(
+    {
+        "arity_error",
+        "attribute_error",
+        "contract_error",
+        "conversion_error",
+        "ffi_error",
+        "file_not_found",
+        "index_error",
+        "input_error",
+        "is_directory",
+        "key_error",
+        "name_error",
+        "not_directory",
+        "raise_error",
+        "runtime_error",
+        "syntax_error",
+        "type_error",
+        "validation_error",
+        "zero_division",
+    }
 )
+# Complete registry of every error kind (catchable + uncatchable): the single
+# source of truth for documentation and external consumers. The engine and
+# compiler consume the finer-grained subsets above.
+ERROR_KINDS = CATCHABLE_ERROR_KINDS | UNCATCHABLE_ERROR_KINDS
 
 
 class SericiteError(Exception):

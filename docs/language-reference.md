@@ -138,7 +138,7 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter must name a defined error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. The uncatchable kinds `resource_exhausted` and `internal_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
 
 The catchable kinds are:
 

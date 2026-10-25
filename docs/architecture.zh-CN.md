@@ -60,7 +60,7 @@ VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_i
 
 VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
 
-错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字拒绝为 `validation_error`。
+错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字以及这两个不可捕获 kind 都拒绝为 `validation_error`。
 
 ## 5. 资源配额
 

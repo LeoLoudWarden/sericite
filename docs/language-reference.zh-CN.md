@@ -138,7 +138,7 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是已定义的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝；不可捕获的 `resource_exhausted` 与 `internal_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
 
 可捕获 kind 的完整列表：
 
