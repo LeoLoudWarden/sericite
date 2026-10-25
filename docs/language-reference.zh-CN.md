@@ -138,7 +138,15 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-常见错误类型（kind）：`type_error`、`name_error`、`index_error`、`key_error`、`zero_division`、`conversion_error`、`arity_error`、`raise_error`、`file_not_found`、`ffi_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（契约检查失败：构造、注解、wrap、字段写入）。异常可跨函数传播。`resource_exhausted`（资源耗尽）不可捕获。
+`except` 的过滤条件必须是已定义的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+
+可捕获 kind 的完整列表：
+
+- 通用：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
+- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
+- 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
+
+异常可跨函数传播。`resource_exhausted`（资源耗尽）与 `internal_error` 是已定义的 kind，但不可捕获。
 
 ## 6. 内建函数
 
