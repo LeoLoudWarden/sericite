@@ -1,6 +1,7 @@
 import unittest
 
 from sericite import SericiteEngine, SericiteError, SericiteLimits
+from sericite.engine import VMHandle
 
 
 def run(source, limits=None):
@@ -66,6 +67,66 @@ class ListMethodTests(unittest.TestCase):
         limits = SericiteLimits(max_total_bytes=0)
         exc = run_error("a = []\na.append(1)\n", limits=limits)
         self.assertEqual(exc.kind, "resource_exhausted")
+
+
+class ListPopChargeTests(unittest.TestCase):
+    def test_pop_front_charges_work_proportional_to_shifted_items(self):
+        counts = {}
+        for size in (2, 4):
+            engine = SericiteEngine()
+            vm = engine.create_root(
+                "items = make_list()\nitems.pop(0)\n",
+                functions={"make_list": lambda size=size: list(range(size))},
+            )
+            vm.run()
+            counts[size] = vm.snapshot()["instruction_count"]
+        self.assertEqual(counts[4] - counts[2], 2)
+
+    def test_pop_from_end_has_no_size_dependent_work(self):
+        for call in ("items.pop()", "items.pop(-1)"):
+            counts = []
+            for size in (2, 100):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    f"items = make_list()\n{call}\n",
+                    functions={"make_list": lambda size=size: list(range(size))},
+                )
+                vm.run()
+                counts.append(vm.snapshot()["instruction_count"])
+            self.assertEqual(counts[0], counts[1])
+
+    def test_pop_front_enforces_instruction_limit(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_instructions=50))
+        vm = engine.create_root(
+            "items = make_list()\n"
+            "i = 0\n"
+            "while i < 10:\n"
+            "    items.append(0)\n"
+            "    items.pop(0)\n"
+            "    i = i + 1\n",
+            functions={"make_list": lambda: list(range(100))},
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_cross_vm_pop_front_mirrors_shift_work_to_caller(self):
+        engine = SericiteEngine()
+        source = (
+            "items = make_list()\n"
+            "bound = items.pop\n"
+            "def leak():\n"
+            "    return bound\n"
+            'sub = VM("f = leak()\\nf(0)", functions={"leak": leak}, '
+            "max_instructions=50)\n"
+            "sub.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root(
+                source, functions={"make_list": lambda: list(range(100))}
+            ).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
 
 
 class DictMethodTests(unittest.TestCase):
@@ -162,6 +223,220 @@ class DictMethodTests(unittest.TestCase):
                 vm.run()
                 counts[method, size] = vm.snapshot()["instruction_count"]
             self.assertEqual(counts[method, 4] - counts[method, 2], 2)
+
+
+class VMHandleMethodChargeTests(unittest.TestCase):
+    def test_read_file_charges_result_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        text = "x" * 1000
+        source = (
+            'sub = VM("")\n'
+            "text = get_text()\n"
+            'sub.write_file("/a.txt", text)\n'
+            "checkpoint()\n"
+            'sub.read_file("/a.txt")\n'
+            "checkpoint()\n"
+        )
+        engine.create_root(
+            source,
+            functions={
+                "get_text": lambda: text,
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                ),
+            },
+        ).run()
+        self.assertGreaterEqual(checkpoints[1] - checkpoints[0], len(text) * 4)
+
+    def test_input_methods_charge_string_arguments(self):
+        calls = (
+            'sub.write_file("/a.txt", text)',
+            'sub.write_file(path="/a.txt", text=text)',
+            "sub.feed_input(text)",
+            "sub.feed_input(value=text)",
+            "sub.run([text])",
+        )
+        for call in calls:
+            with self.subTest(call=call):
+                engine = SericiteEngine()
+                checkpoints = []
+                text = "x" * 1000
+                source = (
+                    'sub = VM("")\n'
+                    "text = get_text()\n"
+                    "checkpoint()\n"
+                    f"{call}\n"
+                    "checkpoint()\n"
+                )
+                engine.create_root(
+                    source,
+                    functions={
+                        "get_text": lambda text=text: text,
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(engine._contexts[0].alloc_bytes)
+                        ),
+                    },
+                ).run()
+                self.assertGreaterEqual(checkpoints[1] - checkpoints[0], len(text) * 4)
+
+    def test_cross_vm_read_file_mirrors_result_allocation_to_caller(self):
+        engine = SericiteEngine()
+        text = "x" * 10_000
+        source = (
+            'sub = VM("")\n'
+            "text = get_text()\n"
+            'sub.write_file("/a.txt", text)\n'
+            "bound = sub.read_file\n"
+            "def leak():\n"
+            "    return bound\n"
+            'grand = VM("f = leak()\\ns = f(\'/a.txt\')", functions={"leak": leak})\n'
+            "grand.run()\n"
+        )
+        engine.create_root(source, functions={"get_text": lambda: text}).run()
+        self.assertGreaterEqual(engine._contexts[2].alloc_bytes, len(text) * 4)
+
+    def test_cross_vm_step_mirrors_target_work_to_caller(self):
+        engine = SericiteEngine()
+        target_source = "value = 0" + " + 1" * 100
+        source = (
+            f"sub = VM({target_source!r})\n"
+            "bound = sub.step\n"
+            "def leak():\n"
+            "    return bound\n"
+            'grand = VM("f = leak()\\nf()", functions={"leak": leak})\n'
+            "grand.run()\n"
+        )
+        engine.create_root(source).run()
+        target = engine._contexts[1]
+        caller = engine._contexts[2]
+        self.assertGreater(target.instruction_count, 100)
+        self.assertGreater(caller.instruction_count, target.instruction_count)
+
+    def test_cross_vm_step_enforces_caller_instruction_limit(self):
+        engine = SericiteEngine()
+        target_source = "value = 0" + " + 1" * 100
+        source = (
+            f"sub = VM({target_source!r})\n"
+            "bound = sub.step\n"
+            "def leak():\n"
+            "    return bound\n"
+            'grand = VM("f = leak()\\nf()", functions={"leak": leak}, '
+            "max_instructions=50)\n"
+            "grand.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root(source).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(engine._contexts[2].state, "resource_exhausted")
+
+
+class NativeCallExceptionMirrorTests(unittest.TestCase):
+    def test_failed_vm_run_mirrors_target_work_before_exception(self):
+        engine = SericiteEngine()
+        target_source = (
+            'i = 0\nwhile i < 200:\n    value = i + 1\n    i = i + 1\nraise "boom"\n'
+        )
+        attacker_source = "f = leak()\ntry:\n    f()\nexcept raise_error:\n    pass\n"
+        source = (
+            f"target = VM({target_source!r})\n"
+            "bound = target.run\n"
+            "def leak():\n"
+            "    return bound\n"
+            f"attacker = VM({attacker_source!r}, functions={{'leak': leak}}, "
+            "max_instructions=300)\n"
+            "attacker.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root(source).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertGreater(engine._contexts[1].instruction_count, 300)
+        self.assertEqual(engine._contexts[2].state, "resource_exhausted")
+
+    def test_failed_child_compilation_mirrors_work_before_exception(self):
+        cases = (
+            ("syntax_error", "x = (" * 1000),
+            ("validation_error", "x = __class__\n" * 1000),
+        )
+        for kind, bad_source in cases:
+            with self.subTest(kind=kind):
+                engine = SericiteEngine()
+                attacker_source = (
+                    f"bad = get_bad()\ntry:\n    spawn(bad)\nexcept {kind}:\n    pass\n"
+                )
+                source = (
+                    "def spawn(s):\n"
+                    "    return VM(s)\n"
+                    f"attacker = VM({attacker_source!r}, "
+                    "functions={'spawn': spawn, 'get_bad': get_bad}, "
+                    "max_instructions=100)\n"
+                    "attacker.run()\n"
+                )
+                with self.assertRaises(SericiteError) as ctx:
+                    engine.create_root(
+                        source,
+                        functions={"get_bad": lambda bad_source=bad_source: bad_source},
+                    ).run()
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+                self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_failed_input_methods_mirror_precharged_allocation(self):
+        cases = (
+            ("write_file", "b(None, s)", "type_error"),
+            ("feed_input", "b(s, s)", "type_error"),
+            ("run", "b([s, None])", "runtime_error"),
+        )
+        for method, call, error_kind in cases:
+            with self.subTest(method=method):
+                engine = SericiteEngine()
+                text = "x" * 1000
+                attacker_source = (
+                    "b = leak()\n"
+                    "s = text_fn()\n"
+                    "try:\n"
+                    f"    {call}\n"
+                    f"except {error_kind}:\n"
+                    "    pass\n"
+                )
+                source = (
+                    "target = VM('')\n"
+                    "text = get_text()\n"
+                    f"bound = target.{method}\n"
+                    "def leak():\n"
+                    "    return bound\n"
+                    "def text_fn():\n"
+                    "    return text\n"
+                    f"attacker = VM({attacker_source!r}, "
+                    "functions={'leak': leak, 'text_fn': text_fn}, "
+                    "max_total_bytes=3000)\n"
+                    "attacker.run()\n"
+                )
+                with self.assertRaises(SericiteError) as ctx:
+                    engine.create_root(
+                        source, functions={"get_text": lambda text=text: text}
+                    ).run()
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+                attacker = engine._contexts[2]
+                self.assertGreaterEqual(attacker.alloc_bytes, len(text) * 4)
+                self.assertEqual(attacker.state, "resource_exhausted")
+
+    def test_input_required_still_pauses_and_resumes_caller(self):
+        engine = SericiteEngine()
+        source = (
+            "def read():\n"
+            "    return input()\n"
+            'attacker = VM("value = read()\\nprint(value)", '
+            "functions={'read': read})\n"
+            "attacker.run()\n"
+        )
+        root = engine.create_root(source)
+        root.run()
+        attacker = VMHandle(engine, 1)
+        self.assertEqual(attacker.snapshot()["state"], "waiting_input")
+        root.feed_input("ok")
+        attacker.feed_input("")
+        self.assertEqual(attacker.run(), "ok\n")
+        self.assertEqual(attacker.snapshot()["state"], "done")
 
 
 class EscapedBoundMethodTests(unittest.TestCase):
