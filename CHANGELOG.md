@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- `print` 新增仅关键字参数 `end`，默认仍为换行；支持 `end=""` 及自定义末尾文本，非字符串值报 `type_error`，末尾文本计入输出配额。
 - 列表新增 `append`/`pop` 成员方法，字典新增 `keys`/`values`/`get`/`pop` 成员方法；采用封闭的原生方法分发，支持绑定方法，未支持的方法报 `attribute_error`。
 - 成员方法补齐资源治理：`append` 检查列表上限并计入新槽分配，`keys`/`values` 检查结果列表上限，并按字典规模计入指令与列表分配。
 

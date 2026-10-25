@@ -1265,7 +1265,9 @@ class SericiteEngine:
             return _NativeFunction("input", lambda: self._read_input(home), home)
         if name == "print":
             return _NativeFunction(
-                "print", lambda *values: self._print(home, values), home
+                "print",
+                lambda *values, end="\n": self._print(home, values, end),
+                home,
             )
         if name == "len":
             return _NativeFunction("len", self._len)
@@ -1410,8 +1412,14 @@ class SericiteEngine:
                 )
         return granted
 
-    def _print(self, context: VMContext, values: tuple[object, ...]) -> None:
-        line = " ".join(_to_str(v) for v in values) + "\n"
+    def _print(
+        self, context: VMContext, values: tuple[object, ...], end: object = "\n"
+    ) -> None:
+        if type(end) is not str:
+            raise SericiteError(
+                f"print() end must be str, got {_type_name(end)}", kind="type_error"
+            )
+        line = " ".join(_to_str(v) for v in values) + end
         self._charge_work(context, len(line) // 64)
         context.io.write_output(line)
 

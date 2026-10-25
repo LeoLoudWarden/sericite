@@ -48,7 +48,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 Built-in functions:
 
 - `input()`: read one line of the current VM's input.
-- `print(value, ...)`: write to the current VM's stdout buffer.
+- `print(value, ..., end="\n")`: write to the current VM's stdout buffer; the keyword-only string `end` controls the trailing text.
 - `len(x)`, `int(x)`, `float(x)`, `str(x)`, `range(...)`.
 - `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`: operate on this VM's private filesystem (text only).
 - `VM(code, **limits)`: create a child VM, optionally with resource-quota arguments (tightening only); the special argument `functions={name: fn}` grants functions (sericite functions or already-held granted functions) to the child VM.
