@@ -60,7 +60,7 @@ VM handle methods (identical on the script and host sides): `run(inputs)`, `feed
 
 VM states: `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, `terminated`.
 
-Error kinds: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `zero_division`, `conversion_error`, `index_error`, `key_error`, `name_error`, `arity_error`, `raise_error`, `file_not_found`, `is_directory`, `not_directory`, `ffi_error`, `input_error`, `attribute_error`, `contract_error`, `resource_exhausted`, `internal_error`. The `errors` module is their single registry. All except `resource_exhausted`/`internal_error` can be caught by `try/except` with kind filtering; the compiler rejects unknown filter names as `validation_error`.
+Error kinds: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `zero_division`, `conversion_error`, `index_error`, `key_error`, `name_error`, `arity_error`, `raise_error`, `file_not_found`, `is_directory`, `not_directory`, `ffi_error`, `input_error`, `attribute_error`, `contract_error`, `resource_exhausted`, `internal_error`. The `errors` module is their single registry. All except `resource_exhausted`/`internal_error` can be caught by `try/except` with kind filtering; the compiler rejects unknown filter names and the two uncatchable kinds as `validation_error`.
 
 ## 5. Resource quotas
 

@@ -164,5 +164,75 @@ class DictMethodTests(unittest.TestCase):
             self.assertEqual(counts[method, 4] - counts[method, 2], 2)
 
 
+class EscapedBoundMethodTests(unittest.TestCase):
+    def test_cross_vm_bound_method_mirrors_allocation_to_caller(self):
+        # A bound method created in the parent scope escapes into a child via a
+        # granted function. Its resource cost still belongs to the defining VM,
+        # but must also be mirrored into the caller's quota (security.md §3.6),
+        # so a tight-quota child cannot borrow the parent's world to run past its
+        # own budget.
+        engine = SericiteEngine()
+        source = (
+            "lst = []\n"
+            "bound_append = lst.append\n"
+            "def leak():\n"
+            "    return bound_append\n"
+            'sub = VM("""\n'
+            "f = leak()\n"
+            "i = 0\n"
+            "while i < 100:\n"
+            "    f(0)\n"
+            "    i = i + 1\n"
+            '""", functions={"leak": leak}, max_total_bytes=100)\n'
+            "sub.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root(source).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        child = engine._contexts[1]
+        self.assertEqual(child.state, "resource_exhausted")
+        self.assertGreater(child.alloc_bytes, 0)
+
+    def test_cross_vm_dict_keys_mirrors_work_and_allocation_to_caller(self):
+        # An escaped dict.keys() snapshot charges O(len(dict)) work and allocation
+        # to the defining VM; the causal mirror must charge the same to the child
+        # caller rather than letting the child pay only its own ~1 instruction.
+        engine = SericiteEngine()
+        source = (
+            "d = {}\n"
+            "i = 0\n"
+            "while i < 500:\n"
+            "    d[i] = i\n"
+            "    i = i + 1\n"
+            "bound_keys = d.keys\n"
+            "def leak():\n"
+            "    return bound_keys\n"
+            'sub = VM("f = leak()\\nr = f()\\nprint(len(r))", functions={"leak": leak})\n'
+            "sub.run()\n"
+        )
+        engine.create_root(source).run()
+        child = engine._contexts[1]
+        self.assertEqual(child.alloc_bytes, 4000)  # 500 keys * 8 bytes, mirrored
+        self.assertGreater(child.instruction_count, 500)  # 500 units of snapshot work
+
+    def test_cross_vm_vm_method_mirrors_result_allocation_to_caller(self):
+        # A VM-handle bound method (sub.stdout) created in the parent scope escapes
+        # into a grandchild via a granted function. Its result-size allocation is
+        # charged to the defining VM and must be mirrored into the caller's quota.
+        engine = SericiteEngine()
+        source = (
+            "sub = VM(\"print('hello world')\")\n"
+            "sub.run()\n"
+            "bound = sub.stdout\n"
+            "def leak():\n"
+            "    return bound\n"
+            'grand = VM("f = leak()\\ns = f()\\nprint(len(s))", functions={"leak": leak})\n'
+            "grand.run()\n"
+        )
+        engine.create_root(source).run()
+        grandchild = engine._contexts[2]
+        self.assertGreater(grandchild.alloc_bytes, 0)  # stdout result size, mirrored
+
+
 if __name__ == "__main__":
     unittest.main()

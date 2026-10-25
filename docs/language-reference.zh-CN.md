@@ -1,6 +1,6 @@
 # Sericite 语言参考
 
-Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.5.0 的语言行为。
+Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.5.1 的语言行为。
 
 ## 1. 基本样子
 
@@ -138,7 +138,7 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是已定义的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝；不可捕获的 `resource_exhausted` 与 `internal_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
 
 可捕获 kind 的完整列表：
 

@@ -1744,6 +1744,7 @@ class SericiteEngine:
                 return _NativeFunction(
                     f"VM.{attr}",
                     lambda *a, **k: self._charged_vm_method(context, value, attr, a, k),
+                    context,
                 )
             return _NativeFunction(f"VM.{attr}", getattr(value, attr))
         if isinstance(value, VMHandle):
@@ -1753,24 +1754,32 @@ class SericiteEngine:
                 return _NativeFunction(
                     "list.append",
                     lambda *args: self._list_append(context, value, args),
+                    context,
                 )
             if attr == "pop":
                 return _NativeFunction(
-                    "list.pop", lambda *args: self._list_pop(context, value, args)
+                    "list.pop",
+                    lambda *args: self._list_pop(context, value, args),
+                    context,
                 )
         if type(value) is dict:
             if attr in ("keys", "values"):
                 return _NativeFunction(
                     f"dict.{attr}",
                     lambda *args: self._dict_snapshot(context, value, attr, args),
+                    context,
                 )
             if attr == "get":
                 return _NativeFunction(
-                    "dict.get", lambda *args: self._dict_get(context, value, args)
+                    "dict.get",
+                    lambda *args: self._dict_get(context, value, args),
+                    context,
                 )
             if attr == "pop":
                 return _NativeFunction(
-                    "dict.pop", lambda *args: self._dict_pop(context, value, args)
+                    "dict.pop",
+                    lambda *args: self._dict_pop(context, value, args),
+                    context,
                 )
         if type(value) in (list, dict):
             raise SericiteError(
