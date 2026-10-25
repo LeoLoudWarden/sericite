@@ -186,6 +186,8 @@ Parameter annotations are checked at call time, return annotations at return tim
 
 Names in error messages are **compile-time, scope-local labels**: a class name or annotation text becomes the display name for related errors in that scope (e.g. `record Point {x: int} has no field 'y'`). Labels never enter values and disappear at scope exit; unlabeled values display structurally (`record {x: int} ...`). Across branches, loops, and exception paths, a label is retained only when the same label can be established; otherwise the value falls back to an anonymous structural display. Labels are diagnostics only — they play no role in equality or contract checks.
 
+When width checking accepts a value with extra fields, attribute errors still retain the variable's annotation label while listing the value's actual, complete schema. Thus, after `p: Point = Coord(1, 2)`, `p.z` can report `record Point {x: int, y: int} has no field 'z'`; `Point` is only a diagnostic label and does not mean the value's schema was rewritten.
+
 Records and schemas cannot cross the host FFI boundary (a host function receiving a record raises `ffi_error` — `unwrap` first); they pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs. Only structure crosses VMs: when a granted function reports an error inside a child VM, it does so under the granted name (the key in `functions={"f": ...}`) with structural descriptions — the definition-side function name and type labels never appear in the child's error text.
 
 ## 8. Creating VMs
