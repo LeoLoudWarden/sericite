@@ -129,13 +129,21 @@ _TAG_TYPES = {
 class SericiteSchema:
     """A record's structural contract: field names + per-field contracts. Structural equality, no runtime name."""
 
-    __slots__ = ("field_map", "fields", "key")
+    __slots__ = ("field_map", "fields", "key", "size")
 
     def __init__(self, fields: tuple[tuple[str, object], ...]) -> None:
         self.fields = fields
         self.field_map = dict(fields)
         self.key = frozenset(
             (name, _contract_key(contract)) for name, contract in fields
+        )
+        # Total field slots across nesting (nested schemas are already built, so
+        # their size is precomputed): the scale of a full _schema_fit traversal,
+        # used for depth-proportional contract charging.
+        self.size = len(fields) + sum(
+            contract.size
+            for _, contract in fields
+            if isinstance(contract, SericiteSchema)
         )
 
     def __repr__(self) -> str:
@@ -161,12 +169,15 @@ def _contract_key(contract: object) -> object:
     return ("tag", contract)
 
 
-def _contract_text(contract: object, label: str | None = None) -> str:
+def _contract_text(contract: object, label: str | None = None, _depth: int = 0) -> str:
     if isinstance(contract, SericiteSchema):
+        if _depth >= 64:
+            return "..."
         body = (
             "{"
             + ", ".join(
-                f"{name}: {_contract_text(inner)}" for name, inner in contract.fields
+                f"{name}: {_contract_text(inner, None, _depth + 1)}"
+                for name, inner in contract.fields
             )
             + "}"
         )
@@ -247,7 +258,7 @@ def _contract_violation(
 
 def _contract_cost(contract: object) -> int:
     if isinstance(contract, SericiteSchema):
-        return 1 + len(contract.fields)
+        return 1 + contract.size
     return 1
 
 
