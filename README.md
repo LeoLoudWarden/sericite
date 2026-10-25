@@ -124,7 +124,7 @@ Sericite was developed with AI assistance throughout — design discussion, impl
 
 ## Roadmap
 
-- List/dict/string methods and more ergonomic syntax
+- More list/dict methods, string methods, and additional ergonomic syntax
 - Performance benchmarks: VM creation, per-instruction execution, and debugging costs measured (see [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)); broader workload coverage still pending
 - A normative language spec and a conformance test suite, so a future non-Python engine can be validated against them
 - Evaluation of a native engine (the package name is language-level on purpose: `sericite` survives an engine rewrite)

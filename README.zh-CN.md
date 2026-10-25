@@ -124,7 +124,7 @@ Sericite 全程使用 AI 辅助开发——设计讨论、实现、测试、对�
 
 ## 路线图
 
-- 列表/字典/字符串方法与更多易用性语法
+- 更多列表/字典方法、字符串方法与更多易用性语法
 - 性能基准：VM 创建、每指令执行与调试成本已实测（见 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)）；更多工作负载的覆盖待补
 - 规范化的语言规范与一致性测试套件，供未来非 Python 引擎对照验证
 - 原生引擎评估（包名刻意取语言级：`sericite` 在引擎重写后依然成立）

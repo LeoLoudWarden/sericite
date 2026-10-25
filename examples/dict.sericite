@@ -3,7 +3,7 @@ user["level"] = 2
 
 print("name:", user["name"])
 print("level:", user["level"])
-print("keys:", keys(user))
+print("keys:", user.keys())
 print("has tags:", "tags" in user)
 print("no password:", "password" not in user)
 
@@ -13,7 +13,7 @@ except key_error as e:
     print("caught:", e)
 
 i = 0
-names = keys(user)
+names = user.keys()
 while i < len(names):
     key = names[i]
     print(key, "=", user[key])

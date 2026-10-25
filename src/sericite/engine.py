@@ -1281,8 +1281,6 @@ class SericiteEngine:
             )
         if name == "range":
             return _NativeFunction("range", lambda *args: self._range(home, args), home)
-        if name == "keys":
-            return _NativeFunction("keys", lambda value: self._keys(home, value), home)
         if name == "any":
             return _ANY
         if name in _TAG_CONTRACTS:
@@ -1441,15 +1439,6 @@ class SericiteEngine:
             f"object of type '{_type_name(value)}' has no len()",
             kind="type_error",
         )
-
-    def _keys(self, context: VMContext, value: object) -> list[object]:
-        if type(value) is not dict:
-            raise SericiteError(
-                f"keys() expects a dict, got {_type_name(value)}",
-                kind="type_error",
-            )
-        self._charge_alloc(context, len(value) * 8)
-        return list(value.keys())
 
     def _convert_int(self, context: VMContext, value: object) -> int:
         if type(value) is bool:
@@ -1751,15 +1740,126 @@ class SericiteEngine:
             return _NativeFunction(f"VM.{attr}", getattr(value, attr))
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
+        if type(value) is list:
+            if attr == "append":
+                return _NativeFunction(
+                    "list.append",
+                    lambda *args: self._list_append(context, value, args),
+                )
+            if attr == "pop":
+                return _NativeFunction(
+                    "list.pop", lambda *args: self._list_pop(context, value, args)
+                )
         if type(value) is dict:
+            if attr in ("keys", "values"):
+                return _NativeFunction(
+                    f"dict.{attr}",
+                    lambda *args: self._dict_snapshot(context, value, attr, args),
+                )
+            if attr == "get":
+                return _NativeFunction(
+                    "dict.get", lambda *args: self._dict_get(context, value, args)
+                )
+            if attr == "pop":
+                return _NativeFunction(
+                    "dict.pop", lambda *args: self._dict_pop(context, value, args)
+                )
+        if type(value) in (list, dict):
             raise SericiteError(
-                "dict has no attribute access; use d[key] to look up a key",
-                kind="type_error",
+                f"{_type_name(value)} has no method '{attr}'", kind="attribute_error"
             )
         raise SericiteError(
             f"'{_type_name(value)}' does not support attribute access",
             kind="type_error",
         )
+
+    def _list_append(
+        self, context: VMContext, target: list[object], args: tuple[object, ...]
+    ) -> None:
+        if len(args) != 1:
+            raise SericiteError(
+                f"list.append() expects 1 argument(s), got {len(args)}",
+                kind="arity_error",
+            )
+        if len(target) >= context.limits.max_list_size:
+            raise SericiteError("list size limit exceeded", kind="resource_exhausted")
+        self._charge_alloc(context, 8)
+        target.append(args[0])
+
+    def _list_pop(
+        self, context: VMContext, target: list[object], args: tuple[object, ...]
+    ) -> object:
+        if len(args) > 1:
+            raise SericiteError(
+                f"list.pop() expects 0 to 1 argument(s), got {len(args)}",
+                kind="arity_error",
+            )
+        index = args[0] if args else -1
+        if type(index) is not int:
+            raise SericiteError(
+                f"indices must be int, got {_type_name(index)}", kind="type_error"
+            )
+        if not -len(target) <= index < len(target):
+            raise SericiteError("pop index out of range", kind="index_error")
+        return target.pop(index)
+
+    def _dict_snapshot(
+        self,
+        context: VMContext,
+        target: dict[object, object],
+        attr: str,
+        args: tuple[object, ...],
+    ) -> list[object]:
+        if args:
+            raise SericiteError(
+                f"dict.{attr}() expects 0 argument(s), got {len(args)}",
+                kind="arity_error",
+            )
+        if len(target) > context.limits.max_list_size:
+            raise SericiteError("list size limit exceeded", kind="resource_exhausted")
+        self._charge_work(context, len(target))
+        self._charge_alloc(context, len(target) * 8)
+        return list(target.keys()) if attr == "keys" else list(target.values())
+
+    @staticmethod
+    def _check_dict_method_key(key: object) -> None:
+        if type(key) not in (str, int, float, bool) and key is not None:
+            raise SericiteError(
+                f"unhashable key type: {_type_name(key)}", kind="type_error"
+            )
+
+    def _dict_get(
+        self,
+        context: VMContext,
+        target: dict[object, object],
+        args: tuple[object, ...],
+    ) -> object:
+        if not 1 <= len(args) <= 2:
+            raise SericiteError(
+                f"dict.get() expects 1 to 2 argument(s), got {len(args)}",
+                kind="arity_error",
+            )
+        self._check_dict_method_key(args[0])
+        default = args[1] if len(args) == 2 else None
+        return target.get(args[0], default)
+
+    def _dict_pop(
+        self,
+        context: VMContext,
+        target: dict[object, object],
+        args: tuple[object, ...],
+    ) -> object:
+        if not 1 <= len(args) <= 2:
+            raise SericiteError(
+                f"dict.pop() expects 1 to 2 argument(s), got {len(args)}",
+                kind="arity_error",
+            )
+        self._check_dict_method_key(args[0])
+        if args[0] not in target:
+            if len(args) == 2:
+                return args[1]
+            raise SericiteError(f"missing key: {_to_str(args[0])!s}", kind="key_error")
+        return target.pop(args[0])
 
     def _wrap(self, context: VMContext, schema: object, data: object) -> SericiteRecord:
         if not isinstance(schema, SericiteSchema):

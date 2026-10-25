@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+- 列表新增 `append`/`pop` 成员方法，字典新增 `keys`/`values`/`get`/`pop` 成员方法；采用封闭的原生方法分发，支持绑定方法，未支持的方法报 `attribute_error`。
+- 成员方法补齐资源治理：`append` 检查列表上限并计入新槽分配，`keys`/`values` 检查结果列表上限，并按字典规模计入指令与列表分配。
+
+### Removed
+- **Breaking**：移除全局内建 `keys(d)`，改用 `d.keys()`；`keys` 不再是保留名，可作为普通变量或授予函数名。
+
 ### Changed
 - `except` 过滤条件现在必须是已定义的错误 kind；未知名字及拼写错误在编译期以 `validation_error` 拒绝，错误消息提示按 kind 绑定消息与裸 `except:` 兜底的正确写法，不再让无效 handler 留到运行期静默失配。
 

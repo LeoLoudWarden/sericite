@@ -102,7 +102,7 @@ PROMPT_INNER = """你是一个有代码执行能力的助手。
 
 你可以使用 sericite_exec 工具执行代码，以及 file_read / file_write / file_list 工具读写当前工作目录的文件。
 
-工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 是 Python 的子集但有差异（没有列表/字典方法、没有 f-string、没有 import）。
+工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 是 Python 的子集但有差异（没有字符串方法、没有 f-string、没有 import）。
 
 任务：随便做点简单的事情作为练习，比如用 sericite_exec 算几个斐波那契数、写个文件再读出来验证。做完后给出简短的总结。"""
 
@@ -111,7 +111,7 @@ PROMPT1 = (
 
 你可以使用 sericite_exec 工具执行代码（sericite 语言），以及 file_read / file_write / file_list 工具读写当前工作目录的文件。
 
-工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 是 Python 的子集但有差异（没有列表/字典/字符串方法、没有 f-string、没有 import、列表追加要用 lst = lst + [x]）。
+工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 是 Python 的子集但有差异（没有字符串方法、没有 f-string、没有 import）。
 
 请完成两件事：
 

@@ -49,10 +49,12 @@
 
 - `input()`：读取当前 VM 的一行输入。
 - `print(value, ...)`：写入当前 VM 的 stdout 缓冲区。
-- `len(x)`、`int(x)`、`float(x)`、`str(x)`、`range(...)`、`keys(d)`。
+- `len(x)`、`int(x)`、`float(x)`、`str(x)`、`range(...)`。
 - `read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`：操作本 VM 的私有文件系统（仅文本）。
 - `VM(code, **limits)`：创建子 VM，可选资源配额参数（只能收紧）；特殊参数 `functions={name: fn}` 向子 VM 授予函数（sericite 函数或已持有的授予函数）。
 - 宿主注入：`SericiteEngine.create_root(source, functions={name: python_callable})` 向 root VM 授予宿主函数。
+
+容器方法：list `append`/`pop`；dict `keys`/`values`/`get`/`pop`。采用封闭的原生分发，不暴露任意 Python 属性。追加元素计入新列表槽；键/值快照按 O(n) 工作量与列表分配记账。
 
 VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_input(text)`、`step()`、`step_instruction()`、`snapshot()`、`stdout()`、`terminate()`，以及 `read_file` / `write_file` / `list_dir` / `path_exists`（配置/读取该 VM 的文件系统）。
 
@@ -97,7 +99,7 @@ VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`�
 - 资源治理：见上节。原型经过一轮对抗性安全审查（含独立第三方视角），审查发现的拒绝服务与信息泄漏路径均已修复并固化回归测试。
 - 每个 VM 自带私有虚拟文件系统，可在运行前配置、运行后取回产出。
 
-明确的取舍：列表与字典方法、可变参数、链式比较、`import` 等暂不支持——它们属于易用性或表达力问题，按需逐步加入，不影响设计主线。
+明确的取舍：更多容器方法、可变参数、链式比较、`import` 等暂不支持——它们属于易用性或表达力问题，按需逐步加入，不影响设计主线。
 
 ## 8. 已知边界与语义偏差
 
@@ -112,4 +114,4 @@ VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`�
 
 ## 9. 明确暂不支持
 
-列表/字典/字符串方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。
+字符串方法与文档所列封闭集合之外的列表/字典方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。
