@@ -535,6 +535,25 @@ def _reject(node: ast.AST, filename: str, message: str) -> None:
     )
 
 
+def _assigned_names(body: list[ast.stmt]) -> set[str]:
+    names: set[str] = set()
+
+    def visit(node: ast.AST) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            names.add(node.name)
+            return
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        if isinstance(node, ast.ExceptHandler) and node.name is not None:
+            names.add(node.name)
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    for statement in body:
+        visit(statement)
+    return names
+
+
 class _Compiler:
     def __init__(self, filename: str, scopes: dict[int, _Scope]) -> None:
         self._filename = filename
@@ -545,6 +564,22 @@ class _Compiler:
         self._tmp_counter = 0
         # Compile-time label table (diagnostics only): name -> label text, pushed/popped with the function scope.
         self._label_stack: list[dict[str, str]] = [{}]
+
+    def _set_labels(self, labels: dict[str, str]) -> None:
+        self._label_stack[-1] = labels
+
+    @staticmethod
+    def _without_labels(labels: dict[str, str], names: set[str]) -> dict[str, str]:
+        return {name: label for name, label in labels.items() if name not in names}
+
+    @staticmethod
+    def _merge_labels(environments: list[dict[str, str]]) -> dict[str, str]:
+        first, *rest = environments
+        return {
+            name: label
+            for name, label in first.items()
+            if all(labels.get(name) == label for labels in rest)
+        }
 
     def _propagate_label(self, name: str, value: ast.AST) -> None:
         labels = self._label_stack[-1]
@@ -630,15 +665,23 @@ class _Compiler:
             self.emit(code, isa.POP, None, line)
             return
         if isinstance(node, ast.If):
+            entry_labels = self._label_stack[-1].copy()
             self.compile_expression(node.test, code)
             jump_false = self.emit(code, isa.JUMP_IF_FALSE, None, line)
             self.compile_body(node.body, code)
+            body_labels = self._label_stack[-1]
             jump_end = self.emit(code, isa.JUMP, None, line)
             code.instrs[jump_false].arg = len(code.instrs)
+            self._set_labels(entry_labels.copy())
             self.compile_body(node.orelse, code)
+            else_labels = self._label_stack[-1]
+            self._set_labels(self._merge_labels([body_labels, else_labels]))
             code.instrs[jump_end].arg = len(code.instrs)
             return
         if isinstance(node, ast.While):
+            entry_labels = self._label_stack[-1].copy()
+            head_labels = self._without_labels(entry_labels, _assigned_names(node.body))
+            self._set_labels(head_labels.copy())
             start = len(code.instrs)
             self.compile_expression(node.test, code)
             jump_false = self.emit(code, isa.JUMP_IF_FALSE, None, line)
@@ -649,7 +692,11 @@ class _Compiler:
             self.emit(code, isa.JUMP, start, line)
             end = len(code.instrs)
             code.instrs[jump_false].arg = end
+            self._set_labels(head_labels)
             self.compile_body(node.orelse, code)
+            self._set_labels(
+                self._without_labels(entry_labels, _assigned_names([node]))
+            )
             real_end = len(code.instrs)
             for index in breaks:
                 code.instrs[index].arg = real_end
@@ -756,6 +803,7 @@ class _Compiler:
                     self.emit(code, isa.STORE_NAME, target_name, line)
                 self.emit(code, isa.LOAD_NAME, target_name, line)
             self._store_name(code, node.name, line)
+            self._label_stack[-1].pop(node.name, None)
             return
         if isinstance(node, ast.Return):
             if self._function_depth == 0:
@@ -800,13 +848,19 @@ class _Compiler:
 
     def _compile_for(self, node: ast.For, code: isa.CodeUnit) -> None:
         line = node.lineno
+        entry_labels = self._label_stack[-1].copy()
         iter_name = f"$for_{self._tmp_counter}"
         self._tmp_counter += 1
         self.compile_expression(node.iter, code)
         self.emit(code, isa.GET_ITER, iter_name, line)
+        head_labels = self._without_labels(
+            entry_labels, _assigned_names(node.body) | {node.target.id}
+        )
+        self._set_labels(head_labels.copy())
         start = len(code.instrs)
         for_iter = self.emit(code, isa.FOR_ITER, (iter_name, None), line)
         self._store_name(code, node.target.id, line)
+        self._label_stack[-1].pop(node.target.id, None)
         breaks: list[int] = []
         self._loops.append((start, breaks, len(self._finally_stack)))
         self.compile_body(node.body, code)
@@ -814,7 +868,9 @@ class _Compiler:
         self.emit(code, isa.JUMP, start, line)
         end = len(code.instrs)
         code.instrs[for_iter].arg = (iter_name, end)
+        self._set_labels(head_labels)
         self.compile_body(node.orelse, code)
+        self._set_labels(self._without_labels(entry_labels, _assigned_names([node])))
         real_end = len(code.instrs)
         for index in breaks:
             code.instrs[index].arg = real_end
@@ -828,11 +884,16 @@ class _Compiler:
                 filename=self._filename,
                 line=line,
             )
+        entry_labels = self._label_stack[-1].copy()
+        assigned = _assigned_names([node])
+        exit_labels = self._without_labels(entry_labels, assigned)
+        body_assigned = _assigned_names(node.body)
         has_finally = bool(node.finalbody)
         if has_finally:
             self._finally_stack.append(node.finalbody)
         body_start = len(code.instrs)
         self.compile_body(node.body, code)
+        body_labels = self._label_stack[-1].copy()
         body_end = len(code.instrs)
         body_exit = self.emit(code, isa.JUMP, None, line)
         handler_entries: list[
@@ -845,10 +906,15 @@ class _Compiler:
                 None if handler.type is None else (handler.type.id,)  # type: ignore[union-attr]
             )
             handler_entries.append((body_start, body_end, target, kinds, handler.name))
+            handler_labels = self._without_labels(entry_labels, body_assigned)
+            if handler.name is not None:
+                handler_labels.pop(handler.name, None)
+            self._set_labels(handler_labels)
             self.compile_body(handler.body, code)
             handler_exits.append(self.emit(code, isa.JUMP, None, line))
         else_label = len(code.instrs)
         code.instrs[body_exit].arg = else_label
+        self._set_labels(body_labels)
         self.compile_body(node.orelse, code)
         after_else = len(code.instrs)
         for index in handler_exits:
@@ -864,14 +930,20 @@ class _Compiler:
                 )
             )
         if not has_finally:
+            self._set_labels(exit_labels)
             return
         self._finally_stack.pop()
+        finally_labels = self._without_labels(entry_labels, assigned)
+        self._set_labels(finally_labels.copy())
         self.compile_body(node.finalbody, code)
+        normal_labels = self._label_stack[-1].copy()
         normal_exit = self.emit(code, isa.JUMP, None, line)
         catch_target = len(code.instrs)
         error_name = f"$err_{self._tmp_counter}"
         self._tmp_counter += 1
+        self._set_labels(finally_labels)
         self.compile_body(node.finalbody, code)
+        self._set_labels(normal_labels)
         self.emit(code, isa.RAISE, ("saved", error_name), line)
         end = len(code.instrs)
         code.instrs[normal_exit].arg = end

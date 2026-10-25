@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.4.2.
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.4.3.
 
 ## 1. What it looks like
 
@@ -184,7 +184,7 @@ p: Point = Point(1, 2)
 
 Parameter annotations are checked at call time, return annotations at return time, and annotated assignments at assignment time; the three error messages name the responsible position (argument / return value / annotated assignment). Dicts are never auto-wrapped at annotation positions. The check is **width-based**: an argument record passes as long as it contains every field the expected schema requires, with compatible contracts; extra fields are fine.
 
-Names in error messages are **compile-time, scope-local labels**: a class name or annotation text becomes the display name for related errors in that scope (e.g. `record Point {x: int} has no field 'y'`). Labels never enter values and disappear at scope exit; unlabeled values display structurally (`record {x: int} ...`). Labels are diagnostics only — they play no role in equality or contract checks.
+Names in error messages are **compile-time, scope-local labels**: a class name or annotation text becomes the display name for related errors in that scope (e.g. `record Point {x: int} has no field 'y'`). Labels never enter values and disappear at scope exit; unlabeled values display structurally (`record {x: int} ...`). Across branches, loops, and exception paths, a label is retained only when the same label can be established; otherwise the value falls back to an anonymous structural display. Labels are diagnostics only — they play no role in equality or contract checks.
 
 Records and schemas cannot cross the host FFI boundary (a host function receiving a record raises `ffi_error` — `unwrap` first); they pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs. Only structure crosses VMs: when a granted function reports an error inside a child VM, it does so under the granted name (the key in `functions={"f": ...}`) with structural descriptions — the definition-side function name and type labels never appear in the child's error text.
 

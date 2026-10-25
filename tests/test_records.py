@@ -348,6 +348,103 @@ class LabelTests(unittest.TestCase):
         )
         self.assertIn("record Point {x: int}", exc.message)
 
+    def test_if_merges_only_matching_labels(self):
+        prefix = "class P:\n    x: int\nclass Q:\n    x: int\np = P(1)\n"
+        for branch in (
+            "if False:\n    p = Q(2)\n",
+            "if True:\n    p = Q(2)\nelse:\n    p = P(3)\n",
+        ):
+            with self.subTest(branch=branch):
+                exc = run_error(prefix + branch + "print(p.z)\n")
+                self.assertIn("record {x: int}", exc.message)
+
+        exc = run_error(
+            prefix + "if True:\n    p = P(2)\nelse:\n    p = P(3)\nprint(p.z)\n"
+        )
+        self.assertIn("record P {x: int}", exc.message)
+
+    def test_loop_back_edge_does_not_reuse_first_iteration_label(self):
+        out = run(
+            "class P:\n    x: int\n"
+            "class Q:\n    x: int\n"
+            "p = P(1)\n"
+            "i = 0\n"
+            "while i < 2:\n"
+            "    try:\n"
+            "        print(p.z)\n"
+            "    except attribute_error as e:\n"
+            "        print(e)\n"
+            "    p = Q(2)\n"
+            "    i = i + 1\n"
+        )
+        self.assertEqual(out, "record {x: int} has no field 'z'\n" * 2)
+
+    def test_loop_condition_and_exits_use_conservative_labels(self):
+        exc = run_error(
+            "class P:\n    keep: bool\n"
+            "class Q:\n    x: int\n"
+            "p = P(True)\n"
+            "while p.keep:\n"
+            "    p = Q(1)\n"
+        )
+        self.assertIn("record {x: int}", exc.message)
+
+        prefix = "class P:\n    x: int\nclass Q:\n    x: int\np = P(1)\n"
+        loops = (
+            "while False:\n    p = Q(2)\n",
+            "while True:\n    p = Q(2)\n    break\n",
+            "i = 0\nwhile i < 2:\n    p = Q(2)\n    i = i + 1\n    continue\n",
+        )
+        for loop in loops:
+            with self.subTest(loop=loop):
+                exc = run_error(prefix + loop + "print(p.z)\n")
+                self.assertIn("record {x: int}", exc.message)
+
+    def test_for_target_clears_previous_label(self):
+        exc = run_error(
+            "class P:\n    x: int\n"
+            "class Q:\n    x: int\n"
+            "p = P(1)\n"
+            "for p in [Q(2)]:\n"
+            "    pass\n"
+            "print(p.z)\n"
+        )
+        self.assertIn("record {x: int}", exc.message)
+
+    def test_exception_paths_do_not_use_sequential_labels(self):
+        prefix = "class P:\n    x: int\nclass Q:\n    x: int\np = P(1)\n"
+        bodies = (
+            "try:\n    raise 'stop'\n    p = Q(2)\nexcept:\n    pass\n",
+            "try:\n    raise 'stop'\nexcept zero_division:\n    p = Q(2)\nexcept raise_error:\n    pass\n",
+            "try:\n    p = Q(2)\nexcept:\n    pass\nelse:\n    p = Q(3)\n",
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                exc = run_error(prefix + body + "print(p.z)\n")
+                self.assertIn("record {x: int}", exc.message)
+
+    def test_finally_copies_use_conservative_labels(self):
+        for flag in (True, False):
+            with self.subTest(flag=flag):
+                out = run(
+                    "class P:\n    x: int\n"
+                    "class Q:\n    x: int\n"
+                    "p = P(1)\n"
+                    "try:\n"
+                    f"    if {flag}:\n"
+                    "        p = Q(2)\n"
+                    "    else:\n"
+                    "        raise 'stop'\n"
+                    "except raise_error:\n"
+                    "    pass\n"
+                    "finally:\n"
+                    "    try:\n"
+                    "        print(p.z)\n"
+                    "    except attribute_error as e:\n"
+                    "        print(e)\n"
+                )
+                self.assertEqual(out, "record {x: int} has no field 'z'\n")
+
 
 class ClosureAndVMTests(unittest.TestCase):
     def test_schema_captured_by_closure(self):
