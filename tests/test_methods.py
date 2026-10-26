@@ -239,6 +239,53 @@ class DictMethodTests(unittest.TestCase):
             self.assertEqual(counts[method, 4] - counts[method, 2], 2)
 
 
+class DictKeyChargeTests(unittest.TestCase):
+    def run_key_probe(self, size: int, setup: str, body: str) -> int:
+        limits = SericiteLimits(max_instructions=10_000_000)
+        engine = SericiteEngine(limits=limits)
+        keys = ["x" * size for _ in range(8)]
+        checkpoints = []
+        engine.create_root(
+            setup + "checkpoint()\n"
+            "i = 0\n"
+            "while i < 8:\n"
+            "    key = fresh()\n"
+            f"{body}\n"
+            "    i = i + 1\n"
+            "checkpoint()\n",
+            functions={
+                "initial": lambda size=size: "x" * size,
+                "fresh": keys.pop,
+                "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                    checkpoints.append(engine._contexts[0].instruction_count)
+                ),
+            },
+        ).run()
+        return checkpoints[1] - checkpoints[0]
+
+    def test_index_read_charges_fresh_string_key_length(self):
+        counts = {}
+        for size in (1000, 100_000):
+            counts[size] = self.run_key_probe(
+                size, "mapping = {initial(): 1}\n", "    result = mapping[key]"
+            )
+        self.assertGreaterEqual(counts[100_000] - counts[1000], 8 * 90_000)
+
+    def test_index_write_charges_fresh_string_key_length(self):
+        counts = {}
+        for size in (1000, 100_000):
+            counts[size] = self.run_key_probe(
+                size, "mapping = {}\n", "    mapping[key] = 1"
+            )
+        self.assertGreaterEqual(counts[100_000] - counts[1000], 8 * 90_000)
+
+    def test_dict_literal_charges_fresh_string_key_length(self):
+        counts = {}
+        for size in (1000, 100_000):
+            counts[size] = self.run_key_probe(size, "", "    mapping = {key: 1}")
+        self.assertGreaterEqual(counts[100_000] - counts[1000], 8 * 90_000)
+
+
 class VMHandleMethodChargeTests(unittest.TestCase):
     def test_read_file_charges_result_allocation(self):
         engine = SericiteEngine()
@@ -493,6 +540,63 @@ class VfsChargeTests(unittest.TestCase):
         with self.assertRaises(SericiteError) as ctx:
             SericiteEngine().create_root(source).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+
+class CrossVmResultEstimationTests(unittest.TestCase):
+    @staticmethod
+    def make_engine(**kwargs: object) -> SericiteEngine:
+        defaults = {
+            "max_instructions": 10_000_000,
+            "max_total_bytes": 100_000_000,
+            "max_fs_files": 30_000,
+        }
+        return SericiteEngine(SericiteLimits(**(defaults | kwargs)))
+
+    @staticmethod
+    def populate(engine: SericiteEngine, vm: VMHandle, count: int) -> None:
+        vm.step()  # create the child VM
+        fs = engine._contexts[1].fs
+        for index in range(count):
+            fs.write_file_trusted(f"/{index:06d}", "")
+
+    def test_result_beyond_former_node_cap_is_fully_charged(self):
+        engine = self.make_engine()
+        checkpoints = []
+        vm = engine.create_root(
+            "target = VM('')\n"
+            "checkpoint()\n"
+            "result = target.list_dir('/')\n"
+            "checkpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    (
+                        engine._contexts[0].instruction_count,
+                        engine._contexts[0].alloc_bytes,
+                    )
+                )
+            },
+        )
+        self.populate(engine, vm, 20_000)
+        vm.run()
+        work, allocation = (
+            checkpoints[1][0] - checkpoints[0][0],
+            checkpoints[1][1] - checkpoints[0][1],
+        )
+        self.assertGreaterEqual(work, 20_001)
+        self.assertGreaterEqual(allocation, 20_000 * 8 + 20_000 * 6 * 4)
+
+    def test_result_that_exceeds_memory_quota_is_not_delivered(self):
+        engine = self.make_engine(max_total_bytes=400_000)
+        delivered = []
+        vm = engine.create_root(
+            "target = VM('')\nresult = target.list_dir('/')\ndelivered()\n",
+            functions={"delivered": lambda: delivered.append(True)},
+        )
+        self.populate(engine, vm, 20_000)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(delivered, [])
 
 
 class NativeCallExceptionRouteTests(unittest.TestCase):

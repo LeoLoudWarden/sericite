@@ -5,7 +5,7 @@ from dataclasses import MISSING, dataclass, fields
 from types import SimpleNamespace
 
 from sericite.accounting import AccountRoute, Meter
-from sericite.engine import SericiteEngine, _NativeFunction
+from sericite.engine import SericiteEngine, _estimate_size, _NativeFunction
 from sericite.errors import SericiteError
 
 
@@ -96,6 +96,36 @@ class NativeCostContractTests(unittest.TestCase):
             )
         self.assertEqual(work_error.exception.kind, "internal_error")
         self.assertEqual(allocation_error.exception.kind, "internal_error")
+
+
+class EstimateSizeTests(unittest.TestCase):
+    @staticmethod
+    def meter_for(account: FakeAccount) -> Meter:
+        return Meter(AccountRoute(account, resolve=lambda _: None))
+
+    def test_flat_result_beyond_former_node_cap_is_fully_charged(self):
+        account = FakeAccount(0, None, max_instructions=10**9, max_total_bytes=10**9)
+        _estimate_size(["x" * 6 for _ in range(20_000)], meter=self.meter_for(account))
+        self.assertEqual(account.instruction_count, 20_001)
+        self.assertEqual(account.alloc_bytes, 20_000 * 8 + 20_000 * 6 * 4)
+
+    def test_nested_result_beyond_former_node_cap_is_fully_charged(self):
+        account = FakeAccount(0, None, max_instructions=10**9, max_total_bytes=10**9)
+        value = {f"k{i:03d}": [0] * 100 for i in range(100)}
+        _estimate_size(value, meter=self.meter_for(account))
+        self.assertEqual(account.instruction_count, 10_201)
+        self.assertEqual(
+            account.alloc_bytes,
+            100 * 16 + 100 * 4 * 4 + 100 * (100 * 8) + 10_000 * 8,
+        )
+
+    def test_estimation_failure_means_result_is_not_delivered(self):
+        account = FakeAccount(0, None, max_instructions=10**9, max_total_bytes=1000)
+        with self.assertRaises(SericiteError) as ctx:
+            _estimate_size(
+                ["x" * 6 for _ in range(20_000)], meter=self.meter_for(account)
+            )
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
 
 if __name__ == "__main__":
