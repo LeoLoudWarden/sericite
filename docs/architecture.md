@@ -23,6 +23,15 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points |
 
+The `compiler` package is split into cohesive parts:
+
+- `_rules`: whitelist tables, operator maps, reserved/VM-method names
+- `_validate`: AST whitelist and except-kind validation
+- `_scopes`: lexical scope/cell analysis
+- `_stack`: static stack-depth analysis so the stack can be safely truncated on exception catch
+- `_compiler`: the `_Compiler` emitting the instruction stream
+- `__init__`: holds `compile_source`, which orchestrates the pipeline
+
 The `engine` package is split into cohesive parts:
 
 - `_model`: limits, frames, functions, schemas/records, native wrappers, VMContext/VMHandle

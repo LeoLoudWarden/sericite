@@ -23,6 +23,15 @@
 | `errors` | `SericiteError` 与集中管理的错误 kind 注册表 |
 | `cli` / `__main__` | 命令行入口 |
 
+`compiler` 包按内聚职责拆分为：
+
+- `_rules`：白名单表、运算符映射、保留名与 VM 方法名
+- `_validate`：AST 白名单与 except kind 校验
+- `_scopes`：词法作用域与 cell 分析
+- `_stack`：静态栈深度分析，保证异常捕获时栈可安全截断
+- `_compiler`：产出指令流的 `_Compiler`
+- `__init__`：持有 `compile_source`，编排整个编译流水线
+
 `engine` 包按内聚职责拆分为：
 
 - `_model`：limits、帧、函数、schema/record、原生包装、VMContext/VMHandle
