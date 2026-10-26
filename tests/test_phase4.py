@@ -170,17 +170,42 @@ class HostFunctionTests(unittest.TestCase):
         source = 'try:\n    bad()\nexcept ffi_error as e:\n    print("rejected")\n'
         self.assertEqual(run(source, functions={"bad": lambda: object()}), "rejected\n")
 
-    def test_host_exception_becomes_ffi_error(self):
+    def test_uncontracted_host_exception_kills_vm_with_host_error(self):
         def boom():
             raise ValueError("kaput /home/secret")
 
-        source = 'try:\n    boom()\nexcept ffi_error as e:\n    print("caught: " + e)\n'
-        output = run(source, functions={"boom": boom})
-        # no host exception message (prevents leaking host internals), only the exception type name
-        self.assertIn("ValueError", output)
-        self.assertIn("boom", output)
-        self.assertNotIn("kaput", output)
-        self.assertNotIn("/home/secret", output)
+        # even a bare except cannot catch host_error: the VM dies and the
+        # sanitized message (type name only) reaches the host
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            "try:\n    boom()\nexcept:\n    pass\n", functions={"boom": boom}
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        exc = ctx.exception
+        self.assertEqual(exc.kind, "host_error")
+        self.assertIn("ValueError", exc.message)
+        self.assertIn("boom", exc.message)
+        self.assertNotIn("kaput", exc.message)
+        self.assertNotIn("/home/secret", exc.message)
+
+    def test_host_system_exit_propagates(self):
+        def exits():
+            raise SystemExit(42)
+
+        engine = SericiteEngine()
+        vm = engine.create_root("exits()\n", functions={"exits": exits})
+        with self.assertRaises(SystemExit):
+            vm.run()
+
+    def test_host_keyboard_interrupt_propagates(self):
+        def interrupts():
+            raise KeyboardInterrupt
+
+        engine = SericiteEngine()
+        vm = engine.create_root("interrupts()\n", functions={"interrupts": interrupts})
+        with self.assertRaises(KeyboardInterrupt):
+            vm.run()
 
     def test_host_sericite_error_passes_through(self):
         def picky(value):

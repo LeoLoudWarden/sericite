@@ -57,7 +57,7 @@
 9. Sericite 值语义由引擎助手函数定义，不直接继承 Python 运算符的隐式行为（如 bool 不参与算术）。
 10. `resource_exhausted` 与 `internal_error` 不可被脚本 try/except 捕获——配额不能被脚本吞掉。
 11. VM 句柄方法白名单只有一个来源（编译器侧定义），引擎侧引用它，两边不得分叉。
-12. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界；宿主异常必须净化为 `ffi_error`，消息只含宿主异常的类型名，不含异常文本（防宿主路径/内部信息泄漏）。VM 之间的函数授予在同一引擎信任域内按引用传递，不拷贝。
+12. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界；FFI 异常契约是宿主回调只能通过抛契约 kind 的 `SericiteError` 报告失败——契约之外的任何 `Exception` 都视为治理失败，当前 VM 以不可捕获的 `host_error` 终止，消息只含宿主异常的类型名、不含异常文本（防宿主路径/内部信息泄漏）；`BaseException`（`SystemExit`、`KeyboardInterrupt` 等）是进程级事件，原样穿透给宿主。VM 之间的函数授予在同一引擎信任域内按引用传递，不拷贝。
 13. 授予的 sericite 函数执行在**调用方 VM 的帧栈**上（指令计入调用方及祖先），但保留**定义方函数的闭包 cell、定义方 VM 的模块变量、定义方已持有的授予函数环境，以及定义方 VM 的内建服务**（IO/文件系统/子 VM 创建均解析回定义 VM，即函数的 home）；反过来或交叉的组合都不允许。再次授予时必须完整保留这些定义方环境。
 14. 一切会增长的资源都必须有配额。所有指令与动态操作必须经由 Meter 和 AccountRoute，禁止事后补账、差值镜像及绕过资源许可；调试、异常、暂停和跨 VM 路径同样适用。具体契约见第 5 节。
 15. 调度入口有重入保护：同一 VM 不得被两个调度循环同时驱动（例如宿主在 `input_provider`/FFI 回调里对同一 VM 再调 `step()`）。
@@ -80,7 +80,7 @@ VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_i
 
 VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
 
-错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字以及这两个不可捕获 kind 都拒绝为 `validation_error`。
+错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`、`host_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error`/`host_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字以及不可捕获 kind 都拒绝为 `validation_error`。
 
 ## 5. 资源配额
 

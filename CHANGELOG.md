@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-26
+
+### Security
+- 契约/属性错误消息中的 record 与 schema 文本渲染纳入统一计量：`_contract_violation`、`_load_attr`、`_store_attr` 等抛错路径构建错误消息时按渲染节点数与文本长度计入指令配额，闭合"可捕获错误循环触发大 schema 渲染"造成的宿主 CPU 放大通道。
+- `wrap()` 键集不匹配的错误路径把字典键拼入消息，其成本模型补充按字符串键的字节长度计费（同时覆盖键的哈希查找成本）；`schema()` 缺字段与函数缺参数的错误消息在拼接前按缺失名字节数计费；`_fit_detail` 的二次 schema 适配遍历按期望 schema 规模计费。
+- **语义破坏变更**：FFI 异常契约明确化——宿主回调报告失败的唯一方式是抛契约 kind 的 `SericiteError`（按原样传播、脚本可按 kind 捕获）；契约之外的任何 `Exception` 视为宿主治理失败，当前 VM 以新增不可捕获 kind `host_error` 立即终止（消息只含异常类型名），控制权交还宿主，脚本不再能捕获宿主异常、也无法借异常类型名探测宿主内部；`SystemExit`、`KeyboardInterrupt` 等 `BaseException` 作为进程级事件原样上抛给宿主，不再被净化。`ffi_error` 保留给引擎侧的 FFI 边界违规。
+- 安全模型文档补充已知边界：VM 句柄显示文本中的 `id=` 暴露引擎全局 VM 计数。
+
 ### Changed
 - 内部重构：`engine`（2801 行）与 `compiler`（1081 行）分别拆分为子包，按内聚职责组织模块（engine 拆为 `_model`/`_values`/`_core`/`_builtins`/`_operators`/`_hostdbg`，compiler 拆为 `_rules`/`_validate`/`_scopes`/`_stack`/`_compiler`）；公开 API 与执行语义完全不变，行为无变化。
 

@@ -32,8 +32,10 @@ def _contract_text(
     _depth: int = 0,
     _seen: set[int] | None = None,
     _budget: list[int] | None = None,
+    *,
+    meter: Meter | None = None,
 ) -> str:
-    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True)
+    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True, meter=meter)
     if _seen is not None:
         renderer.seen = _seen
     if _budget is not None:
@@ -110,31 +112,44 @@ def _schema_fit(
     return (not missing and not mismatched, missing, mismatched)
 
 
-def _actual_text(value: object) -> str:
+def _actual_text(value: object, *, meter: Meter | None = None) -> str:
     if isinstance(value, SericiteRecord):
-        return _contract_text(value.schema)
+        return _contract_text(value.schema, meter=meter)
     return _type_name(value)
 
 
-def _fit_detail(value: object, expected: object) -> str:
+def _fit_detail(value: object, expected: object, *, meter: Meter | None = None) -> str:
     if not (isinstance(value, SericiteRecord) and isinstance(expected, SericiteSchema)):
         return ""
+    if meter is not None:
+        meter.work(_contract_cost(expected))
     _, missing, mismatched = _schema_fit(value.schema, expected)
     parts = []
     if missing:
         parts.append("missing: " + ", ".join(missing))
     if mismatched:
         parts.append("contract mismatch: " + ", ".join(mismatched))
+    if meter is not None:
+        meter.work(
+            len(missing)
+            + len(mismatched)
+            + sum(len(name) for name in missing + mismatched) // 64
+        )
     return f" ({'; '.join(parts)})" if parts else ""
 
 
 def _contract_violation(
-    where: str, label: str | None, contract: object, value: object
+    where: str,
+    label: str | None,
+    contract: object,
+    value: object,
+    *,
+    meter: Meter | None = None,
 ) -> SericiteError:
-    expected = _contract_text(contract, label)
+    expected = _contract_text(contract, label, meter=meter)
     return SericiteError(
         f"{where}: expected {expected}, got "
-        f"{_actual_text(value)}{_fit_detail(value, contract)}",
+        f"{_actual_text(value, meter=meter)}{_fit_detail(value, contract, meter=meter)}",
         kind="contract_error",
     )
 
@@ -145,8 +160,10 @@ def _contract_cost(contract: object) -> int:
     return 1
 
 
-def _record_text(record: SericiteRecord, hint: str | None = None) -> str:
-    return f"record {_contract_text(record.schema, hint)}"
+def _record_text(
+    record: SericiteRecord, hint: str | None = None, *, meter: Meter | None = None
+) -> str:
+    return f"record {_contract_text(record.schema, hint, meter=meter)}"
 
 
 class _Iterator:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-UNCATCHABLE_ERROR_KINDS = frozenset({"internal_error", "resource_exhausted"})
+UNCATCHABLE_ERROR_KINDS = frozenset(
+    {"host_error", "internal_error", "resource_exhausted"}
+)
 # Kinds a script can catch at runtime with an `except <kind>` filter. `syntax_error`
 # and `validation_error` are included because nested-VM compilation raises them at
 # runtime (e.g. a child VM whose source fails to parse or validate).

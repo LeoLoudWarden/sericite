@@ -191,7 +191,7 @@ class _NativeFunction:
 
 @dataclass(frozen=True)
 class _GrantedHostFunction:
-    """A host-injected Python function: deep-copied both ways across the boundary, exceptions sanitized into ffi_error."""
+    """A host-injected Python function: deep-copied both ways across the boundary; uncontracted exceptions kill the VM with host_error."""
 
     name: str
     callback: Callable[..., object]

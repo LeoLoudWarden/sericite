@@ -94,7 +94,7 @@ class TryExceptTests(unittest.TestCase):
                 )
 
     def test_uncatchable_except_kinds_rejected_at_compile_time(self):
-        for kind in ("resource_exhausted", "internal_error"):
+        for kind in ("resource_exhausted", "internal_error", "host_error"):
             with self.subTest(kind=kind):
                 engine = SericiteEngine()
                 with self.assertRaises(SericiteError) as ctx:

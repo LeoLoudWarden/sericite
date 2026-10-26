@@ -144,8 +144,9 @@ Records/schemas, VM handles, functions, and other host objects cannot cross. Cal
 
 ### 5.3 Exceptions and reentrancy
 
-- Ordinary host exceptions are sanitized into `ffi_error`, retaining only the exception type name, not its text or traceback.
-- A host callback may deliberately raise `SericiteError` to produce a precise error kind. It propagates unchanged, so the host must keep secrets out of its message.
+- The FFI exception contract: a well-behaved host callback either returns a result or raises `SericiteError` with a contract kind (`file_not_found`, `runtime_error`, …) — this says "I'm alive, and this job cannot be delivered." A `SericiteError` propagates unchanged and is catchable by the script under its kind, so the host must keep secrets out of its message.
+- Any **other** `Exception` escaping a host callback is a governance failure: the callback's internal state is no longer trustworthy, so the engine kills the VM with the **uncatchable** `host_error` (message: only the host exception's type name, never its text) and returns control to the host. Scripts cannot catch it — not even with a bare `except:` — and cannot probe host exception types through it. Catch your own exceptions inside the callback and translate the ones scripts may see into contract kinds.
+- `SystemExit`, `KeyboardInterrupt`, and other `BaseException`s are process-level events addressed to the host: they propagate out of `run()` unchanged. Do not grant functions whose libraries can call `sys.exit()` on adversarial input paths — same discipline as not granting functions that can be driven to delete files.
 - Do not call `run()`, `step()`, or another driving method on the same VM from inside its callback; nested dispatch is rejected.
 
 ### 5.4 Cost responsibility
@@ -177,7 +178,7 @@ except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
 ```
 
-`resource_exhausted` and `internal_error` are uncatchable only by **Sericite scripts**; hosts can and should handle them. See the [language reference](language-reference.md) for the registry of syntax, validation, runtime, and FFI error kinds.
+`resource_exhausted`, `internal_error`, and `host_error` are uncatchable only by **Sericite scripts**; hosts can and should handle them. See the [language reference](language-reference.md) for the registry of syntax, validation, runtime, and FFI error kinds.
 
 ## 8. Host checklist for untrusted code
 

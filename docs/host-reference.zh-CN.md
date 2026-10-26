@@ -144,8 +144,9 @@ record/schema、VM 句柄、函数及其他宿主对象不能越界。需要传�
 
 ### 5.3 异常与重入
 
-- 普通宿主异常会净化为 `ffi_error`，消息只带宿主异常类型名，不带原始异常文本或 traceback。
-- 宿主函数主动抛出的 `SericiteError` 会按原样传播，适合有意返回精确错误类别；其消息由宿主自行保证不含秘密。
+- FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原样传播，脚本可按 kind 捕获，因此其消息由宿主自行保证不含秘密。
+- 回调抛出契约**之外**的任何 `Exception` 都视为治理失败：其内部状态不再可信，引擎让当前 VM 以**不可捕获**的 `host_error` 终止（消息只含宿主异常的类型名，绝不含异常文本），控制权交还宿主。脚本无法捕获它——裸 `except:` 也不行——也无法借它探测宿主异常类型。请在回调内部捕获自己的异常，把脚本可见的失败翻译成契约 kind。
+- `SystemExit`、`KeyboardInterrupt` 等其他 `BaseException` 是发给宿主的进程级事件：原样穿透 `run()` 上抛。不要授予其依赖库会在对抗输入路径上调用 `sys.exit()` 的函数——这与"不要授予能被驱动着删文件的函数"是同一条纪律。
 - 不要在回调中对同一 VM 再调用 `run()`、`step()` 或其他重入驱动；引擎会拒绝嵌套调度。
 
 ### 5.4 成本责任
@@ -177,7 +178,7 @@ except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
 ```
 
-`resource_exhausted` 与 `internal_error` 只是不能被 **Sericite 脚本** 捕获；宿主可以且应该处理它们。语法、校验、运行时和 FFI 错误的 `kind` 注册表见[语言参考](language-reference.zh-CN.md)。
+`resource_exhausted`、`internal_error` 与 `host_error` 只是不能被 **Sericite 脚本** 捕获；宿主可以且应该处理它们。语法、校验、运行时和 FFI 错误的 `kind` 注册表见[语言参考](language-reference.zh-CN.md)。
 
 ## 8. 不可信代码的宿主检查清单
 

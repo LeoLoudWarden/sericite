@@ -189,16 +189,21 @@ def make_llm_chat(api_url: str, api_key: str, model: str):
                 requests.exceptions.ConnectionError,
             ):
                 if attempt == 2:
-                    raise
+                    raise SericiteError(
+                        "llm_chat: network failure after retries",
+                        kind="runtime_error",
+                    ) from None
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError:
-            # Operator-side diagnostics: the script only sees the sanitized ffi_error; details go to stderr
+            # Operator-side diagnostics go to stderr; the script gets a contract error it may catch and retry
             print(
                 f"[llm_chat 错误] {resp.status_code}: {resp.text[:500]}",
                 file=sys.stderr,
             )
-            raise
+            raise SericiteError(
+                f"llm_chat: HTTP {resp.status_code}", kind="runtime_error"
+            ) from None
         data = resp.json()
         raw_message = data["choices"][0]["message"]
         calls = []
@@ -228,7 +233,12 @@ def make_http_get():
     """Build the http_get granted to the VM: fetch a URL's text content (for looking things up)."""
 
     def http_get(url):
-        resp = requests.get(str(url), timeout=60)
+        try:
+            resp = requests.get(str(url), timeout=60)
+        except requests.exceptions.RequestException:
+            raise SericiteError(
+                "http_get: network failure", kind="runtime_error"
+            ) from None
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError:
@@ -236,7 +246,9 @@ def make_http_get():
                 f"[http_get 错误] {resp.status_code}: {url}",
                 file=sys.stderr,
             )
-            raise
+            raise SericiteError(
+                f"http_get: HTTP {resp.status_code}", kind="runtime_error"
+            ) from None
         return resp.text[:MAX_FETCH_CHARS]
 
     return http_get

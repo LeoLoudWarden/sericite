@@ -119,6 +119,128 @@ class ConstructionTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
 
+class ErrorRenderMeteringTests(unittest.TestCase):
+    @staticmethod
+    def _big_schema_source(size):
+        fields = "\n".join(f"    f{i}: int" for i in range(size))
+        values = ", ".join("0" for _ in range(size))
+        return f"class Big:\n{fields}\nb = Big({values})\n"
+
+    def _delta_for_source(self, source):
+        engine = SericiteEngine()
+        checkpoints = []
+        engine.create_root(
+            source,
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].instruction_count
+                )
+            },
+        ).run()
+        return checkpoints[1] - checkpoints[0]
+
+    def _instruction_delta(self, size, body):
+        return self._delta_for_source(
+            self._big_schema_source(size) + "checkpoint()\n" + body + "checkpoint()\n"
+        )
+
+    def test_attribute_error_message_render_is_charged(self):
+        body = "try:\n    v = b.nosuch\nexcept attribute_error:\n    pass\n"
+        small = self._instruction_delta(10, body)
+        large = self._instruction_delta(200, body)
+        self.assertGreater(large, small)
+
+    def test_contract_error_message_render_is_charged(self):
+        body = "try:\n    x: int = b\nexcept contract_error:\n    pass\n"
+        small = self._instruction_delta(10, body)
+        large = self._instruction_delta(200, body)
+        self.assertGreater(large, small)
+
+    def test_repeated_error_render_hits_instruction_limit(self):
+        body = (
+            "i = 0\n"
+            "while i < 50:\n"
+            "    try:\n"
+            "        v = b.nosuch\n"
+            "    except attribute_error:\n"
+            "        pass\n"
+            "    i = i + 1\n"
+        )
+        engine = SericiteEngine(limits=SericiteLimits(max_instructions=8_000))
+        vm = engine.create_root(self._big_schema_source(200) + body)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_wrap_key_mismatch_charges_key_bytes(self):
+        deltas = []
+        for key_len in (10, 1000):
+            key = "k" * key_len
+            source = (
+                "class P:\n    x: int\n"
+                f"d = {{{key!r}: 1}}\n"
+                "checkpoint()\n"
+                "try:\n"
+                "    wrap(P, d)\n"
+                "except contract_error:\n"
+                "    pass\n"
+                "checkpoint()\n"
+            )
+            deltas.append(self._delta_for_source(source))
+        self.assertGreater(deltas[1], deltas[0])
+
+    def test_missing_field_message_charges_name_bytes(self):
+        deltas = []
+        for name_len in (10, 500):
+            name = "f" * name_len
+            source = (
+                f"class P:\n    {name}: int\n"
+                "checkpoint()\n"
+                "try:\n"
+                "    p = P()\n"
+                "except contract_error:\n"
+                "    pass\n"
+                "checkpoint()\n"
+            )
+            deltas.append(self._delta_for_source(source))
+        self.assertGreater(deltas[1], deltas[0])
+
+    def test_missing_argument_message_charges_name_bytes(self):
+        deltas = []
+        for param_len in (10, 500):
+            name = "a" * param_len
+            source = (
+                f"def f({name}):\n    return 1\n"
+                "checkpoint()\n"
+                "try:\n"
+                "    f()\n"
+                "except arity_error:\n"
+                "    pass\n"
+                "checkpoint()\n"
+            )
+            deltas.append(self._delta_for_source(source))
+        self.assertGreater(deltas[1], deltas[0])
+
+    def test_fit_detail_rescan_is_charged(self):
+        deltas = []
+        for size in (10, 300):
+            fields = "\n".join(f"    f{i}: int" for i in range(size))
+            values = ", ".join("0" for _ in range(size))
+            source = (
+                f"class A:\n{fields}\n"
+                f"class B:\n{fields}\n    extra: int\n"
+                f"a = A({values})\n"
+                "checkpoint()\n"
+                "try:\n"
+                "    x: B = a\n"
+                "except contract_error:\n"
+                "    pass\n"
+                "checkpoint()\n"
+            )
+            deltas.append(self._delta_for_source(source))
+        self.assertGreater(deltas[1], deltas[0])
+
+
 class AttributeAccessTests(unittest.TestCase):
     def test_read_write_field(self):
         out = run("class P:\n    x: int\np = P(1)\np.x = 42\nprint(p.x)\n")

@@ -438,7 +438,11 @@ class _EngineCore:
             if not _contract_holds(value, contract):
                 label = arg if frame.code.origin_vm == context.vm_id else None
                 raise _contract_violation(
-                    "annotated assignment", label, contract, value
+                    "annotated assignment",
+                    label,
+                    contract,
+                    value,
+                    meter=self._meter(context),
                 )
         elif op == isa.MAKE_FUNCTION:
             code, defaults_count, annot_count = arg
@@ -528,6 +532,7 @@ class _EngineCore:
                         frame.return_label,
                         frame.return_contract,
                         value,
+                        meter=self._meter(context),
                     )
             if len(context.frames) == 1:
                 context.state = "done"
@@ -562,6 +567,7 @@ class _EngineCore:
                 function.defaults,
                 display_name=None if visible else "function",
                 hide_params=not visible,
+                meter=self._meter(context),
             )
             self._check_param_contracts(context, function, locals_)
             if len(context.frames) + 1 > context.limits.max_frames:
@@ -630,10 +636,10 @@ class _EngineCore:
                 raw = function.callback(*host_args, **host_kwargs)
             except SericiteError:
                 raise
-            except Exception as exc:  # noqa: BLE001 — host exceptions are sanitized into ffi_error
+            except Exception as exc:  # noqa: BLE001 — uncontracted host failure kills the VM with uncatchable host_error; BaseExceptions (SystemExit, KeyboardInterrupt) propagate to the host
                 raise SericiteError(
                     f"host function '{function.name}' failed with {type(exc).__name__}",
-                    kind="ffi_error",
+                    kind="host_error",
                 ) from None
             result_budget = [
                 context.limits.max_list_size + context.limits.max_dict_size
@@ -657,6 +663,7 @@ class _EngineCore:
                 function.defaults,
                 display_name=function.name,
                 hide_params=True,
+                meter=self._meter(context),
             )
             self._check_param_contracts(context, function, locals_)
             if len(context.frames) + 1 > context.limits.max_frames:
@@ -748,7 +755,9 @@ class _EngineCore:
                 where = f"argument {shown}"
                 if func_name is not None:
                     where += f" of {func_name}"
-                raise _contract_violation(where, label, contract, value)
+                raise _contract_violation(
+                    where, label, contract, value, meter=self._meter(context)
+                )
 
     def _construct_record(
         self,
@@ -780,6 +789,7 @@ class _EngineCore:
             values[key] = value
         missing = [name for name, _ in fields if name not in values]
         if missing:
+            self._meter(context).work(sum(len(name) for name in missing))
             raise SericiteError(
                 f"schema() missing field(s): {', '.join(missing)}",
                 kind="contract_error",
@@ -788,7 +798,9 @@ class _EngineCore:
             value = values[name]
             self._meter(context).work(_contract_cost(contract))
             if not _contract_holds(value, contract):
-                raise _contract_violation(f"field {name}", None, contract, value)
+                raise _contract_violation(
+                    f"field {name}", None, contract, value, meter=self._meter(context)
+                )
         self._meter(context).allocate(64 + len(fields) * 16)
         return SericiteRecord(schema, {name: values[name] for name, _ in fields})
 
@@ -808,14 +820,16 @@ class _EngineCore:
         schema = target.schema
         if attr not in schema.field_map:
             raise SericiteError(
-                f"{_record_text(target, hint)} has no field '{attr}' "
+                f"{_record_text(target, hint, meter=self._meter(context))} has no field '{attr}' "
                 "(fields are fixed at construction)",
                 kind="attribute_error",
             )
         contract = schema.field_map[attr]
         self._meter(context).work(_contract_cost(contract))
         if not _contract_holds(value, contract):
-            raise _contract_violation(f"field {attr}", None, contract, value)
+            raise _contract_violation(
+                f"field {attr}", None, contract, value, meter=self._meter(context)
+            )
         target.fields[attr] = value
 
     def _bind_arguments(
@@ -826,6 +840,7 @@ class _EngineCore:
         defaults: tuple[object, ...] = (),
         display_name: str | None = None,
         hide_params: bool = False,
+        meter: Meter | None = None,
     ) -> dict[str, object]:
         # hide_params: when the code does not belong to the current VM, parameter
         # names are definition-side internals — errors use positional indices instead (invariant 16).
@@ -862,6 +877,8 @@ class _EngineCore:
                     locals_[name] = defaults[offset]
         if len(locals_) != len(params):
             missing = [shown(name) for name in params if name not in locals_]
+            if meter is not None:
+                meter.work(sum(len(name) for name in missing))
             raise SericiteError(
                 f"{fname}() missing argument(s): {', '.join(missing)}",
                 kind="arity_error",
