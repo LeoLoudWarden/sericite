@@ -1,6 +1,6 @@
 # Sericite 语言参考
 
-Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.6.1 的语言行为，面向正在编写 **Sericite 脚本** 的读者；如果你要在 Python 中创建和驱动 VM，请读[宿主参考](host-reference.zh-CN.md)。
+Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.6.2 的语言行为，面向正在编写 **Sericite 脚本** 的读者；如果你要在 Python 中创建和驱动 VM，请读[宿主参考](host-reference.zh-CN.md)。
 
 ## 1. 基本样子
 
@@ -138,7 +138,7 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝；不可捕获的 `resource_exhausted` 与 `internal_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝；不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
 
 可捕获 kind 的完整列表：
 
@@ -146,7 +146,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
 
-异常可跨函数传播。`resource_exhausted`（资源耗尽）与 `internal_error` 是已定义的 kind，但不可捕获。
+异常可跨函数传播。`resource_exhausted`（配额耗尽）、`internal_error`（引擎内部错误）与 `host_error`（宿主回调在 FFI 异常契约之外失败）是已定义的 kind，但不可捕获。
 
 ## 6. 内建函数
 

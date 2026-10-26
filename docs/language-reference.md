@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.6.1 for authors of **Sericite scripts**. If you want to create and drive VMs from Python, read the [host reference](host-reference.md).
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.6.2 for authors of **Sericite scripts**. If you want to create and drive VMs from Python, read the [host reference](host-reference.md).
 
 ## 1. What it looks like
 
@@ -138,7 +138,7 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. The uncatchable kinds `resource_exhausted` and `internal_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. The uncatchable kinds `resource_exhausted`, `internal_error`, and `host_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
 
 The catchable kinds are:
 
@@ -146,7 +146,7 @@ The catchable kinds are:
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
 
-Exceptions propagate across functions. `resource_exhausted` (quota exhaustion) and `internal_error` are defined kinds but are not catchable.
+Exceptions propagate across functions. `resource_exhausted` (quota exhaustion), `internal_error` (engine bug), and `host_error` (a host callback failed outside the FFI exception contract) are defined kinds but are not catchable.
 
 ## 6. Built-in functions
 

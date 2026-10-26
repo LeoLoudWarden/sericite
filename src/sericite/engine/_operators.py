@@ -187,7 +187,7 @@ class _EngineOperators:
             if attr in value.fields:
                 return value.fields[attr]
             raise SericiteError(
-                f"{_record_text(value, hint)} has no field '{attr}'",
+                f"{_record_text(value, hint, meter=self._meter(context))} has no field '{attr}'",
                 kind="attribute_error",
             )
         if isinstance(value, VMHandle) and attr in VMHandle._METHODS:
@@ -360,8 +360,10 @@ class _EngineOperators:
     def _wrap_work(schema: object, data: object) -> int:
         if not isinstance(schema, SericiteSchema) or type(data) is not dict:
             return 0
-        return len(data) + sum(
-            _contract_cost(contract) for _, contract in schema.fields
+        return (
+            len(data)
+            + sum(len(key) for key in data if type(key) is str)
+            + sum(_contract_cost(contract) for _, contract in schema.fields)
         )
 
     @staticmethod
@@ -397,7 +399,9 @@ class _EngineOperators:
         for name, contract in schema.fields:
             value = data[name]
             if not _contract_holds(value, contract):
-                raise _contract_violation(f"field {name}", None, contract, value)
+                raise _contract_violation(
+                    f"field {name}", None, contract, value, meter=self._meter(context)
+                )
         return SericiteRecord(schema, {name: data[name] for name, _ in schema.fields})
 
     @staticmethod
