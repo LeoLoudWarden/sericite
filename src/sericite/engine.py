@@ -768,13 +768,15 @@ class SericiteEngine:
                         f"unhashable key type: {_type_name(key)}",
                         kind="type_error",
                     )
+                if type(key) is str:
+                    self._meter(context).work(len(key))
                 mapping[key] = pairs[position + 1]
             self._meter(context).allocate(arg * 16)
             stack.append(mapping)
         elif op == isa.LOAD_INDEX:
             index = stack.pop()
             value = stack.pop()
-            stack.append(self._index(value, index))
+            stack.append(self._index(context, value, index))
         elif op == isa.STORE_INDEX:
             index = stack.pop()
             target = stack.pop()
@@ -1774,13 +1776,15 @@ class SericiteEngine:
             kind="type_error",
         )
 
-    def _index(self, value: object, index: object) -> object:
+    def _index(self, context: VMContext, value: object, index: object) -> object:
         if type(value) is dict:
             if type(index) not in (str, int, float, bool) and index is not None:
                 raise SericiteError(
                     f"unhashable key type: {_type_name(index)}",
                     kind="type_error",
                 )
+            if type(index) is str:
+                self._meter(context).work(len(index))
             if index not in value:
                 raise SericiteError(
                     f"missing key: {_to_str(index)!s}", kind="key_error"
@@ -1808,6 +1812,8 @@ class SericiteEngine:
                     f"unhashable key type: {_type_name(index)}",
                     kind="type_error",
                 )
+            if type(index) is str:
+                self._meter(context).work(len(index))
             if index not in target and len(target) >= context.limits.max_dict_size:
                 raise SericiteError(
                     "dict size limit exceeded", kind="resource_exhausted"
@@ -2201,7 +2207,7 @@ class SericiteEngine:
             result = self._step_instruction(handle, meter=meter)
         else:
             result = getattr(handle, attr)(*args, **kwargs)
-        _estimate_size(result, [10_000], meter=result_meter)
+        _estimate_size(result, meter=result_meter)
         return result
 
     def _snapshot(
@@ -2438,11 +2444,12 @@ def _const_bytes(code: isa.CodeUnit) -> int:
     return total
 
 
-def _estimate_size(value: object, budget: list[int], *, meter: Meter) -> int:
-    """Charge ownership transfer and estimation work incrementally per bounded node."""
-    if budget[0] <= 0:
-        return 0
-    budget[0] -= 1
+def _estimate_size(value: object, *, meter: Meter) -> None:
+    """Charge ownership transfer and estimation work for every node of a result.
+
+    Every node is charged; if the caller's quotas cannot cover the full result,
+    the meter raises and the result is not delivered.
+    """
     meter.work(1)
     if type(value) is str:
         meter.work(len(value) // 64)
@@ -2455,14 +2462,12 @@ def _estimate_size(value: object, budget: list[int], *, meter: Meter) -> int:
         size = 8
     meter.allocate(size)
     if type(value) is list:
-        return size + sum(_estimate_size(item, budget, meter=meter) for item in value)
-    if type(value) is dict:
-        return size + sum(
-            _estimate_size(key, budget, meter=meter)
-            + _estimate_size(item, budget, meter=meter)
-            for key, item in value.items()
-        )
-    return size
+        for item in value:
+            _estimate_size(item, meter=meter)
+    elif type(value) is dict:
+        for key, item in value.items():
+            _estimate_size(key, meter=meter)
+            _estimate_size(item, meter=meter)
 
 
 def _truthy(value: object) -> bool:

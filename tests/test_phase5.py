@@ -307,9 +307,9 @@ class SecurityQuotaTests(unittest.TestCase):
         estimate_counts = []
         original_estimate = _estimate_size
 
-        def observed_estimate(value, budget, *, meter):
+        def observed_estimate(value, *, meter):
             estimate_counts.append(engine._contexts[0].instruction_count)
-            return original_estimate(value, budget, meter=meter)
+            return original_estimate(value, meter=meter)
 
         source = 'sub = VM("value = [0' + ", 0" * 99 + ']")\n'
         with patch("sericite.engine._estimate_size", observed_estimate):
