@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from . import isa
+from .accounting import AccountRoute, AllocationPermit, Meter
 from .compiler import RESERVED_NAMES, VM_METHODS, compile_source
 from .errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from .errors import SericiteError
@@ -13,6 +15,8 @@ from .vfs import VirtualFileSystem
 
 _TERMINAL_STATES = {"done", "error", "resource_exhausted", "terminated"}
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
+_MAX_RENDER_NODES = 10_000
+_MAX_RENDER_CHARS = 1_048_576
 _VM_OPTIONS = {
     "max_instructions",
     "max_output_bytes",
@@ -147,10 +151,7 @@ class SericiteSchema:
         )
 
     def __repr__(self) -> str:
-        inner = ", ".join(
-            f"{name}: {_contract_text(contract)}" for name, contract in self.fields
-        )
-        return f"schema({inner})"
+        return _schema_repr(self)
 
 
 class SericiteRecord:
@@ -169,20 +170,46 @@ def _contract_key(contract: object) -> object:
     return ("tag", contract)
 
 
-def _contract_text(contract: object, label: str | None = None, _depth: int = 0) -> str:
+def _contract_text(
+    contract: object,
+    label: str | None = None,
+    _depth: int = 0,
+    _seen: set[int] | None = None,
+    _budget: list[int] | None = None,
+) -> str:
+    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True)
+    if _seen is not None:
+        renderer.seen = _seen
+    if _budget is not None:
+        renderer.remaining_nodes = _budget[0]
     if isinstance(contract, SericiteSchema):
-        if _depth >= 64:
-            return "..."
-        body = (
-            "{"
-            + ", ".join(
-                f"{name}: {_contract_text(inner, None, _depth + 1)}"
-                for name, inner in contract.fields
-            )
-            + "}"
-        )
-        return f"{label} {body}" if label else body
-    return label or str(contract)
+        if label:
+            renderer._add(label + " ")
+        renderer.render_contract(contract, _depth)
+    else:
+        renderer._visit()
+        renderer._add(label or str(contract))
+    if _budget is not None:
+        _budget[0] = renderer.remaining_nodes
+    return renderer.text()
+
+
+def _schema_repr(
+    schema: SericiteSchema,
+    seen: set[int] | None = None,
+    budget: list[int] | None = None,
+    *,
+    meter: Meter | None = None,
+) -> str:
+    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True, meter=meter)
+    if seen is not None:
+        renderer.seen = seen
+    if budget is not None:
+        renderer.remaining_nodes = budget[0]
+    renderer.render_schema(schema)
+    if budget is not None:
+        budget[0] = renderer.remaining_nodes
+    return renderer.text()
 
 
 def _normalize_contract(value: object) -> object:
@@ -284,13 +311,24 @@ def _make_iterator(value: object) -> _Iterator:
     raise SericiteError(f"'{_type_name(value)}' is not iterable", kind="type_error")
 
 
+def _no_work(*args: object, **kwargs: object) -> int:
+    return 0
+
+
+def _no_allocation(*args: object, **kwargs: object) -> int:
+    return 0
+
+
 @dataclass(frozen=True, repr=False)
 class _NativeFunction:
+    """A trusted native operation with mandatory home, work, and allocation contracts."""
+
     name: str
-    callback: Callable[..., object]
-    # The world builtins belong to (the defining VM); when not None and not the
-    # executing context, its charging is mirrored into the executing context (causal charging).
-    home: object = None
+    execute: Callable[..., object]
+    home: object
+    work: Callable[..., int]
+    allocation: Callable[..., int | AllocationPermit]
+    needs_caller: bool = False
 
     def __repr__(self) -> str:
         return f"<function {self.name}>"
@@ -342,6 +380,7 @@ class VMContext:
     alloc_bytes: int = 0
     child_count: int = 0
     running: bool = False
+    meter_stack: list[Meter] = field(default_factory=list)
 
     @property
     def filename(self) -> str:
@@ -357,17 +396,21 @@ class VMHandle:
 
     def run(self, inputs: object = None) -> str:
         if inputs is not None:
-            if not isinstance(inputs, (list, tuple)):
+            if not isinstance(inputs, (list, tuple)) or any(
+                not isinstance(value, str) for value in inputs
+            ):
                 raise SericiteError("VM.run inputs must be a list of strings")
-            for value in inputs:
-                self.feed_input(value)
+            context = self._engine._context(self)
+            context.io.feed_batch_trusted(inputs)
+            if context.state == "waiting_input":
+                context.state = "ready"
         return self._engine._run(self)
 
     def feed_input(self, value: object) -> None:
         if not isinstance(value, str):
             raise SericiteError("VM input must be a string")
         context = self._engine._context(self)
-        context.io.feed_input(value)
+        context.io.feed_input_trusted(value)
         if context.state == "waiting_input":
             context.state = "ready"
 
@@ -392,7 +435,7 @@ class VMHandle:
         return self._engine._context(self).fs.read_file(path)
 
     def write_file(self, path: object, text: object) -> None:
-        self._engine._context(self).fs.write_file(path, text)
+        self._engine._context(self).fs.write_file_trusted(path, text)
 
     def list_dir(self, path: object) -> list[str]:
         return self._engine._context(self).fs.list_dir(path)
@@ -409,6 +452,8 @@ class SericiteEngine:
     def __init__(self, limits: SericiteLimits | None = None) -> None:
         self._limits = limits or SericiteLimits()
         self._contexts: dict[int, VMContext] = {}
+        self._account_routes: dict[int, AccountRoute] = {}
+        self._meters: dict[int, Meter] = {}
         self._next_vm_id = 0
 
     def create_root(
@@ -492,7 +537,10 @@ class SericiteEngine:
         if not any(instr.stmt_start for instr in code.instrs):
             context.state = "done"
         self._contexts[vm_id] = context
-        self._charge_alloc(context, _const_bytes(code))
+        route = AccountRoute(context, resolve=self._contexts.__getitem__)
+        self._account_routes[vm_id] = route
+        self._meters[vm_id] = Meter(route)
+        self._meter(context).allocate(_const_bytes(code))
         return VMHandle(self, vm_id)
 
     def _context(self, handle: VMHandle) -> VMContext:
@@ -501,6 +549,24 @@ class SericiteEngine:
                 "VM handle belongs to another engine", kind="internal_error"
             )
         return self._contexts[handle._vm_id]
+
+    def _meter(self, context: VMContext) -> Meter:
+        if context.meter_stack:
+            return context.meter_stack[-1]
+        return self._meters[context.vm_id]
+
+    @contextmanager
+    def _causal_meter(self, *contexts: VMContext) -> Iterator[Meter]:
+        unique = list({id(context): context for context in contexts}.values())
+        meter = Meter(AccountRoute(*unique, resolve=self._contexts.__getitem__))
+        for context in unique:
+            context.meter_stack.append(meter)
+        try:
+            yield meter
+        finally:
+            for context in reversed(unique):
+                if context.meter_stack.pop() is not meter:
+                    raise SericiteError("meter stack corrupted", kind="internal_error")
 
     def _run(self, handle: VMHandle) -> str:
         context = self._context(handle)
@@ -517,12 +583,14 @@ class SericiteEngine:
             raise context.error
         return context.io.stdout()
 
-    def _step(self, handle: VMHandle) -> dict[str, object]:
+    def _step(
+        self, handle: VMHandle, *, meter: Meter | None = None
+    ) -> dict[str, object]:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
         if context.state != "ready":
-            return self._snapshot(context)
+            return self._snapshot(context, meter=meter)
         context.running = True
         try:
             start_depth = len(context.frames)
@@ -539,14 +607,16 @@ class SericiteEngine:
                 context.last_line = start_line
         finally:
             context.running = False
-        return self._snapshot(context)
+        return self._snapshot(context, meter=meter)
 
-    def _step_instruction(self, handle: VMHandle) -> dict[str, object]:
+    def _step_instruction(
+        self, handle: VMHandle, *, meter: Meter | None = None
+    ) -> dict[str, object]:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
         if context.state != "ready":
-            return self._snapshot(context)
+            return self._snapshot(context, meter=meter)
         context.running = True
         try:
             line = self._current_instr(context).line
@@ -554,7 +624,7 @@ class SericiteEngine:
                 context.last_line = line
         finally:
             context.running = False
-        return self._snapshot(context)
+        return self._snapshot(context, meter=meter)
 
     def _current_instr(self, context: VMContext) -> isa.Instr:
         frame = context.frames[-1]
@@ -565,19 +635,8 @@ class SericiteEngine:
             return False
         frame = context.frames[-1]
         instr = frame.code.instrs[frame.pc]
-        context.instruction_count += 1
-        ancestor = context
-        while ancestor.parent_id is not None:
-            ancestor = self._contexts[ancestor.parent_id]
-            ancestor.instruction_count += 1
-        if context.instruction_count > context.limits.max_instructions:
-            self._fail(
-                context,
-                SericiteError("instruction limit exceeded", kind="resource_exhausted"),
-                instr.line,
-            )
-            return False
         try:
+            self._meter(context).work(1)
             self._dispatch(context, frame, instr)
         except InputRequired:
             context.state = "waiting_input"
@@ -691,7 +750,7 @@ class SericiteEngine:
             items = stack[len(stack) - arg :] if arg else []
             if arg:
                 del stack[len(stack) - arg :]
-            self._charge_alloc(context, arg * 8)
+            self._meter(context).allocate(arg * 8)
             stack.append(list(items))
         elif op == isa.BUILD_DICT:
             if arg > context.limits.max_dict_size:
@@ -710,7 +769,7 @@ class SericiteEngine:
                         kind="type_error",
                     )
                 mapping[key] = pairs[position + 1]
-            self._charge_alloc(context, arg * 16)
+            self._meter(context).allocate(arg * 16)
             stack.append(mapping)
         elif op == isa.LOAD_INDEX:
             index = stack.pop()
@@ -773,13 +832,13 @@ class SericiteEngine:
                     "duplicate field name in schema", kind="contract_error"
                 )
             contracts = tuple(_normalize_contract(contract) for contract in raw)
-            self._charge_alloc(context, 64 + count * 16)
+            self._meter(context).allocate(64 + count * 16)
             stack.append(SericiteSchema(tuple(zip(names, contracts))))
         elif op == isa.CHECK_ANNOT:
             contract_value = stack.pop()
             value = stack[-1]
             contract = _normalize_contract(contract_value)
-            self._charge_work(context, _contract_cost(contract))
+            self._meter(context).work(_contract_cost(contract))
             if not _contract_holds(value, contract):
                 label = arg if frame.code.origin_vm == context.vm_id else None
                 raise _contract_violation(
@@ -813,7 +872,7 @@ class SericiteEngine:
             )
             granted = frame.granted if frame.granted is not None else context.granted
             if closure:
-                self._charge_alloc(context, 64 + len(closure) * 8)
+                self._meter(context).allocate(64 + len(closure) * 8)
             stack.append(
                 SericiteFunction(
                     code,
@@ -827,8 +886,11 @@ class SericiteEngine:
                 )
             )
         elif op == isa.GET_ITER:
-            iterator = _make_iterator(stack.pop())
-            self._charge_alloc(context, len(iterator.items) * 8)
+            value = stack.pop()
+            if isinstance(value, (str, dict)):
+                self._meter(context).work(len(value))
+            iterator = _make_iterator(value)
+            self._meter(context).allocate(len(iterator.items) * 8)
             frame.locals[arg] = iterator
         elif op == isa.FOR_ITER:
             name, target = arg
@@ -863,7 +925,7 @@ class SericiteEngine:
         elif op == isa.RETURN:
             value = stack.pop() if stack else None
             if frame.return_contract is not None:
-                self._charge_work(context, _contract_cost(frame.return_contract))
+                self._meter(context).work(_contract_cost(frame.return_contract))
                 if not _contract_holds(value, frame.return_contract):
                     raise _contract_violation(
                         f"return value of {frame.display_name or frame.code.name}",
@@ -935,44 +997,38 @@ class SericiteEngine:
             return
         if isinstance(function, _NativeFunction):
             home = function.home
-            mirror = home is not None and home is not context
-            if mirror:
-                before_home = (home.instruction_count, home.alloc_bytes)
-                before_self = (context.instruction_count, context.alloc_bytes)
+            contexts = (context,) if home is None else (context, home)
+            if function.needs_caller:
+                kwargs["_caller_context"] = context
+                kwargs["_caller_meter"] = self._meter(context)
             try:
-                try:
-                    result = function.callback(*args, **kwargs)
-                except InputRequired:
-                    raise
-                except SericiteError:
-                    raise
-                except TypeError:
-                    raise SericiteError(
-                        f"invalid arguments for {function.name}", kind="type_error"
-                    ) from None
-            finally:
-                if mirror:
-                    # World services belong to home, but their resource cost causally
-                    # belongs to the triggering caller: mirror home's ledger delta into
-                    # the layers between the caller and home, minus what was already
-                    # charged along the caller's ancestor chain during the callback
-                    # (e.g. a new child VM's initial allocation), to avoid double charging.
-                    work_done = home.instruction_count - before_home[0]
-                    alloc_done = home.alloc_bytes - before_home[1]
-                    work_done -= context.instruction_count - before_self[0]
-                    alloc_done -= context.alloc_bytes - before_self[1]
-                    self._mirror_charge(
-                        context, home, max(work_done, 0), max(alloc_done, 0)
-                    )
+                with self._causal_meter(*contexts) as meter:
+                    meter.work(function.work(*args, **kwargs))
+                    allocation = function.allocation(*args, **kwargs)
+                    if isinstance(allocation, AllocationPermit):
+                        kwargs["_allocation_permit"] = allocation
+                    else:
+                        meter.allocate(allocation)
+                    result = function.execute(*args, **kwargs)
+            except InputRequired:
+                raise
+            except SericiteError:
+                raise
+            except TypeError:
+                raise SericiteError(
+                    f"invalid arguments for {function.name}", kind="type_error"
+                ) from None
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(result)
             return
         if isinstance(function, _GrantedHostFunction):
+            meter = self._meter(context)
             budget = [context.limits.max_list_size + context.limits.max_dict_size]
-            host_args = [_to_host(value, budget) for value in args]
+            host_args = [_to_host(value, budget, meter=meter) for value in args]
             host_kwargs = {
-                key: _to_host(value, budget) for key, value in kwargs.items()
+                key: _to_host(value, budget, meter=meter)
+                for key, value in kwargs.items()
             }
             try:
                 raw = function.callback(*host_args, **host_kwargs)
@@ -986,13 +1042,12 @@ class SericiteEngine:
             result_budget = [
                 context.limits.max_list_size + context.limits.max_dict_size
             ]
-            result = _from_host(raw, result_budget, context.limits.max_string_bytes)
-            spent = (
-                context.limits.max_list_size
-                + context.limits.max_dict_size
-                - result_budget[0]
+            result = _from_host(
+                raw,
+                result_budget,
+                context.limits,
+                meter=meter,
             )
-            self._charge_alloc(context, spent * 8)
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(result)
@@ -1048,7 +1103,7 @@ class SericiteEngine:
         for name, cell in cells.items():
             if name in locals_:
                 cell.value = locals_.pop(name)
-        self._charge_alloc(context, len(cells) * 64)
+        self._meter(context).allocate(len(cells) * 64)
         return Frame(
             code=code,
             locals=locals_,
@@ -1090,7 +1145,7 @@ class SericiteEngine:
         ):
             if contract is None:
                 continue
-            self._charge_work(context, _contract_cost(contract))
+            self._meter(context).work(_contract_cost(contract))
             value = locals_[name]
             if not _contract_holds(value, contract):
                 shown = name if visible else str(index + 1)
@@ -1135,10 +1190,10 @@ class SericiteEngine:
             )
         for name, contract in fields:
             value = values[name]
-            self._charge_work(context, _contract_cost(contract))
+            self._meter(context).work(_contract_cost(contract))
             if not _contract_holds(value, contract):
                 raise _contract_violation(f"field {name}", None, contract, value)
-        self._charge_alloc(context, 64 + len(fields) * 16)
+        self._meter(context).allocate(64 + len(fields) * 16)
         return SericiteRecord(schema, {name: values[name] for name, _ in fields})
 
     def _store_attr(
@@ -1162,7 +1217,7 @@ class SericiteEngine:
                 kind="attribute_error",
             )
         contract = schema.field_map[attr]
-        self._charge_work(context, _contract_cost(contract))
+        self._meter(context).work(_contract_cost(contract))
         if not _contract_holds(value, contract):
             raise _contract_violation(f"field {attr}", None, contract, value)
         target.fields[attr] = value
@@ -1264,27 +1319,61 @@ class SericiteEngine:
         caller: VMContext | None = None,
     ) -> _NativeFunction | None:
         if name == "input":
-            return _NativeFunction("input", lambda: self._read_input(home), home)
+            return _NativeFunction(
+                "input",
+                lambda: self._read_input(home),
+                home,
+                work=_no_work,
+                allocation=_no_allocation,
+            )
         if name == "print":
             return _NativeFunction(
                 "print",
                 lambda *values, end="\n": self._print(home, values, end),
                 home,
+                work=_no_work,
+                allocation=_no_allocation,
             )
         if name == "len":
-            return _NativeFunction("len", self._len)
+            return _NativeFunction(
+                "len",
+                self._len,
+                None,
+                work=_no_work,
+                allocation=_no_allocation,
+            )
         if name == "int":
             return _NativeFunction(
-                "int", lambda value: self._convert_int(home, value), home
+                "int",
+                lambda value: self._convert_int(home, value),
+                home,
+                work=self._string_work,
+                allocation=_no_allocation,
             )
         if name == "float":
-            return _NativeFunction("float", self._convert_float)
+            return _NativeFunction(
+                "float",
+                lambda value: self._convert_float(home, value),
+                home,
+                work=self._string_work,
+                allocation=_no_allocation,
+            )
         if name == "str":
             return _NativeFunction(
-                "str", lambda value: self._str_builtin(home, value), home
+                "str",
+                lambda value: self._str_builtin(home, value),
+                home,
+                work=_no_work,
+                allocation=_no_allocation,
             )
         if name == "range":
-            return _NativeFunction("range", lambda *args: self._range(home, args), home)
+            return _NativeFunction(
+                "range",
+                lambda *args: self._range(home, args),
+                home,
+                work=self._range_work,
+                allocation=_no_allocation,
+            )
         if name == "any":
             return _ANY
         if name in _TAG_CONTRACTS:
@@ -1294,25 +1383,51 @@ class SericiteEngine:
                 "wrap",
                 lambda schema, data: self._wrap(home, schema, data),
                 home,
+                work=self._wrap_work,
+                allocation=self._wrap_allocation,
             )
         if name == "unwrap":
             return _NativeFunction(
-                "unwrap", lambda record: self._unwrap(home, record), home
+                "unwrap",
+                lambda record: self._unwrap(home, record),
+                home,
+                work=self._unwrap_work,
+                allocation=self._unwrap_allocation,
             )
         if name == "read_file":
             return _NativeFunction(
-                "read_file", lambda path: self._read_file(home, path), home
+                "read_file",
+                lambda path: self._read_file(home, path),
+                home,
+                work=home.fs.path_work,
+                allocation=_no_allocation,
             )
         if name == "write_file":
             return _NativeFunction(
                 "write_file",
-                lambda path, text: self._write_file(home, path, text),
+                lambda path, text, *, _allocation_permit=None: self._write_file(
+                    home, path, text, _allocation_permit
+                ),
                 home,
+                work=home.fs.write_work,
+                allocation=lambda path, text: self._vfs_allocation(home, path, text),
             )
         if name == "list_dir":
-            return _NativeFunction("list_dir", home.fs.list_dir, home)
+            return _NativeFunction(
+                "list_dir",
+                lambda path: self._list_dir(home, path),
+                home,
+                work=home.fs.list_dir_work,
+                allocation=_no_allocation,
+            )
         if name == "path_exists":
-            return _NativeFunction("path_exists", home.fs.path_exists, home)
+            return _NativeFunction(
+                "path_exists",
+                home.fs.path_exists,
+                home,
+                work=home.fs.path_work,
+                allocation=_no_allocation,
+            )
         if name == "VM":
             return _NativeFunction(
                 "VM",
@@ -1320,8 +1435,14 @@ class SericiteEngine:
                     home, source, kwargs, cap=caller
                 ),
                 home,
+                work=self._source_work,
+                allocation=_no_allocation,
             )
         return None
+
+    @staticmethod
+    def _source_work(source: object, **kwargs: object) -> int:
+        return 1 + len(source) // 4 if isinstance(source, str) else 0
 
     def _create_child(
         self,
@@ -1339,7 +1460,6 @@ class SericiteEngine:
         causal = cap if cap is not None else parent
         if not isinstance(source, str):
             raise SericiteError("VM source must be a string", kind="type_error")
-        self._charge_work(parent, 1 + len(source) // 4)
         granted = self._validate_child_functions(parent, config.pop("functions", None))
         limits = parent.limits
         if causal is not parent:
@@ -1421,26 +1541,55 @@ class SericiteEngine:
             raise SericiteError(
                 f"print() end must be str, got {_type_name(end)}", kind="type_error"
             )
-        line = " ".join(_to_str(v) for v in values) + end
-        self._charge_work(context, len(line) // 64)
+        remaining = context.io.remaining_output_bytes
+        meter = self._meter(context)
+        renderer = _StringRenderer(
+            _MAX_RENDER_CHARS if remaining is None else remaining,
+            output=True,
+            meter=meter,
+        )
+        for index, value in enumerate(values):
+            if index:
+                renderer._add(" ")
+            renderer.render(value)
+        renderer._add(end)
+        line = renderer.text()
+        meter.work(len(line) // 64)
         context.io.write_output(line)
 
     def _read_input(self, context: VMContext) -> str:
         value = context.io.read_input()
         if len(value) > context.limits.max_string_bytes:
             raise SericiteError("string size limit exceeded", kind="resource_exhausted")
-        self._charge_alloc(context, len(value) * 4)
+        self._meter(context).allocate(len(value) * 4)
         return value
 
     def _read_file(self, context: VMContext, path: object) -> str:
         text = context.fs.read_file(path)
-        self._charge_alloc(context, len(text) * 4)
+        self._meter(context).allocate(len(text) * 4)
         return text
 
-    def _write_file(self, context: VMContext, path: object, text: object) -> None:
-        if isinstance(text, str):
-            self._charge_alloc(context, len(text) * 4)
-        context.fs.write_file(path, text)
+    def _vfs_allocation(
+        self, context: VMContext, path: object, text: object
+    ) -> AllocationPermit:
+        amount = context.fs.write_allocation(path, text)
+        return self._meter(context).reserve(context.fs, "write", amount)
+
+    def _write_file(
+        self,
+        context: VMContext,
+        path: object,
+        text: object,
+        permit: AllocationPermit,
+    ) -> None:
+        context.fs.write_file(path, text, permit=permit)
+
+    def _list_dir(self, context: VMContext, path: object) -> list[str]:
+        result = context.fs.list_dir(path)
+        if len(result) > context.limits.max_list_size:
+            raise SericiteError("list size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(len(result) * 8)
+        return result
 
     def _len(self, value: object) -> int:
         if isinstance(value, (str, list, dict)):
@@ -1479,14 +1628,14 @@ class SericiteEngine:
         )
 
     def _str_builtin(self, context: VMContext, value: object) -> str:
-        result = _to_str(value)
-        if len(result) > context.limits.max_string_bytes:
-            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
-        self._charge_alloc(context, len(result) * 4)
-        self._charge_work(context, len(result) // 64)
-        return result
+        meter = self._meter(context)
+        return _to_str(value, context.limits.max_string_bytes, meter=meter)
 
-    def _convert_float(self, value: object) -> float:
+    @staticmethod
+    def _string_work(value: object) -> int:
+        return len(value) if isinstance(value, str) else 0
+
+    def _convert_float(self, context: VMContext, value: object) -> float:
         if type(value) is bool:
             return float(value)
         if type(value) in (int, float):
@@ -1495,13 +1644,21 @@ class SericiteEngine:
             try:
                 return float(value.strip())
             except ValueError:
+                shown = value if len(value) <= 64 else value[:61] + "..."
                 raise SericiteError(
-                    f"cannot convert to float: {value!r}",
+                    f"cannot convert to float: {shown!r}",
                     kind="conversion_error",
                 ) from None
         raise SericiteError(
             f"cannot convert {_type_name(value)} to float", kind="type_error"
         )
+
+    @staticmethod
+    def _range_work(*args: object) -> int:
+        try:
+            return len(range(*args))
+        except (TypeError, ValueError, OverflowError):
+            return 0
 
     def _range(self, context: VMContext, args: tuple[object, ...]) -> list[int]:
         if not 1 <= len(args) <= 3:
@@ -1520,7 +1677,7 @@ class SericiteEngine:
         result = range(*args)
         if len(result) > context.limits.max_list_size:
             raise SericiteError("list size limit exceeded", kind="resource_exhausted")
-        self._charge_alloc(context, len(result) * 8)
+        self._meter(context).allocate(len(result) * 8)
         return list(result)
 
     def _binary_op(
@@ -1532,8 +1689,8 @@ class SericiteEngine:
                     raise SericiteError(
                         "string size limit exceeded", kind="resource_exhausted"
                     )
-                self._charge_alloc(context, (len(left) + len(right)) * 4)
-                self._charge_work(context, (len(left) + len(right)) // 64)
+                self._meter(context).allocate((len(left) + len(right)) * 4)
+                self._meter(context).work((len(left) + len(right)) // 64)
                 return left + right
             if type(left) is list and type(right) is list:
                 result = left + right
@@ -1541,8 +1698,8 @@ class SericiteEngine:
                     raise SericiteError(
                         "list size limit exceeded", kind="resource_exhausted"
                     )
-                self._charge_alloc(context, len(result) * 8)
-                self._charge_work(context, len(result))
+                self._meter(context).allocate(len(result) * 8)
+                self._meter(context).work(len(result))
                 return result
             if _is_number(left) and _is_number(right):
                 return self._check_int(context, left + right)
@@ -1575,66 +1732,6 @@ class SericiteEngine:
             )
         return value
 
-    def _mirror_charge(
-        self, context: VMContext, home: VMContext, work: int, alloc: int
-    ) -> None:
-        """Mirror home's ledger delta into the caller and the layers between it and home.
-
-        home and its ancestors are already covered by the original accounting;
-        if home is not on the caller's ancestor chain (upward/cross-sibling),
-        mirror into the caller's entire ancestor chain.
-        """
-        current = context
-        while current is not home:
-            if work > 0:
-                current.instruction_count += work
-                if current.instruction_count > current.limits.max_instructions:
-                    raise SericiteError(
-                        "instruction limit exceeded", kind="resource_exhausted"
-                    )
-            if alloc > 0:
-                current.alloc_bytes += alloc
-                if current.alloc_bytes > current.limits.max_total_bytes:
-                    raise SericiteError(
-                        "total memory limit exceeded", kind="resource_exhausted"
-                    )
-            if current.parent_id is None:
-                break
-            current = self._contexts[current.parent_id]
-
-    def _charge_alloc(self, context: VMContext, amount: int) -> None:
-        """Account a newly created object (approximate bytes, monotonically increasing), charging ancestors too.
-
-        Accounting accumulates up the ancestor chain; any ring exceeding its own
-        quota fails — otherwise an ancestor's quota would only be checked when
-        it next allocates itself.
-        """
-        current = context
-        while True:
-            current.alloc_bytes += amount
-            if current.alloc_bytes > current.limits.max_total_bytes:
-                raise SericiteError(
-                    "total memory limit exceeded", kind="resource_exhausted"
-                )
-            if current.parent_id is None:
-                break
-            current = self._contexts[current.parent_id]
-
-    def _charge_work(self, context: VMContext, amount: int) -> None:
-        """Charge bulk operations as instructions (so an O(n) operation never costs just 1 instruction)."""
-        if amount <= 0:
-            return
-        current = context
-        while True:
-            current.instruction_count += amount
-            if current.instruction_count > current.limits.max_instructions:
-                raise SericiteError(
-                    "instruction limit exceeded", kind="resource_exhausted"
-                )
-            if current.parent_id is None:
-                break
-            current = self._contexts[current.parent_id]
-
     def _unary_op(self, context: VMContext, op: str, value: object) -> object:
         if op == "-":
             if _is_number(value):
@@ -1651,18 +1748,20 @@ class SericiteEngine:
         self, context: VMContext, op: str, left: object, right: object
     ) -> bool:
         if op in ("==", "!="):
-            counter = [1]
-            result = _equals(left, right, set(), {}, counter)
-            self._charge_work(context, counter[0])
+            meter = self._meter(context)
+            meter.work(1)
+            result = _equals(left, right, set(), {}, meter=meter)
             return result if op == "==" else not result
         if op in ("in", "not in"):
-            counter = [1]
-            result = _contains(right, left, set(), {}, counter)
-            self._charge_work(context, counter[0])
+            meter = self._meter(context)
+            meter.work(1)
+            result = _contains(right, left, set(), {}, meter=meter)
             return result if op == "in" else not result
         if (_is_number(left) and _is_number(right)) or (
             type(left) is str and type(right) is str
         ):
+            if type(left) is str:
+                self._meter(context).work(min(len(left), len(right)))
             if op == "<":
                 return left < right
             if op == "<=":
@@ -1714,7 +1813,7 @@ class SericiteEngine:
                     "dict size limit exceeded", kind="resource_exhausted"
                 )
             if index not in target:
-                self._charge_alloc(context, 16)
+                self._meter(context).allocate(16)
             target[index] = value
             return
         if type(target) is not list:
@@ -1744,8 +1843,13 @@ class SericiteEngine:
         if isinstance(value, VMHandle) and attr in VMHandle._METHODS:
             return _NativeFunction(
                 f"VM.{attr}",
-                lambda *a, **k: self._charged_vm_method(context, value, attr, a, k),
-                context,
+                lambda *a, **k: self._charged_vm_method(value, attr, a, k),
+                self._context(value),
+                work=lambda *a, **k: self._vm_method_work(value, attr, a, k),
+                allocation=lambda *a, **k: self._vm_method_allocation(
+                    value, attr, a, k
+                ),
+                needs_caller=True,
             )
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
@@ -1755,12 +1859,16 @@ class SericiteEngine:
                     "list.append",
                     lambda *args: self._list_append(context, value, args),
                     context,
+                    work=_no_work,
+                    allocation=lambda *args: 8 if len(args) == 1 else 0,
                 )
             if attr == "pop":
                 return _NativeFunction(
                     "list.pop",
                     lambda *args: self._list_pop(context, value, args),
                     context,
+                    work=lambda *args: self._list_pop_work(value, args),
+                    allocation=_no_allocation,
                 )
         if type(value) is dict:
             if attr in ("keys", "values"):
@@ -1768,18 +1876,24 @@ class SericiteEngine:
                     f"dict.{attr}",
                     lambda *args: self._dict_snapshot(context, value, attr, args),
                     context,
+                    work=lambda *args: 0 if args else len(value),
+                    allocation=lambda *args: 0 if args else len(value) * 8,
                 )
             if attr == "get":
                 return _NativeFunction(
                     "dict.get",
                     lambda *args: self._dict_get(context, value, args),
                     context,
+                    work=lambda *args: self._dict_method_work(args),
+                    allocation=_no_allocation,
                 )
             if attr == "pop":
                 return _NativeFunction(
                     "dict.pop",
                     lambda *args: self._dict_pop(context, value, args),
                     context,
+                    work=lambda *args: self._dict_method_work(args),
+                    allocation=_no_allocation,
                 )
         if type(value) in (list, dict):
             raise SericiteError(
@@ -1800,8 +1914,18 @@ class SericiteEngine:
             )
         if len(target) >= context.limits.max_list_size:
             raise SericiteError("list size limit exceeded", kind="resource_exhausted")
-        self._charge_alloc(context, 8)
         target.append(args[0])
+
+    @staticmethod
+    def _list_pop_work(target: list[object], args: tuple[object, ...]) -> int:
+        if len(args) > 1:
+            return 0
+        index = args[0] if args else -1
+        if type(index) is not int or not -len(target) <= index < len(target):
+            return 0
+        if index < 0:
+            index += len(target)
+        return len(target) - index - 1
 
     def _list_pop(
         self, context: VMContext, target: list[object], args: tuple[object, ...]
@@ -1820,7 +1944,6 @@ class SericiteEngine:
             raise SericiteError("pop index out of range", kind="index_error")
         if index < 0:
             index += len(target)
-        self._charge_work(context, len(target) - index - 1)
         return target.pop(index)
 
     def _dict_snapshot(
@@ -1837,9 +1960,11 @@ class SericiteEngine:
             )
         if len(target) > context.limits.max_list_size:
             raise SericiteError("list size limit exceeded", kind="resource_exhausted")
-        self._charge_work(context, len(target))
-        self._charge_alloc(context, len(target) * 8)
         return list(target.keys()) if attr == "keys" else list(target.values())
+
+    @staticmethod
+    def _dict_method_work(args: tuple[object, ...]) -> int:
+        return len(args[0]) if args and isinstance(args[0], str) else 0
 
     @staticmethod
     def _check_dict_method_key(key: object) -> None:
@@ -1881,6 +2006,20 @@ class SericiteEngine:
             raise SericiteError(f"missing key: {_to_str(args[0])!s}", kind="key_error")
         return target.pop(args[0])
 
+    @staticmethod
+    def _wrap_work(schema: object, data: object) -> int:
+        if not isinstance(schema, SericiteSchema) or type(data) is not dict:
+            return 0
+        return len(data) + sum(
+            _contract_cost(contract) for _, contract in schema.fields
+        )
+
+    @staticmethod
+    def _wrap_allocation(schema: object, data: object) -> int:
+        if not isinstance(schema, SericiteSchema) or type(data) is not dict:
+            return 0
+        return 64 + len(schema.fields) * 16
+
     def _wrap(self, context: VMContext, schema: object, data: object) -> SericiteRecord:
         if not isinstance(schema, SericiteSchema):
             raise SericiteError(
@@ -1892,7 +2031,6 @@ class SericiteEngine:
                 f"wrap() expects a dict, got {_type_name(data)}",
                 kind="type_error",
             )
-        self._charge_work(context, len(data))
         field_names = {name for name, _ in schema.fields}
         extra = [key for key in data if key not in field_names]
         missing = [name for name in field_names if name not in data]
@@ -1908,11 +2046,17 @@ class SericiteEngine:
             )
         for name, contract in schema.fields:
             value = data[name]
-            self._charge_work(context, _contract_cost(contract))
             if not _contract_holds(value, contract):
                 raise _contract_violation(f"field {name}", None, contract, value)
-        self._charge_alloc(context, 64 + len(schema.fields) * 16)
         return SericiteRecord(schema, {name: data[name] for name, _ in schema.fields})
+
+    @staticmethod
+    def _unwrap_work(record: object) -> int:
+        return len(record.fields) if isinstance(record, SericiteRecord) else 0
+
+    @staticmethod
+    def _unwrap_allocation(record: object) -> int:
+        return len(record.fields) * 16 if isinstance(record, SericiteRecord) else 0
 
     def _unwrap(self, context: VMContext, record: object) -> dict:
         if not isinstance(record, SericiteRecord):
@@ -1920,38 +2064,149 @@ class SericiteEngine:
                 f"unwrap() expects a record, got {_type_name(record)}",
                 kind="type_error",
             )
-        self._charge_alloc(context, len(record.fields) * 16)
         return dict(record.fields)
+
+    def _vm_method_work(
+        self,
+        handle: VMHandle,
+        attr: str,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+    ) -> int:
+        fs = self._context(handle).fs
+        if attr == "run":
+            inputs = args[0] if args else kwargs.get("inputs", ())
+            return len(inputs) if isinstance(inputs, (list, tuple)) else 0
+        if attr == "write_file":
+            path = args[0] if args else kwargs.get("path")
+            text = args[1] if len(args) > 1 else kwargs.get("text")
+            return fs.write_work(path, text)
+        if attr == "list_dir":
+            path = args[0] if args else kwargs.get("path")
+            return fs.list_dir_work(path)
+        if attr in ("read_file", "path_exists"):
+            path = args[0] if args else kwargs.get("path")
+            return fs.path_work(path)
+        if attr in {
+            "feed_input",
+            "step",
+            "step_instruction",
+            "snapshot",
+            "stdout",
+            "terminate",
+        }:
+            return 0
+        raise SericiteError(
+            f"no work contract for VM method '{attr}'", kind="internal_error"
+        )
+
+    def _vm_method_allocation(
+        self,
+        handle: VMHandle,
+        attr: str,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+    ) -> int | AllocationPermit:
+        context = kwargs["_caller_context"]
+        target = self._context(handle)
+        if attr == "run":
+            inputs = args[0] if args else kwargs.get("inputs")
+            if inputs is None:
+                return 0
+            if not isinstance(inputs, (list, tuple)):
+                return 0
+            amount = target.io.batch_cost(inputs)
+            return self._meter(context).reserve(target.io, "input", amount)
+        if attr == "feed_input":
+            value = args[0] if args else kwargs.get("value")
+            amount = target.io.input_cost(value)
+            return self._meter(context).reserve(target.io, "input", amount)
+        if attr == "write_file":
+            path = args[0] if args else kwargs.get("path")
+            text = args[1] if len(args) > 1 else kwargs.get("text")
+            amount = target.fs.write_allocation(path, text)
+            return self._meter(context).reserve(target.fs, "write", amount)
+        if attr in {
+            "read_file",
+            "list_dir",
+            "path_exists",
+            "step",
+            "step_instruction",
+            "snapshot",
+            "stdout",
+            "terminate",
+        }:
+            return 0
+        raise SericiteError(
+            f"no allocation contract for VM method '{attr}'", kind="internal_error"
+        )
 
     def _charged_vm_method(
         self,
-        context: VMContext,
         handle: VMHandle,
         attr: str,
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> object:
-        if attr == "write_file":
-            inputs = (args[1] if len(args) > 1 else kwargs.get("text"),)
-        elif attr == "feed_input":
-            inputs = (args[0] if args else kwargs.get("value"),)
-        elif attr == "run":
-            inputs = args[0] if args else kwargs.get("inputs", ())
-            if not isinstance(inputs, (list, tuple)):
-                inputs = ()
+        context = kwargs.pop("_caller_context")
+        result_meter = kwargs.pop("_caller_meter")
+        meter = self._meter(context)
+        permit = kwargs.pop("_allocation_permit", None)
+        feed_signature = (
+            len(args) + len(kwargs) == 1 and len(args) <= 1 and set(kwargs) <= {"value"}
+        )
+        run_signature = (
+            len(args) <= 1
+            and set(kwargs) <= {"inputs"}
+            and not (args and "inputs" in kwargs)
+        )
+        write_signature = (
+            len(args) + len(kwargs) == 2
+            and len(args) <= 2
+            and set(kwargs) <= {"path", "text"}
+            and (bool(args) or "path" in kwargs)
+            and (len(args) > 1 or "text" in kwargs)
+        )
+        if attr == "feed_input" and feed_signature:
+            value = args[0] if args else kwargs.get("value")
+            if not isinstance(value, str):
+                raise SericiteError("VM input must be a string")
+            target = self._context(handle)
+            target.io.feed_input(value, permit=permit)
+            if target.state == "waiting_input":
+                target.state = "ready"
+            result = None
+        elif attr == "run" and run_signature:
+            inputs = args[0] if args else kwargs.get("inputs")
+            if inputs is not None:
+                if not isinstance(inputs, (list, tuple)) or any(
+                    not isinstance(value, str) for value in inputs
+                ):
+                    raise SericiteError("VM.run inputs must be a list of strings")
+                target = self._context(handle)
+                target.io.feed_batch(inputs, permit=permit)
+                if target.state == "waiting_input":
+                    target.state = "ready"
+            result = self._run(handle)
+        elif attr == "write_file" and write_signature:
+            path = args[0] if args else kwargs["path"]
+            text = args[1] if len(args) > 1 else kwargs["text"]
+            self._context(handle).fs.write_file(path, text, permit=permit)
+            result = None
+        elif not args and not kwargs and attr == "snapshot":
+            result = self._snapshot(self._context(handle), meter=meter)
+        elif not args and not kwargs and attr == "step":
+            result = self._step(handle, meter=meter)
+        elif not args and not kwargs and attr == "step_instruction":
+            result = self._step_instruction(handle, meter=meter)
         else:
-            inputs = ()
-        for value in inputs:
-            if isinstance(value, str):
-                self._charge_alloc(context, len(value) * 4)
-        result = getattr(handle, attr)(*args, **kwargs)
-        budget = [10_000]
-        size = _estimate_size(result, budget)
-        self._charge_alloc(context, size)
-        self._charge_work(context, size // 64)
+            result = getattr(handle, attr)(*args, **kwargs)
+        _estimate_size(result, [10_000], meter=result_meter)
         return result
 
-    def _snapshot(self, context: VMContext) -> dict[str, object]:
+    def _snapshot(
+        self, context: VMContext, *, meter: Meter | None = None
+    ) -> dict[str, object]:
         next_line = None
         if context.state in {"ready", "waiting_input"} and context.frames:
             frame = context.frames[-1]
@@ -1960,12 +2215,16 @@ class SericiteEngine:
         locals_: dict[str, object] = {}
         if context.frames:
             frame = context.frames[-1]
+            if meter is not None:
+                meter.work(len(frame.locals) + len(frame.cells))
             visible = dict(frame.locals)
             for name, cell in frame.cells.items():
                 if cell.value is not _UNBOUND:
                     visible[name] = cell.value
+            seen: set[int] = set()
+            budget = [_MAX_RENDER_NODES]
             locals_ = {
-                name: self._safe_value(value)
+                name: self._safe_value(value, seen, _budget=budget, meter=meter)
                 for name, value in visible.items()
                 if not name.startswith("$")
             }
@@ -1993,47 +2252,47 @@ class SericiteEngine:
         value: object,
         _seen: set[int] | None = None,
         _depth: int = 0,
+        _budget: list[int] | None = None,
+        *,
+        meter: Meter | None = None,
     ) -> object:
+        if _seen is None:
+            _seen = set()
+        if _budget is None:
+            _budget = [_MAX_RENDER_NODES]
+        if _budget[0] <= 0:
+            return "<max nodes>"
+        _budget[0] -= 1
+        if meter is not None:
+            meter.work(1)
         if value is None or type(value) in {str, int, float, bool}:
             return value
-        if isinstance(value, (list, dict)):
+        if isinstance(value, (list, dict, SericiteRecord)):
             if _depth > 64:
                 return "<max depth>"
-            if _seen is None:
-                _seen = set()
             ident = id(value)
             if ident in _seen:
-                return "[...]"
-            _seen.add(ident)
-            try:
-                if isinstance(value, list):
-                    return [self._safe_value(item, _seen, _depth + 1) for item in value]
-                return {
-                    str(key): self._safe_value(item, _seen, _depth + 1)
-                    for key, item in value.items()
-                }
-            finally:
-                _seen.discard(ident)
-        if isinstance(value, SericiteRecord):
-            if _depth > 64:
-                return "<max depth>"
-            if _seen is None:
-                _seen = set()
-            ident = id(value)
-            if ident in _seen:
+                if type(value) is list:
+                    return "[...]"
+                if type(value) is dict:
+                    return "{...}"
                 return "record(...)"
             _seen.add(ident)
-            try:
-                return {
-                    "<record>": {
-                        str(key): self._safe_value(item, _seen, _depth + 1)
-                        for key, item in value.fields.items()
-                    }
-                }
-            finally:
-                _seen.discard(ident)
+            if type(value) is list:
+                return [
+                    self._safe_value(item, _seen, _depth + 1, _budget, meter=meter)
+                    for item in value
+                ]
+            fields = value.fields if isinstance(value, SericiteRecord) else value
+            result = {
+                str(key): self._safe_value(
+                    item, _seen, _depth + 1, _budget, meter=meter
+                )
+                for key, item in fields.items()
+            }
+            return {"<record>": result} if isinstance(value, SericiteRecord) else result
         if isinstance(value, SericiteSchema):
-            return repr(value)
+            return _schema_repr(value, _seen, _budget, meter=meter)
         if isinstance(value, (VMHandle, SericiteFunction, _NativeFunction)):
             return repr(value)
         if isinstance(value, (_GrantedHostFunction, _GrantedSericiteFunction)):
@@ -2078,20 +2337,29 @@ def _check_grant_name(name: object) -> None:
         )
 
 
-def _to_host(value: object, budget: list[int], depth: int = 0) -> object:
-    """Deep-copy a sericite value into host-side pure data; handles/functions may not cross."""
+def _to_host(
+    value: object,
+    budget: list[int],
+    depth: int = 0,
+    *,
+    meter: Meter,
+) -> object:
+    """Deep-copy one bounded node at a time, charging before each node is processed."""
     budget[0] -= 1
     if budget[0] < 0:
         raise SericiteError("FFI argument structure too large", kind="ffi_error")
     if depth > 64:
         raise SericiteError("FFI argument nested too deeply", kind="ffi_error")
+    meter.work(1)
     if value is None or type(value) in (str, int, float, bool):
         return value
     if type(value) is list:
-        return [_to_host(item, budget, depth + 1) for item in value]
+        return [_to_host(item, budget, depth + 1, meter=meter) for item in value]
     if type(value) is dict:
         return {
-            _to_host(key, budget, depth + 1): _to_host(item, budget, depth + 1)
+            _to_host(key, budget, depth + 1, meter=meter): _to_host(
+                item, budget, depth + 1, meter=meter
+            )
             for key, item in value.items()
         }
     if isinstance(value, (SericiteRecord, SericiteSchema)):
@@ -2107,23 +2375,41 @@ def _to_host(value: object, budget: list[int], depth: int = 0) -> object:
 
 
 def _from_host(
-    value: object, budget: list[int], max_string_bytes: int, depth: int = 0
+    value: object,
+    budget: list[int],
+    limits: SericiteLimits,
+    depth: int = 0,
+    *,
+    meter: Meter,
 ) -> object:
-    """Validate and deep-copy a host return value into a sericite value; foreign objects and oversized structures are rejected."""
+    """Validate and copy one bounded node at a time, charging work and space upfront."""
     budget[0] -= 1
     if budget[0] < 0:
         raise SericiteError("FFI result structure too large", kind="ffi_error")
     if depth > 64:
         raise SericiteError("FFI result nested too deeply", kind="ffi_error")
+    meter.work(1)
+    if type(value) is int and value.bit_length() > limits.max_int_bits:
+        raise SericiteError("FFI result integer too large", kind="ffi_error")
     if value is None or type(value) in (int, float, bool):
+        meter.allocate(8)
         return value
     if type(value) is str:
-        if len(value) > max_string_bytes:
+        if len(value) > limits.max_string_bytes:
             raise SericiteError("FFI result string too large", kind="ffi_error")
+        meter.allocate(len(value) * 4)
         return value
     if type(value) in (list, tuple):
-        return [_from_host(item, budget, max_string_bytes, depth + 1) for item in value]
+        if len(value) > limits.max_list_size:
+            raise SericiteError("FFI result list too large", kind="ffi_error")
+        meter.allocate(len(value) * 8)
+        return [
+            _from_host(item, budget, limits, depth + 1, meter=meter) for item in value
+        ]
     if type(value) is dict:
+        if len(value) > limits.max_dict_size:
+            raise SericiteError("FFI result dict too large", kind="ffi_error")
+        meter.allocate(len(value) * 16)
         result: dict[object, object] = {}
         for key, item in value.items():
             if type(key) not in (str, int, float, bool) and key is not None:
@@ -2131,7 +2417,10 @@ def _from_host(
                     f"FFI result has unhashable key of type '{type(key).__name__}'",
                     kind="ffi_error",
                 )
-            result[key] = _from_host(item, budget, max_string_bytes, depth + 1)
+            copied_key = _from_host(key, budget, limits, depth + 1, meter=meter)
+            result[copied_key] = _from_host(
+                item, budget, limits, depth + 1, meter=meter
+            )
         return result
     raise SericiteError(
         f"host function returned unsupported type '{type(value).__name__}'",
@@ -2149,21 +2438,31 @@ def _const_bytes(code: isa.CodeUnit) -> int:
     return total
 
 
-def _estimate_size(value: object, budget: list[int]) -> int:
-    """Estimate the approximate byte size of a pure-data structure; node count is capped against runaway input."""
+def _estimate_size(value: object, budget: list[int], *, meter: Meter) -> int:
+    """Charge ownership transfer and estimation work incrementally per bounded node."""
     if budget[0] <= 0:
         return 0
     budget[0] -= 1
+    meter.work(1)
     if type(value) is str:
-        return len(value) * 4
+        meter.work(len(value) // 64)
+        size = len(value) * 4
+    elif type(value) is list:
+        size = len(value) * 8
+    elif type(value) is dict:
+        size = len(value) * 16
+    else:
+        size = 8
+    meter.allocate(size)
     if type(value) is list:
-        return len(value) * 8 + sum(_estimate_size(item, budget) for item in value)
+        return size + sum(_estimate_size(item, budget, meter=meter) for item in value)
     if type(value) is dict:
-        return len(value) * 16 + sum(
-            _estimate_size(key, budget) + _estimate_size(item, budget)
+        return size + sum(
+            _estimate_size(key, budget, meter=meter)
+            + _estimate_size(item, budget, meter=meter)
             for key, item in value.items()
         )
-    return 8
+    return size
 
 
 def _truthy(value: object) -> bool:
@@ -2183,17 +2482,11 @@ def _equals(
     right: object,
     _active: set | None = None,
     _cache: dict | None = None,
-    _counter: list | None = None,
+    *,
+    meter: Meter,
 ) -> bool:
-    """Structural equality.
-
-    _active tracks container pairs being compared (a hit means a cycle or shared
-    substructure, coinductively True); _cache records completed comparison
-    results (a hit returns the real result without re-expanding the DAG);
-    _counter accumulates visited nodes for quota charging.
-    """
-    if _counter is not None:
-        _counter[0] += 1
+    """Compare structurally, charging each visited node before processing it."""
+    meter.work(1)
     if left is right:
         return True
     if _is_number(left) and _is_number(right):
@@ -2201,26 +2494,26 @@ def _equals(
     if type(left) is not type(right):
         return False
     if type(left) is str:
-        if _counter is not None:
-            _counter[0] += len(left)
+        meter.work(len(left))
         return left == right
     if isinstance(left, bool) or left is None:
         return left == right
     if isinstance(left, (list, dict, SericiteRecord)):
+        pair = (id(left), id(right))
         if _active is not None:
-            pair = (id(left), id(right))
             if pair in _active:
                 return True
             cached = _cache.get(pair)
             if cached is not None:
                 return cached
             _active.add(pair)
-            result = _equals_container(left, right, _active, _cache, _counter)
+            result = _equals_container(left, right, _active, _cache, meter)
             _active.discard(pair)
             _cache[pair] = result
             return result
-        return _equals_container(left, right, _active, _cache, _counter)
+        return _equals_container(left, right, _active, _cache, meter)
     if isinstance(left, SericiteSchema):
+        meter.work(len(left.key))
         return left.key == right.key
     return left is right
 
@@ -2230,18 +2523,20 @@ def _equals_container(
     right: object,
     active: set | None,
     cache: dict | None,
-    counter: list | None,
+    meter: Meter,
 ) -> bool:
     if type(left) is list:
         return len(left) == len(right) and all(
-            _equals(a, b, active, cache, counter) for a, b in zip(left, right)
+            _equals(a, b, active, cache, meter=meter) for a, b in zip(left, right)
         )
     if type(left) is dict:
+        meter.work(len(left))
         return left.keys() == right.keys() and all(
-            _equals(left[key], right[key], active, cache, counter) for key in left
+            _equals(left[key], right[key], active, cache, meter=meter) for key in left
         )
+    meter.work(len(left.schema.key))
     return left.schema.key == right.schema.key and _equals(
-        left.fields, right.fields, active, cache, counter
+        left.fields, right.fields, active, cache, meter=meter
     )
 
 
@@ -2250,7 +2545,8 @@ def _contains(
     item: object,
     _active: set | None = None,
     _cache: dict | None = None,
-    _counter: list | None = None,
+    *,
+    meter: Meter,
 ) -> bool:
     if type(container) is dict:
         if type(item) not in (str, int, float, bool) and item is not None:
@@ -2258,14 +2554,16 @@ def _contains(
                 f"unhashable key type: {_type_name(item)}",
                 kind="type_error",
             )
+        if type(item) is str:
+            meter.work(len(item))
         return item in container
     if type(container) is list:
         return any(
-            _equals(element, item, _active, _cache, _counter) for element in container
+            _equals(element, item, _active, _cache, meter=meter)
+            for element in container
         )
     if type(container) is str and type(item) is str:
-        if _counter is not None:
-            _counter[0] += len(container)
+        meter.work(len(container))
         return item in container
     raise SericiteError(
         f"'in' not supported between {_type_name(item)} and {_type_name(container)}",
@@ -2313,52 +2611,186 @@ def _operand_error(op: str, left: object, right: object) -> SericiteError:
     )
 
 
-def _to_str(value: object, _seen: set[int] | None = None) -> str:
-    if value is None:
-        return "None"
-    if type(value) is bool:
-        return "True" if value else "False"
-    if type(value) is str:
-        return value
-    if type(value) in (int, float):
-        return str(value)
-    if type(value) in (list, dict) or isinstance(value, SericiteRecord):
-        if _seen is None:
-            _seen = set()
-        ident = id(value)
-        if ident in _seen:
-            if type(value) is list:
-                return "[...]"
-            if type(value) is dict:
-                return "{...}"
-            return "record(...)"
-        _seen.add(ident)
-        try:
-            if type(value) is list:
-                return "[" + ", ".join(_repr_str(item, _seen) for item in value) + "]"
-            if isinstance(value, SericiteRecord):
-                return (
-                    "record("
-                    + ", ".join(
-                        f"{key}={_repr_str(item, _seen)}"
-                        for key, item in value.fields.items()
-                    )
-                    + ")"
-                )
-            return (
-                "{"
-                + ", ".join(
-                    f"{_repr_str(key, _seen)}: {_repr_str(item, _seen)}"
-                    for key, item in value.items()
-                )
-                + "}"
+class _StringRenderer:
+    def __init__(
+        self,
+        max_chars: int,
+        *,
+        output: bool = False,
+        truncate: bool = False,
+        meter: Meter | None = None,
+    ) -> None:
+        self.parts: list[str] = []
+        self.size = 0
+        self.seen: set[int] = set()
+        self.remaining_nodes = _MAX_RENDER_NODES
+        self.remaining_chars = max(0, max_chars)
+        self.output = output
+        self.truncate = truncate
+        self.meter = meter
+        self.exhausted = False
+
+    def _work(self, amount: int) -> None:
+        if self.meter is not None:
+            self.meter.work(amount)
+
+    def _add(self, text: str) -> None:
+        if self.exhausted:
+            return
+        if len(text) > self.remaining_chars:
+            if self.truncate:
+                if self.remaining_chars >= 3:
+                    self.parts.append("...")
+                    self.size += 3
+                    self.remaining_chars -= 3
+                self.exhausted = True
+                return
+            if self.output:
+                raise OutputLimitExceeded
+            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        self.parts.append(text)
+        self.size += len(text)
+        self.remaining_chars -= len(text)
+
+    def _visit(self) -> None:
+        if self.exhausted:
+            return
+        if self.remaining_nodes <= 0:
+            if self.truncate:
+                self._add("...")
+                self.exhausted = True
+                return
+            raise SericiteError(
+                "rendering node limit exceeded", kind="resource_exhausted"
             )
-        finally:
-            _seen.discard(ident)
-    return repr(value)
+        self.remaining_nodes -= 1
+        self._work(1)
+
+    def render(self, value: object, repr_strings: bool = False, depth: int = 0) -> None:
+        self._visit()
+        if self.exhausted:
+            return
+        if value is None:
+            self._add("None")
+            return
+        if type(value) is bool:
+            self._add("True" if value else "False")
+            return
+        if type(value) is str:
+            if repr_strings:
+                self._work(len(value) // 64)
+                self._add(repr(value))
+            else:
+                self._add(value)
+            return
+        if type(value) in (int, float):
+            if type(value) is int:
+                self._work(value.bit_length() // 64)
+            self._add(str(value))
+            return
+        if type(value) in (list, dict) or isinstance(value, SericiteRecord):
+            ident = id(value)
+            if ident in self.seen:
+                if type(value) is list:
+                    self._add("[...]")
+                elif type(value) is dict:
+                    self._add("{...}")
+                else:
+                    self._add("record(...)")
+                return
+            if depth > 64:
+                self._add("<max depth>")
+                return
+            self.seen.add(ident)
+            if type(value) is list:
+                self._add("[")
+                for index, item in enumerate(value):
+                    if index:
+                        self._add(", ")
+                    self.render(item, True, depth + 1)
+                    if self.exhausted:
+                        return
+                self._add("]")
+                return
+            if isinstance(value, SericiteRecord):
+                self._add("record(")
+                items = value.fields.items()
+                separator = "="
+            else:
+                self._add("{")
+                items = value.items()
+                separator = ": "
+            for index, (key, item) in enumerate(items):
+                if index:
+                    self._add(", ")
+                if isinstance(value, SericiteRecord):
+                    self._add(str(key))
+                else:
+                    self.render(key, True, depth + 1)
+                self._add(separator)
+                self.render(item, True, depth + 1)
+                if self.exhausted:
+                    return
+            self._add(")" if isinstance(value, SericiteRecord) else "}")
+            return
+        if isinstance(value, SericiteSchema):
+            self.render_schema(value)
+            return
+        self._add(repr(value))
+
+    def render_schema(self, schema: SericiteSchema) -> None:
+        if self.exhausted:
+            return
+        if id(schema) in self.seen:
+            self._add("schema(...)")
+            return
+        self.seen.add(id(schema))
+        self._add("schema(")
+        for index, (name, contract) in enumerate(schema.fields):
+            if index:
+                self._add(", ")
+            self._add(name)
+            self._add(": ")
+            self.render_contract(contract)
+            if self.exhausted:
+                return
+        self._add(")")
+
+    def render_contract(self, contract: object, depth: int = 0) -> None:
+        self._visit()
+        if self.exhausted:
+            return
+        if not isinstance(contract, SericiteSchema):
+            self._add(str(contract))
+            return
+        if depth >= 64 or id(contract) in self.seen:
+            self._add("...")
+            return
+        self.seen.add(id(contract))
+        self._add("{")
+        for index, (name, inner) in enumerate(contract.fields):
+            if index:
+                self._add(", ")
+            self._add(name)
+            self._add(": ")
+            self.render_contract(inner, depth + 1)
+            if self.exhausted:
+                return
+        self._add("}")
+
+    def text(self, *, allocate: bool = False) -> str:
+        self._work(self.size // 64)
+        if allocate and self.meter is not None:
+            self.meter.allocate(self.size * 4)
+        return "".join(self.parts)
 
 
-def _repr_str(value: object, _seen: set[int] | None = None) -> str:
-    if type(value) is str:
-        return repr(value)
-    return _to_str(value, _seen)
+def _to_str(
+    value: object,
+    max_chars: int = _MAX_RENDER_CHARS,
+    *,
+    meter: Meter | None = None,
+) -> str:
+    renderer = _StringRenderer(max_chars, meter=meter)
+    renderer.render(value)
+    return renderer.text(allocate=meter is not None)

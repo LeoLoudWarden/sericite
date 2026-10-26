@@ -17,8 +17,9 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `isa` | Instruction, code-unit, and exception-handler-table definitions (stack machine) |
 | `compiler` | AST whitelist and except-kind validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle, resource quotas, debug snapshots |
-| `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat path dictionary, implicit directories) |
-| `io` | Per-VM virtual input and output (with output byte cap) |
+| `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
+| `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree and name metadata) |
+| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels) |
 | `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points |
 
@@ -30,16 +31,16 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 2. A child VM must not implicitly read its parent's or the host's stdin, nor write directly to the host's stdout; a child VM's filesystem starts fresh and empty, sharing no files with its parent.
 3. A child VM by default cannot obtain parent locals, parent handles, host objects, or Python reflection entry points.
 4. Script capabilities are provided through controlled native functions and VM handle methods; arbitrary Python attributes must not be exposed.
-5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics.
+5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics. `run()` takes no per-statement snapshots; snapshots are produced only by explicit `step()/snapshot()` calls.
 6. New syntax must first pass the compiler whitelist and then be compiled to instructions; introducing `exec`/`eval` for convenience is forbidden.
-7. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth.
-8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. Resource consumption must be meterable at instruction level; a child VM's consumption must be charged to its ancestors.
+7. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
+8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10. `resource_exhausted` and `internal_error` must not be catchable by script `try/except` — quotas must not be swallowed by scripts.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross; host exceptions must be sanitized into `ffi_error`, with messages containing only the host exception's type name, not its text (to prevent leaking host paths or internal information). Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
 13. A granted sericite function executes on the **calling VM's frame stack** (instructions charged to the caller and its ancestors), but retains the **defining function's closure cells, the defining VM's module variables, the defining side's granted-function environment, and the defining VM's builtin services** (IO / filesystem / child-VM creation all resolve back to the defining VM — the function's home); the reverse or cross combinations are not allowed. Re-granting must preserve all of these definition-side environments.
-14. Every resource that can grow must have a quota (see next section). `run()` does not take per-statement snapshots — snapshots are only produced on explicit `step()/snapshot()` calls; the debugging path must not become a resource bypass. Host `RecursionError` is always converted to `resource_exhausted`, `OverflowError` to `conversion_error`; host exceptions must never leak to scripts or callers in native form. O(n)-and-above operations must be charged against the instruction quota at a scale-proportional rate, and newly created objects must be accounted. World-service consumption triggered through a granted function belongs to the defining VM (home), but must also be mirrored causally into the triggering caller's quotas (the mirror stops at home and never double-counts it); a child VM created through a granted function is an empty world whose tree position (parent/depth/child count) attaches causally under the triggering caller, with quotas equal to the elementwise minimum of home's and the caller's.
+14. Every resource that can grow must have a quota. Every instruction and dynamic operation must go through a Meter and AccountRoute; post-hoc charging, ledger-delta mirroring, and bypassing resource permits are forbidden. Debugging, errors, suspension, and cross-VM paths follow the same rule. See section 5 for the concrete contracts.
 15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `step()` on the same VM from inside an `input_provider`/FFI callback).
 16. Only structure crosses VMs: records/schemas carry no names (schema equality compares the structure of field sets and contracts); class names, annotation names, and other labels are compile-time, scope-local diagnostic data, baked only into the current layer's CodeUnit instructions and metadata, and expire at scope exit. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values.
 
@@ -64,27 +65,59 @@ Error kinds: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, 
 
 ## 5. Resource quotas
 
-Quotas are defined by `SericiteLimits`: `max_instructions`, `max_output_bytes`, `max_frames`, `max_child_vms`, `max_list_size`, `max_dict_size`, `max_string_bytes`, `max_int_bits`, `max_total_bytes`, `max_total_vms`, `max_vm_depth`, `max_fs_files`, `max_fs_file_bytes`.
+Quotas are defined by `SericiteLimits`: `max_instructions`, `max_output_bytes`, `max_frames`, `max_child_vms`, `max_list_size`, `max_dict_size`, `max_string_bytes`, `max_int_bits`, `max_total_bytes`, `max_total_vms`, `max_vm_depth`, `max_fs_files`, `max_fs_file_bytes`. See the [host reference](host-reference.md) for host-side configuration.
 
-Rules:
+### 5.1 Basic rules
 
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
 - Total source length has a fixed cap of 4MB (in UTF-8 bytes).
-- Besides instruction count, bulk operations (container comparison/membership, concatenation, serialization, compiling child-VM source, VM-method return values) are charged to `instruction_count` at a scale-proportional rate.
-- Closure cells and captured environments are charged to `max_total_bytes`; snapshots expose their user-visible values rather than internal cell objects.
-- A child VM's instruction and memory consumption is charged to all ancestors; exceeding the quota at any ring of the ancestor chain fails.
+- Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any ring fails.
+- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included.
+- O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
+
+### 5.2 Time costs: prepaid or incremental
+
+- The unified Meter handles the base cost of every instruction.
+- Every native explicitly declares `home`, `work`, and `allocation`; constant costs must be explicit too.
+- Predictable dynamic costs are charged before execution. Copying, rendering, comparison, snapshots, and other composite workloads are charged per node or small slice, never after completion.
+- Validation, estimation, failures, and result construction are work too; they must not become free channels.
+
+### 5.3 Space costs: owners and permits
+
+- Script-driven IO/VFS mutations consume a one-shot `AllocationPermit`, bound to the owner, resource kind, and amount; permits cannot be reused or redirected.
+- Logical allocations such as containers are metered by trusted primitives; Python containers need not be wrapped.
+- Each charge checks every account on its route before committing anywhere. Rejected charges are not partially committed; charges for completed work are retained.
+- Direct host preconfiguration and management use explicit trusted channels, which scripts cannot use to bypass permits.
+
+### 5.4 Causal routes and result ownership
+
+- An AccountRoute is constructed from caller, home, and target when a call begins; every instruction in that execution scope uses it.
+- Shared ancestors are charged once per causal charge, with no special cross-sibling delta mirroring.
+- VM-method execution is jointly constrained by target and caller; result ownership enters only the actual caller's route.
+- A child VM created through a granted function is an empty world attached causally under its initiator, with quotas equal to the elementwise minimum of home and caller.
+
+### 5.5 Checklist for new language features
+
+When adding an opcode, native, VM method, or cross-boundary channel, answer these questions in order:
+
+1. **What is the work?** Include validation, sorting, copying, hashing, comparison, error text, and hidden complexity in host primitives.
+2. **When is it charged?** Can it be prepaid? If not, is it split into interruptible slices rather than charged after completion?
+3. **Who owns the resource?** Which owner accounts for new objects, queue entries, directories, or temporary structures, and is a permit required?
+4. **Who triggers and receives it?** Are home, caller, target, and result ownership separately explicit?
+5. **What about unusual paths?** Do failures, suspension, resumption, debugging, and cross-VM calls still use the same Meter and permits?
+6. **Are tests isolated?** Use before/after checkpoints for small/large inputs, tight quotas, mid-operation failures, and pre-mutation blocking instead of only checking whole-VM totals.
 
 ## 6. Measured performance
 
-Latest recorded runs use an Intel i3-9100 on Linux x86_64. Instruction and debugging figures are from CPython 3.13.13 on 2026-10-23; VM-creation figures are the existing CPython 3.13/3.14 results recorded in the reproduction script. All values are medians.
+Latest recorded runs use an Intel i3-9100 on Linux x86_64 with CPython 3.13.13 (2026-10-26). All values are medians.
 
 | Operation | Measured cost | Reproduction |
 |---|---:|---|
-| Create a child VM inside a script | ~50 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| Create and run a root VM from the host | ~42 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| Execute a representative counting loop with `run()` | ~0.65 µs/instruction | [instruction.py](../benchmarks/instruction.py) |
-| Drive the same loop with `step_instruction()` | ~1.86 µs/instruction (2.92× `run()`) | [debugging.py](../benchmarks/debugging.py) |
-| Drive the same loop with `step()` | ~4.91 µs/step call (~1.09 µs/instruction) | [debugging.py](../benchmarks/debugging.py) |
+| Create a child VM inside a script | ~88 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| Create and run a root VM from the host | ~61 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| Execute a representative counting loop with `run()` | ~0.82 µs/instruction | [instruction.py](../benchmarks/instruction.py) |
+| Drive the same loop with `step_instruction()` | ~2.60 µs/instruction (3.19× `run()`) | [debugging.py](../benchmarks/debugging.py) |
+| Drive the same loop with `step()` | ~6.32 µs/step call (~1.40 µs/instruction) | [debugging.py](../benchmarks/debugging.py) |
 
 The instruction figure is a workload-weighted average, not a uniform per-opcode cost; VM creation and compilation are excluded. Stepping figures include single-step control and a safe snapshot after every step, for a workload with one simple local variable. These are measurements of the Python prototype, not performance guarantees; future engine changes require re-measurement.
 
@@ -103,14 +136,14 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 8. Known limits and semantic deviations
 
-- Host-function execution time and memory are self-policed by the host and not metered (each FFI call counts as 1 instruction); host return structures are bounded by a node budget and depth limit.
+- Host callback execution time and memory are self-policed by the host and are not metered. Engine-side FFI argument/result copying is charged per node, and host return structures are also bounded by a node budget and depth limit.
 - The total memory ledger is approximate (strings counted as chars ×4, list slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
 - When a `finally` copy raises again, the outer `finally` may execute one extra time.
 - After a nested `except` inside `except`, a bare `raise` may re-raise an object other than the outermost one.
 - `for` iterates lists as a live view and dicts as a key snapshot.
 - A VM's execution context is retained on the engine after reaching a terminal state (for debug snapshots); the engine-level `max_total_vms` caps the growth of their number, and terminal-state release is left to a future version.
-- Quota checks happen when each layer accounts its own charges: while a descendant VM runs, its ancestors' counters are pushed up without immediate validation, so a small overrun (on the order of one call chain) can occur before triggering.
-- In cross-sibling scenarios (one child VM's function re-granted to another), mirror charging is counted twice at the common ancestor — this over-counts (conservative) and does not enable quota escape.
+- Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
+- Cross-VM calls charge shared ancestors once. VM-method execution is jointly constrained by target and caller, while result ownership enters only the actual caller.
 
 ## 9. Explicitly not supported yet
 

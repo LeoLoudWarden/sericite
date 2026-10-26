@@ -67,7 +67,7 @@ A VM is a cheap, self-contained workspace:
 - its parent can preset files, feed input, single-step it statement by statement or instruction by instruction, snapshot its state, or terminate it;
 - it can create its own child VMs — isolation is recursive, because untrusted code is.
 
-Cheap is measured, not just claimed: in the current Python prototype, creating a child VM from inside a script costs ~0.05 ms — the same order as spawning a thread, one to two orders of magnitude below a process. A representative loop averages ~0.65 µs per instruction, or ~1.86 µs per instruction with instruction-level stepping (environment and reproduction scripts: [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)).
+Cheap is measured, not just claimed: in the current Python prototype, creating a child VM from inside a script costs ~0.088 ms — the same order as spawning a thread, one to two orders of magnitude below a process. A representative loop averages ~0.82 µs per instruction, or ~2.60 µs per instruction with instruction-level stepping (environment and reproduction scripts: [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)).
 
 ## Records: type names are compile-time error labels
 
@@ -110,7 +110,8 @@ Rationale: [design notes §3.4](https://github.com/LeoLoudWarden/sericite/blob/m
 |---|---|---|
 | [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) | EN | What Sericite is, why it exists, where the boundaries are ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)) |
 | [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) | EN | Safe-Tcl and related work: what Sericite inherits, what it adds ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md)) |
-| [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) | EN | The language subset and semantics, self-contained ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)) |
+| [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) | EN | The Sericite script language subset and semantics, self-contained ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)) |
+| [Host reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.md) | EN | Python host API, VM driving, FFI, and debugging ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.zh-CN.md)) |
 | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) | EN | Engine structure, invariants, resource quotas ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)) |
 | [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) | EN | Threat model; what the engine does and does not guarantee ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md)) |
 | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | EN index | How Sericite 0.1.0 was built, stage by stage, with runnable checkpoints (`git checkout stage-1` … `stage-6`); articles in [中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
