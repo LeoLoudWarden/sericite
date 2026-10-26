@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Changed
+- 内部重构：`engine`（2801 行）与 `compiler`（1081 行）分别拆分为子包，按内聚职责组织模块（engine 拆为 `_model`/`_values`/`_core`/`_builtins`/`_operators`/`_hostdbg`，compiler 拆为 `_rules`/`_validate`/`_scopes`/`_stack`/`_compiler`）；公开 API 与执行语义完全不变，行为无变化。
+
 ## [0.6.1] - 2026-10-26
 
 ### Security
