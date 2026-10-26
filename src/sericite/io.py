@@ -59,6 +59,12 @@ class VirtualIO:
             value = value.removesuffix("\r")
         return value
 
+    @property
+    def remaining_output_bytes(self) -> int | None:
+        if self._max_output_bytes is None:
+            return None
+        return max(0, self._max_output_bytes - self._output_size)
+
     def write_output(self, value: str) -> None:
         if self._max_output_bytes is not None:
             size = len(value.encode("utf-8"))

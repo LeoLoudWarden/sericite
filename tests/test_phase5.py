@@ -46,6 +46,70 @@ class SecurityQuotaTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
+    def test_ordered_string_comparison_charges_potential_scan(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            vm = engine.create_root(
+                "result = left() < right()\n",
+                functions={
+                    "left": lambda size=size: "a" * size + "x",
+                    "right": lambda size=size: "a" * size + "y",
+                },
+            )
+            vm.run()
+            counts[size] = vm.snapshot()["instruction_count"]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_ordered_string_comparison_enforces_tight_instruction_limit(self):
+        limits = SericiteLimits(max_instructions=100)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "result = left() < right()\n",
+                limits=limits,
+                functions={
+                    "left": lambda: "a" * 10_000 + "x",
+                    "right": lambda: "a" * 10_000 + "y",
+                },
+            )
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_string_and_dict_iterator_creation_charges_copy_work(self):
+        for kind in ("str", "dict"):
+            counts = {}
+            for size in (100, 1000):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    "value = get()\nfor item in value:\n    break\n",
+                    functions={
+                        "get": lambda kind=kind, size=size: (
+                            "x" * size if kind == "str" else {i: i for i in range(size)}
+                        )
+                    },
+                )
+                vm.run()
+                counts[size] = vm.snapshot()["instruction_count"]
+            with self.subTest(kind=kind):
+                self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_iterator_creation_enforces_limit_before_copy(self):
+        limits = SericiteLimits(max_instructions=100)
+        for kind in ("str", "dict"):
+            with self.subTest(kind=kind):
+                with self.assertRaises(SericiteError) as ctx:
+                    run(
+                        "value = get()\nfor item in value:\n    break\n",
+                        limits=limits,
+                        functions={
+                            "get": lambda kind=kind: (
+                                "x" * 10_000
+                                if kind == "str"
+                                else {i: i for i in range(10_000)}
+                            )
+                        },
+                    )
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
     def test_deep_expression_is_validation_error(self):
         source = "x = " + "1+1" * 5000 + "\n"
         engine = SericiteEngine()
@@ -69,6 +133,75 @@ class SecurityQuotaTests(unittest.TestCase):
         source = "a = [None]\na[0] = a\nb = [None]\nb[0] = b\nprint(a == b)\n"
         self.assertEqual(run(source), "True\n")
 
+    def test_dict_equality_charges_key_scan_before_early_value_mismatch(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            vm = engine.create_root(
+                "result = left() == right()\n",
+                functions={
+                    "left": lambda size=size: {i: 0 for i in range(size)},
+                    "right": lambda size=size: {i: 1 for i in range(size)},
+                },
+            )
+            vm.run()
+            counts[size] = vm.snapshot()["instruction_count"]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_dict_key_scan_enforces_limit_before_comparison(self):
+        limits = SericiteLimits(max_instructions=100)
+        for source in (
+            "result = left() == right()\n",
+            "result = [left()] == [right()]\n",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(SericiteError) as ctx:
+                    run(
+                        source,
+                        limits=limits,
+                        functions={
+                            "left": lambda: {i: 0 for i in range(10_000)},
+                            "right": lambda: {i: 1 for i in range(10_000)},
+                        },
+                    )
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_float_string_conversion_charges_input_scan(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            vm = engine.create_root(
+                "result = float(text())\n",
+                functions={"text": lambda size=size: "0." + "1" * size},
+            )
+            vm.run()
+            counts[size] = vm.snapshot()["instruction_count"]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_float_string_conversion_enforces_limit_before_parsing(self):
+        limits = SericiteLimits(max_instructions=100)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "result = float(text())\n",
+                limits=limits,
+                functions={"text": lambda: "0." + "1" * 10_000},
+            )
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_float_conversion_error_truncates_long_input(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            "try:\n"
+            "    float(text())\n"
+            "except conversion_error as error:\n"
+            "    result = error\n",
+            functions={"text": lambda: "x" * 10_000},
+        )
+        vm.run()
+        message = vm.snapshot()["locals"]["result"]
+        self.assertLess(len(message), 200)
+        self.assertIn("...", message)
+
     def test_ffi_deeply_nested_argument_rejected(self):
         value = 1
         for _ in range(100):
@@ -83,6 +216,95 @@ class SecurityQuotaTests(unittest.TestCase):
         source = 'try:\n    big()\nexcept ffi_error:\n    print("blocked")\n'
         output = run(source, functions={"big": lambda: "x" * 10_000_000})
         self.assertEqual(output, "blocked\n")
+
+    def test_shared_dag_snapshot_is_bounded(self):
+        source = (
+            "value = [0]\n"
+            "i = 0\n"
+            "while i < 20:\n"
+            "    value = [value, value]\n"
+            "    i = i + 1\n"
+        )
+        vm = SericiteEngine().create_root(source)
+        vm.run()
+        rendered = str(vm.snapshot()["locals"]["value"])
+        self.assertLess(len(rendered), 1000)
+        self.assertIn("[...]", rendered)
+
+    def test_shared_dag_print_is_bounded(self):
+        source = (
+            "value = [0]\n"
+            "i = 0\n"
+            "while i < 20:\n"
+            "    value = [value, value]\n"
+            "    i = i + 1\n"
+            "print(value)\n"
+        )
+        output = run(source)
+        self.assertLess(len(output), 1000)
+        self.assertIn("[...]", output)
+
+    def test_shared_dag_print_checks_output_quota_during_rendering(self):
+        source = (
+            "value = [0]\n"
+            "i = 0\n"
+            "while i < 20:\n"
+            "    value = [value, value]\n"
+            "    i = i + 1\n"
+            "print(value)\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            run(source, limits=SericiteLimits(max_output_bytes=1))
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_snapshot_node_budget_covers_distinct_nodes(self):
+        vm = SericiteEngine().create_root("value = range(10001)\n")
+        vm.run()
+        rendered = str(vm.snapshot()["locals"]["value"])
+        self.assertLess(len(rendered), 100_000)
+        self.assertIn("<max nodes>", rendered)
+
+    def test_ffi_result_enforces_list_size(self):
+        limits = SericiteLimits(max_list_size=2)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "value = get()\n",
+                limits=limits,
+                functions={"get": lambda: list(range(10))},
+            )
+        self.assertEqual(ctx.exception.kind, "ffi_error")
+
+    def test_ffi_result_enforces_dict_size(self):
+        limits = SericiteLimits(max_dict_size=2)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "value = get()\n",
+                limits=limits,
+                functions={"get": lambda: {i: i for i in range(10)}},
+            )
+        self.assertEqual(ctx.exception.kind, "ffi_error")
+
+    def test_ffi_result_enforces_integer_bits(self):
+        limits = SericiteLimits(max_int_bits=64)
+        with self.assertRaises(SericiteError) as ctx:
+            run("value = get()\n", limits=limits, functions={"get": lambda: 1 << 1000})
+        self.assertEqual(ctx.exception.kind, "ffi_error")
+
+    def test_ffi_result_string_charges_actual_memory(self):
+        limits = SericiteLimits(max_total_bytes=1000)
+        with self.assertRaises(SericiteError) as ctx:
+            run("value = get()\n", limits=limits, functions={"get": lambda: "x" * 1000})
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_ffi_result_allocation_uses_container_and_key_sizes(self):
+        cases = (("abc", 12), ([1, 2], 32), ({"a": 1}, 28))
+        for value, expected in cases:
+            with self.subTest(value=value):
+                engine = SericiteEngine()
+                engine.create_root(
+                    "value = get()\n", functions={"get": lambda value=value: value}
+                ).run()
+                self.assertEqual(engine._contexts[0].alloc_bytes, expected)
 
     def test_deep_structure_snapshot_no_recursion_leak(self):
         source = "x = 1\ni = 0\nwhile i < 2000:\n    x = [x]\n    i = i + 1\nprint(1)\n"

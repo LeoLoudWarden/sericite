@@ -13,6 +13,8 @@ from .vfs import VirtualFileSystem
 
 _TERMINAL_STATES = {"done", "error", "resource_exhausted", "terminated"}
 _MAX_SOURCE_BYTES = 4 * 1024 * 1024
+_MAX_RENDER_NODES = 10_000
+_MAX_RENDER_CHARS = 1_048_576
 _VM_OPTIONS = {
     "max_instructions",
     "max_output_bytes",
@@ -147,10 +149,7 @@ class SericiteSchema:
         )
 
     def __repr__(self) -> str:
-        inner = ", ".join(
-            f"{name}: {_contract_text(contract)}" for name, contract in self.fields
-        )
-        return f"schema({inner})"
+        return _schema_repr(self)
 
 
 class SericiteRecord:
@@ -169,20 +168,44 @@ def _contract_key(contract: object) -> object:
     return ("tag", contract)
 
 
-def _contract_text(contract: object, label: str | None = None, _depth: int = 0) -> str:
+def _contract_text(
+    contract: object,
+    label: str | None = None,
+    _depth: int = 0,
+    _seen: set[int] | None = None,
+    _budget: list[int] | None = None,
+) -> str:
+    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True)
+    if _seen is not None:
+        renderer.seen = _seen
+    if _budget is not None:
+        renderer.remaining_nodes = _budget[0]
     if isinstance(contract, SericiteSchema):
-        if _depth >= 64:
-            return "..."
-        body = (
-            "{"
-            + ", ".join(
-                f"{name}: {_contract_text(inner, None, _depth + 1)}"
-                for name, inner in contract.fields
-            )
-            + "}"
-        )
-        return f"{label} {body}" if label else body
-    return label or str(contract)
+        if label:
+            renderer._add(label + " ")
+        renderer.render_contract(contract, _depth)
+    else:
+        renderer._visit()
+        renderer._add(label or str(contract))
+    if _budget is not None:
+        _budget[0] = renderer.remaining_nodes
+    return renderer.text()
+
+
+def _schema_repr(
+    schema: SericiteSchema,
+    seen: set[int] | None = None,
+    budget: list[int] | None = None,
+) -> str:
+    renderer = _StringRenderer(_MAX_RENDER_CHARS, truncate=True)
+    if seen is not None:
+        renderer.seen = seen
+    if budget is not None:
+        renderer.remaining_nodes = budget[0]
+    renderer.render_schema(schema)
+    if budget is not None:
+        budget[0] = renderer.remaining_nodes
+    return renderer.text()
 
 
 def _normalize_contract(value: object) -> object:
@@ -827,7 +850,10 @@ class SericiteEngine:
                 )
             )
         elif op == isa.GET_ITER:
-            iterator = _make_iterator(stack.pop())
+            value = stack.pop()
+            if isinstance(value, (str, dict)):
+                self._charge_work(context, len(value))
+            iterator = _make_iterator(value)
             self._charge_alloc(context, len(iterator.items) * 8)
             frame.locals[arg] = iterator
         elif op == isa.FOR_ITER:
@@ -986,13 +1012,12 @@ class SericiteEngine:
             result_budget = [
                 context.limits.max_list_size + context.limits.max_dict_size
             ]
-            result = _from_host(raw, result_budget, context.limits.max_string_bytes)
-            spent = (
-                context.limits.max_list_size
-                + context.limits.max_dict_size
-                - result_budget[0]
+            result = _from_host(
+                raw,
+                result_budget,
+                context.limits,
+                charge=lambda size: self._charge_alloc(context, size),
             )
-            self._charge_alloc(context, spent * 8)
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(result)
@@ -1278,7 +1303,9 @@ class SericiteEngine:
                 "int", lambda value: self._convert_int(home, value), home
             )
         if name == "float":
-            return _NativeFunction("float", self._convert_float)
+            return _NativeFunction(
+                "float", lambda value: self._convert_float(home, value), home
+            )
         if name == "str":
             return _NativeFunction(
                 "str", lambda value: self._str_builtin(home, value), home
@@ -1421,7 +1448,16 @@ class SericiteEngine:
             raise SericiteError(
                 f"print() end must be str, got {_type_name(end)}", kind="type_error"
             )
-        line = " ".join(_to_str(v) for v in values) + end
+        remaining = context.io.remaining_output_bytes
+        renderer = _StringRenderer(
+            _MAX_RENDER_CHARS if remaining is None else remaining, output=True
+        )
+        for index, value in enumerate(values):
+            if index:
+                renderer._add(" ")
+            renderer.render(value)
+        renderer._add(end)
+        line = renderer.text()
         self._charge_work(context, len(line) // 64)
         context.io.write_output(line)
 
@@ -1479,24 +1515,24 @@ class SericiteEngine:
         )
 
     def _str_builtin(self, context: VMContext, value: object) -> str:
-        result = _to_str(value)
-        if len(result) > context.limits.max_string_bytes:
-            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        result = _to_str(value, context.limits.max_string_bytes)
         self._charge_alloc(context, len(result) * 4)
         self._charge_work(context, len(result) // 64)
         return result
 
-    def _convert_float(self, value: object) -> float:
+    def _convert_float(self, context: VMContext, value: object) -> float:
         if type(value) is bool:
             return float(value)
         if type(value) in (int, float):
             return float(value)
         if type(value) is str:
+            self._charge_work(context, len(value))
             try:
                 return float(value.strip())
             except ValueError:
+                shown = value if len(value) <= 64 else value[:61] + "..."
                 raise SericiteError(
-                    f"cannot convert to float: {value!r}",
+                    f"cannot convert to float: {shown!r}",
                     kind="conversion_error",
                 ) from None
         raise SericiteError(
@@ -1652,17 +1688,33 @@ class SericiteEngine:
     ) -> bool:
         if op in ("==", "!="):
             counter = [1]
-            result = _equals(left, right, set(), {}, counter)
+            result = _equals(
+                left,
+                right,
+                set(),
+                {},
+                counter,
+                lambda amount: self._charge_work(context, amount),
+            )
             self._charge_work(context, counter[0])
             return result if op == "==" else not result
         if op in ("in", "not in"):
             counter = [1]
-            result = _contains(right, left, set(), {}, counter)
+            result = _contains(
+                right,
+                left,
+                set(),
+                {},
+                counter,
+                lambda amount: self._charge_work(context, amount),
+            )
             self._charge_work(context, counter[0])
             return result if op == "in" else not result
         if (_is_number(left) and _is_number(right)) or (
             type(left) is str and type(right) is str
         ):
+            if type(left) is str:
+                self._charge_work(context, min(len(left), len(right)))
             if op == "<":
                 return left < right
             if op == "<=":
@@ -1964,8 +2016,10 @@ class SericiteEngine:
             for name, cell in frame.cells.items():
                 if cell.value is not _UNBOUND:
                     visible[name] = cell.value
+            seen: set[int] = set()
+            budget = [_MAX_RENDER_NODES]
             locals_ = {
-                name: self._safe_value(value)
+                name: self._safe_value(value, seen, _budget=budget)
                 for name, value in visible.items()
                 if not name.startswith("$")
             }
@@ -1993,47 +2047,40 @@ class SericiteEngine:
         value: object,
         _seen: set[int] | None = None,
         _depth: int = 0,
+        _budget: list[int] | None = None,
     ) -> object:
+        if _seen is None:
+            _seen = set()
+        if _budget is None:
+            _budget = [_MAX_RENDER_NODES]
+        if _budget[0] <= 0:
+            return "<max nodes>"
+        _budget[0] -= 1
         if value is None or type(value) in {str, int, float, bool}:
             return value
-        if isinstance(value, (list, dict)):
+        if isinstance(value, (list, dict, SericiteRecord)):
             if _depth > 64:
                 return "<max depth>"
-            if _seen is None:
-                _seen = set()
             ident = id(value)
             if ident in _seen:
-                return "[...]"
-            _seen.add(ident)
-            try:
-                if isinstance(value, list):
-                    return [self._safe_value(item, _seen, _depth + 1) for item in value]
-                return {
-                    str(key): self._safe_value(item, _seen, _depth + 1)
-                    for key, item in value.items()
-                }
-            finally:
-                _seen.discard(ident)
-        if isinstance(value, SericiteRecord):
-            if _depth > 64:
-                return "<max depth>"
-            if _seen is None:
-                _seen = set()
-            ident = id(value)
-            if ident in _seen:
+                if type(value) is list:
+                    return "[...]"
+                if type(value) is dict:
+                    return "{...}"
                 return "record(...)"
             _seen.add(ident)
-            try:
-                return {
-                    "<record>": {
-                        str(key): self._safe_value(item, _seen, _depth + 1)
-                        for key, item in value.fields.items()
-                    }
-                }
-            finally:
-                _seen.discard(ident)
+            if type(value) is list:
+                return [
+                    self._safe_value(item, _seen, _depth + 1, _budget) for item in value
+                ]
+            fields = value.fields if isinstance(value, SericiteRecord) else value
+            result = {
+                str(key): self._safe_value(item, _seen, _depth + 1, _budget)
+                for key, item in fields.items()
+            }
+            return {"<record>": result} if isinstance(value, SericiteRecord) else result
         if isinstance(value, SericiteSchema):
-            return repr(value)
+            return _schema_repr(value, _seen, _budget)
         if isinstance(value, (VMHandle, SericiteFunction, _NativeFunction)):
             return repr(value)
         if isinstance(value, (_GrantedHostFunction, _GrantedSericiteFunction)):
@@ -2107,7 +2154,12 @@ def _to_host(value: object, budget: list[int], depth: int = 0) -> object:
 
 
 def _from_host(
-    value: object, budget: list[int], max_string_bytes: int, depth: int = 0
+    value: object,
+    budget: list[int],
+    limits: SericiteLimits,
+    depth: int = 0,
+    *,
+    charge: Callable[[int], None],
 ) -> object:
     """Validate and deep-copy a host return value into a sericite value; foreign objects and oversized structures are rejected."""
     budget[0] -= 1
@@ -2115,15 +2167,27 @@ def _from_host(
         raise SericiteError("FFI result structure too large", kind="ffi_error")
     if depth > 64:
         raise SericiteError("FFI result nested too deeply", kind="ffi_error")
+    if type(value) is int and value.bit_length() > limits.max_int_bits:
+        raise SericiteError("FFI result integer too large", kind="ffi_error")
     if value is None or type(value) in (int, float, bool):
+        charge(8)
         return value
     if type(value) is str:
-        if len(value) > max_string_bytes:
+        if len(value) > limits.max_string_bytes:
             raise SericiteError("FFI result string too large", kind="ffi_error")
+        charge(len(value) * 4)
         return value
     if type(value) in (list, tuple):
-        return [_from_host(item, budget, max_string_bytes, depth + 1) for item in value]
+        if len(value) > limits.max_list_size:
+            raise SericiteError("FFI result list too large", kind="ffi_error")
+        charge(len(value) * 8)
+        return [
+            _from_host(item, budget, limits, depth + 1, charge=charge) for item in value
+        ]
     if type(value) is dict:
+        if len(value) > limits.max_dict_size:
+            raise SericiteError("FFI result dict too large", kind="ffi_error")
+        charge(len(value) * 16)
         result: dict[object, object] = {}
         for key, item in value.items():
             if type(key) not in (str, int, float, bool) and key is not None:
@@ -2131,7 +2195,10 @@ def _from_host(
                     f"FFI result has unhashable key of type '{type(key).__name__}'",
                     kind="ffi_error",
                 )
-            result[key] = _from_host(item, budget, max_string_bytes, depth + 1)
+            copied_key = _from_host(key, budget, limits, depth + 1, charge=charge)
+            result[copied_key] = _from_host(
+                item, budget, limits, depth + 1, charge=charge
+            )
         return result
     raise SericiteError(
         f"host function returned unsupported type '{type(value).__name__}'",
@@ -2184,6 +2251,7 @@ def _equals(
     _active: set | None = None,
     _cache: dict | None = None,
     _counter: list | None = None,
+    _charge: Callable[[int], None] | None = None,
 ) -> bool:
     """Structural equality.
 
@@ -2215,11 +2283,11 @@ def _equals(
             if cached is not None:
                 return cached
             _active.add(pair)
-            result = _equals_container(left, right, _active, _cache, _counter)
+            result = _equals_container(left, right, _active, _cache, _counter, _charge)
             _active.discard(pair)
             _cache[pair] = result
             return result
-        return _equals_container(left, right, _active, _cache, _counter)
+        return _equals_container(left, right, _active, _cache, _counter, _charge)
     if isinstance(left, SericiteSchema):
         return left.key == right.key
     return left is right
@@ -2231,17 +2299,23 @@ def _equals_container(
     active: set | None,
     cache: dict | None,
     counter: list | None,
+    charge: Callable[[int], None] | None,
 ) -> bool:
     if type(left) is list:
         return len(left) == len(right) and all(
-            _equals(a, b, active, cache, counter) for a, b in zip(left, right)
+            _equals(a, b, active, cache, counter, charge) for a, b in zip(left, right)
         )
     if type(left) is dict:
+        if charge is not None:
+            charge(len(left))
+        elif counter is not None:
+            counter[0] += len(left)
         return left.keys() == right.keys() and all(
-            _equals(left[key], right[key], active, cache, counter) for key in left
+            _equals(left[key], right[key], active, cache, counter, charge)
+            for key in left
         )
     return left.schema.key == right.schema.key and _equals(
-        left.fields, right.fields, active, cache, counter
+        left.fields, right.fields, active, cache, counter, charge
     )
 
 
@@ -2251,6 +2325,7 @@ def _contains(
     _active: set | None = None,
     _cache: dict | None = None,
     _counter: list | None = None,
+    _charge: Callable[[int], None] | None = None,
 ) -> bool:
     if type(container) is dict:
         if type(item) not in (str, int, float, bool) and item is not None:
@@ -2261,7 +2336,8 @@ def _contains(
         return item in container
     if type(container) is list:
         return any(
-            _equals(element, item, _active, _cache, _counter) for element in container
+            _equals(element, item, _active, _cache, _counter, _charge)
+            for element in container
         )
     if type(container) is str and type(item) is str:
         if _counter is not None:
@@ -2313,52 +2389,158 @@ def _operand_error(op: str, left: object, right: object) -> SericiteError:
     )
 
 
-def _to_str(value: object, _seen: set[int] | None = None) -> str:
-    if value is None:
-        return "None"
-    if type(value) is bool:
-        return "True" if value else "False"
-    if type(value) is str:
-        return value
-    if type(value) in (int, float):
-        return str(value)
-    if type(value) in (list, dict) or isinstance(value, SericiteRecord):
-        if _seen is None:
-            _seen = set()
-        ident = id(value)
-        if ident in _seen:
-            if type(value) is list:
-                return "[...]"
-            if type(value) is dict:
-                return "{...}"
-            return "record(...)"
-        _seen.add(ident)
-        try:
-            if type(value) is list:
-                return "[" + ", ".join(_repr_str(item, _seen) for item in value) + "]"
-            if isinstance(value, SericiteRecord):
-                return (
-                    "record("
-                    + ", ".join(
-                        f"{key}={_repr_str(item, _seen)}"
-                        for key, item in value.fields.items()
-                    )
-                    + ")"
-                )
-            return (
-                "{"
-                + ", ".join(
-                    f"{_repr_str(key, _seen)}: {_repr_str(item, _seen)}"
-                    for key, item in value.items()
-                )
-                + "}"
+class _StringRenderer:
+    def __init__(
+        self, max_chars: int, *, output: bool = False, truncate: bool = False
+    ) -> None:
+        self.parts: list[str] = []
+        self.seen: set[int] = set()
+        self.remaining_nodes = _MAX_RENDER_NODES
+        self.remaining_chars = max(0, max_chars)
+        self.output = output
+        self.truncate = truncate
+        self.exhausted = False
+
+    def _add(self, text: str) -> None:
+        if self.exhausted:
+            return
+        if len(text) > self.remaining_chars:
+            if self.truncate:
+                if self.remaining_chars >= 3:
+                    self.parts.append("...")
+                    self.remaining_chars -= 3
+                self.exhausted = True
+                return
+            if self.output:
+                raise OutputLimitExceeded
+            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        self.parts.append(text)
+        self.remaining_chars -= len(text)
+
+    def _visit(self) -> None:
+        if self.exhausted:
+            return
+        if self.remaining_nodes <= 0:
+            if self.truncate:
+                self._add("...")
+                self.exhausted = True
+                return
+            raise SericiteError(
+                "rendering node limit exceeded", kind="resource_exhausted"
             )
-        finally:
-            _seen.discard(ident)
-    return repr(value)
+        self.remaining_nodes -= 1
+
+    def render(self, value: object, repr_strings: bool = False, depth: int = 0) -> None:
+        self._visit()
+        if self.exhausted:
+            return
+        if value is None:
+            self._add("None")
+            return
+        if type(value) is bool:
+            self._add("True" if value else "False")
+            return
+        if type(value) is str:
+            self._add(repr(value) if repr_strings else value)
+            return
+        if type(value) in (int, float):
+            self._add(str(value))
+            return
+        if type(value) in (list, dict) or isinstance(value, SericiteRecord):
+            ident = id(value)
+            if ident in self.seen:
+                if type(value) is list:
+                    self._add("[...]")
+                elif type(value) is dict:
+                    self._add("{...}")
+                else:
+                    self._add("record(...)")
+                return
+            if depth > 64:
+                self._add("<max depth>")
+                return
+            self.seen.add(ident)
+            if type(value) is list:
+                self._add("[")
+                for index, item in enumerate(value):
+                    if index:
+                        self._add(", ")
+                    self.render(item, True, depth + 1)
+                    if self.exhausted:
+                        return
+                self._add("]")
+                return
+            if isinstance(value, SericiteRecord):
+                self._add("record(")
+                items = value.fields.items()
+                separator = "="
+            else:
+                self._add("{")
+                items = value.items()
+                separator = ": "
+            for index, (key, item) in enumerate(items):
+                if index:
+                    self._add(", ")
+                if isinstance(value, SericiteRecord):
+                    self._add(str(key))
+                else:
+                    self.render(key, True, depth + 1)
+                self._add(separator)
+                self.render(item, True, depth + 1)
+                if self.exhausted:
+                    return
+            self._add(")" if isinstance(value, SericiteRecord) else "}")
+            return
+        if isinstance(value, SericiteSchema):
+            self.render_schema(value)
+            return
+        self._add(repr(value))
+
+    def render_schema(self, schema: SericiteSchema) -> None:
+        if self.exhausted:
+            return
+        if id(schema) in self.seen:
+            self._add("schema(...)")
+            return
+        self.seen.add(id(schema))
+        self._add("schema(")
+        for index, (name, contract) in enumerate(schema.fields):
+            if index:
+                self._add(", ")
+            self._add(name)
+            self._add(": ")
+            self.render_contract(contract)
+            if self.exhausted:
+                return
+        self._add(")")
+
+    def render_contract(self, contract: object, depth: int = 0) -> None:
+        self._visit()
+        if self.exhausted:
+            return
+        if not isinstance(contract, SericiteSchema):
+            self._add(str(contract))
+            return
+        if depth >= 64 or id(contract) in self.seen:
+            self._add("...")
+            return
+        self.seen.add(id(contract))
+        self._add("{")
+        for index, (name, inner) in enumerate(contract.fields):
+            if index:
+                self._add(", ")
+            self._add(name)
+            self._add(": ")
+            self.render_contract(inner, depth + 1)
+            if self.exhausted:
+                return
+        self._add("}")
+
+    def text(self) -> str:
+        return "".join(self.parts)
 
 
-def _repr_str(value: object, _seen: set[int] | None = None) -> str:
-    if type(value) is str:
-        return repr(value)
-    return _to_str(value, _seen)
+def _to_str(value: object, max_chars: int = _MAX_RENDER_CHARS) -> str:
+    renderer = _StringRenderer(max_chars)
+    renderer.render(value)
+    return renderer.text()

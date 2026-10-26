@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 from sericite import SericiteEngine, SericiteError, SericiteLimits
 
@@ -72,6 +73,50 @@ class ConstructionTests(unittest.TestCase):
     def test_schema_repr(self):
         out = run("class P:\n    x\n    y: int\nprint(P)\n")
         self.assertEqual(out, "schema(x: any, y: int)\n")
+
+    def test_shared_schema_dag_repr_is_bounded(self):
+        source = (
+            "class Leaf:\n"
+            "    x: int\n"
+            "schema = Leaf\n"
+            "i = 0\n"
+            "while i < 20:\n"
+            "    class Node:\n"
+            "        left: schema\n"
+            "        right: schema\n"
+            "    schema = Node\n"
+            "    i = i + 1\n"
+            "print(schema)\n"
+        )
+        output = run(source)
+        self.assertLess(len(output), 1000)
+        self.assertIn("...", output)
+
+    def test_schema_repr_enforces_character_budget(self):
+        field = "x" * 100_000
+        depth = 20
+        lines = [f"class S0:\n    {field}: int"]
+        for index in range(1, depth + 1):
+            lines.append(f"class S{index}:\n    {field}: S{index - 1}")
+        engine = SericiteEngine()
+        vm = engine.create_root("\n".join(lines) + "\n")
+        vm.run()
+        schema = engine._contexts[0].frames[0].locals[f"S{depth}"]
+        rendered = repr(schema)
+        self.assertLessEqual(len(rendered), 1_048_576)
+        self.assertTrue(rendered.endswith("..."))
+
+    def test_schema_print_does_not_prebuild_full_repr(self):
+        engine = SericiteEngine(SericiteLimits(max_output_bytes=1))
+        vm = engine.create_root("class P:\n    x: int\nprint(P)\n")
+        with (
+            unittest.mock.patch(
+                "sericite.engine._schema_repr", side_effect=AssertionError
+            ),
+            self.assertRaises(SericiteError) as ctx,
+        ):
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
 
 class AttributeAccessTests(unittest.TestCase):
@@ -917,6 +962,20 @@ class HomeVmTests(unittest.TestCase):
             "",
         )
 
+    def test_float_conversion_work_mirrored_to_caller_quota(self):
+        text = "0." + "1" * 1000
+        source = (
+            f"text = {text!r}\n"
+            "def parse():\n"
+            "    return float(text)\n"
+            'sub = VM("value = parse()", functions={"parse": parse}, '
+            "max_instructions=100)\n"
+            "sub.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            run(source)
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
     def test_spawned_vms_bill_caller_cumulatively(self):
         # grandchild VMs repeatedly created via a granted function: the grandchild's runtime consumption is accounted
         # along the caller's ancestor chain, so a tight-quota caller is exhausted after a few spawns (rather than each grandchild being capped individually)
@@ -1060,6 +1119,22 @@ class ReprTests(unittest.TestCase):
     def test_record_cycle_safe(self):
         out = run("class Node:\n    next\nn = Node(None)\nn.next = n\nprint(n)\n")
         self.assertEqual(out, "record(next=record(...))\n")
+
+    def test_shared_record_dag_repr_is_bounded(self):
+        source = (
+            "class Node:\n"
+            "    left\n"
+            "    right\n"
+            "value = Node(0, 0)\n"
+            "i = 0\n"
+            "while i < 20:\n"
+            "    value = Node(value, value)\n"
+            "    i = i + 1\n"
+            "print(value)\n"
+        )
+        output = run(source)
+        self.assertLess(len(output), 2000)
+        self.assertIn("record(...)", output)
 
 
 class SnapshotTests(unittest.TestCase):
