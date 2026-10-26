@@ -111,7 +111,7 @@ class ConstructionTests(unittest.TestCase):
         vm = engine.create_root("class P:\n    x: int\nprint(P)\n")
         with (
             unittest.mock.patch(
-                "sericite.engine._schema_repr", side_effect=AssertionError
+                "sericite.engine._values._schema_repr", side_effect=AssertionError
             ),
             self.assertRaises(SericiteError) as ctx,
         ):

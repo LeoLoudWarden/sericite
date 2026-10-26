@@ -23,6 +23,16 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points |
 
+The `engine` package is split into cohesive parts:
+
+- `_model`: limits, frames, functions, schemas/records, native wrappers, VMContext/VMHandle
+- `_values`: value semantics, rendering, contract helpers, FFI deep-copy
+- `_core`: lifecycle, dispatch loop, exception unwinding, call machinery
+- `_builtins`: built-in functions, child-VM creation
+- `_operators`: operator/index/attribute semantics, container/record natives
+- `_hostdbg`: VM-handle method charging, debug snapshots
+- `__init__`: assembles `SericiteEngine` from these parts and re-exports the public API
+
 ## 3. Design invariants
 
 Anyone modifying the engine must preserve the following invariants (numbered for reference only):

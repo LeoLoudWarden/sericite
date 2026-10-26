@@ -23,6 +23,16 @@
 | `errors` | `SericiteError` 与集中管理的错误 kind 注册表 |
 | `cli` / `__main__` | 命令行入口 |
 
+`engine` 包按内聚职责拆分为：
+
+- `_model`：limits、帧、函数、schema/record、原生包装、VMContext/VMHandle
+- `_values`：值语义、渲染、契约 helper、FFI 深拷贝
+- `_core`：生命周期、调度循环、异常展开、调用机制
+- `_builtins`：内建函数、子 VM 创建
+- `_operators`：运算/索引/属性语义，容器与 record 原生方法
+- `_hostdbg`：VM 句柄方法计费、调试快照
+- `__init__`：组装 `SericiteEngine` 并 re-export 公开 API
+
 ## 3. 设计不变量
 
 修改引擎时必须保持以下不变量（编号仅为引用方便）：

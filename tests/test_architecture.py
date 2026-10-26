@@ -10,7 +10,9 @@ SOURCE = ROOT / "src" / "sericite"
 
 class AccountingArchitectureTests(unittest.TestCase):
     def test_legacy_accounting_entry_points_do_not_exist(self) -> None:
-        tree = ast.parse((SOURCE / "engine.py").read_text(encoding="utf-8"))
+        tree = ast.parse(
+            (SOURCE / "engine" / "__init__.py").read_text(encoding="utf-8")
+        )
         definitions = {
             node.name
             for node in ast.walk(tree)
@@ -22,7 +24,7 @@ class AccountingArchitectureTests(unittest.TestCase):
 
     def test_only_accounting_writes_instruction_and_allocation_ledgers(self) -> None:
         violations = []
-        for path in SOURCE.glob("*.py"):
+        for path in list(SOURCE.glob("*.py")) + list((SOURCE / "engine").glob("*.py")):
             if path.name == "accounting.py":
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
