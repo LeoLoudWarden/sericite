@@ -24,7 +24,11 @@ class AccountingArchitectureTests(unittest.TestCase):
 
     def test_only_accounting_writes_instruction_and_allocation_ledgers(self) -> None:
         violations = []
-        for path in list(SOURCE.glob("*.py")) + list((SOURCE / "engine").glob("*.py")):
+        for path in (
+            list(SOURCE.glob("*.py"))
+            + list((SOURCE / "engine").glob("*.py"))
+            + list((SOURCE / "compiler").glob("*.py"))
+        ):
             if path.name == "accounting.py":
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
