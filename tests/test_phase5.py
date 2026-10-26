@@ -312,7 +312,7 @@ class SecurityQuotaTests(unittest.TestCase):
             return original_estimate(value, meter=meter)
 
         source = 'sub = VM("value = [0' + ", 0" * 99 + ']")\n'
-        with patch("sericite.engine._estimate_size", observed_estimate):
+        with patch("sericite.engine._hostdbg._estimate_size", observed_estimate):
             engine.create_root(
                 source + "sub.run()\ncheckpoint()\nsub.snapshot()\n",
                 functions={
