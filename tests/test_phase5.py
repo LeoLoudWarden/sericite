@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
 from sericite import SericiteEngine, SericiteError, SericiteLimits
+from sericite.engine import _estimate_size, _StringRenderer
 
 
 def run(source, inputs=None, limits=None, functions=None):
@@ -216,6 +218,110 @@ class SecurityQuotaTests(unittest.TestCase):
         source = 'try:\n    big()\nexcept ffi_error:\n    print("blocked")\n'
         output = run(source, functions={"big": lambda: "x" * 10_000_000})
         self.assertEqual(output, "blocked\n")
+
+    def test_ffi_argument_copy_charges_each_node(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            engine.create_root(
+                "value = make()\ncheckpoint()\nprobe(value)\ncheckpoint()\n",
+                functions={
+                    "make": lambda size=size: [0] * size,
+                    "probe": lambda value: None,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    ),
+                },
+            ).run()
+            counts[size] = checkpoints[1] - checkpoints[0]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_ffi_result_copy_charges_each_node(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            engine.create_root(
+                "checkpoint()\nvalue = make()\ncheckpoint()\n",
+                functions={
+                    "make": lambda size=size: [0] * size,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    ),
+                },
+            ).run()
+            counts[size] = checkpoints[1] - checkpoints[0]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_ffi_argument_copy_enforces_quota_before_host_callback(self):
+        called = []
+        limits = SericiteLimits(max_instructions=15_000)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "value = make()\nprobe(value)\n",
+                limits=limits,
+                functions={
+                    "make": lambda: [0] * 10_000,
+                    "probe": lambda value: called.append(value),
+                },
+            )
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(called, [])
+
+    def test_ffi_result_copy_enforces_tight_instruction_quota(self):
+        limits = SericiteLimits(max_instructions=100)
+        with self.assertRaises(SericiteError) as ctx:
+            run(
+                "value = make()\n",
+                limits=limits,
+                functions={"make": lambda: [0] * 10_000},
+            )
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_print_charges_nodes_before_final_join(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        join_counts = []
+        original_text = _StringRenderer.text
+
+        def observed_text(renderer, *, allocate=False):
+            join_counts.append(engine._contexts[0].instruction_count)
+            return original_text(renderer, allocate=allocate)
+
+        with patch("sericite.engine._StringRenderer.text", observed_text):
+            engine.create_root(
+                "value = make()\ncheckpoint()\nprint(value)\n",
+                functions={
+                    "make": lambda: [0] * 1000,
+                    "checkpoint": lambda: checkpoints.append(
+                        engine._contexts[0].instruction_count
+                    ),
+                },
+            ).run()
+        self.assertGreaterEqual(join_counts[0] - checkpoints[0], 1000)
+
+    def test_snapshot_charges_safe_conversion_before_result_estimation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        estimate_counts = []
+        original_estimate = _estimate_size
+
+        def observed_estimate(value, budget, *, meter):
+            estimate_counts.append(engine._contexts[0].instruction_count)
+            return original_estimate(value, budget, meter=meter)
+
+        source = 'sub = VM("value = [0' + ", 0" * 99 + ']")\n'
+        with patch("sericite.engine._estimate_size", observed_estimate):
+            engine.create_root(
+                source + "sub.run()\ncheckpoint()\nsub.snapshot()\n",
+                functions={
+                    "checkpoint": lambda: checkpoints.append(
+                        engine._contexts[0].instruction_count
+                    )
+                },
+            ).run()
+        self.assertGreaterEqual(estimate_counts[-1] - checkpoints[0], 100)
 
     def test_shared_dag_snapshot_is_bounded(self):
         source = (

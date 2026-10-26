@@ -930,7 +930,7 @@ class HomeVmTests(unittest.TestCase):
         else:
             raise AssertionError("expected resource_exhausted")
 
-    def test_builtin_work_mirrored_to_caller_quota(self):
+    def test_builtin_work_charged_to_caller_quota(self):
         # a granted function's read_file acts on the home filesystem,
         # but resource consumption is also charged to the caller's ledger: a tight-quota child VM is blocked from reading a large file
         source = (
@@ -962,7 +962,7 @@ class HomeVmTests(unittest.TestCase):
             "",
         )
 
-    def test_float_conversion_work_mirrored_to_caller_quota(self):
+    def test_float_conversion_work_charged_to_caller_quota(self):
         text = "0." + "1" * 1000
         source = (
             f"text = {text!r}\n"
@@ -1010,7 +1010,7 @@ class HomeVmTests(unittest.TestCase):
         self.assertEqual(grandchild.parent_id, 1)
 
     def test_spawn_alloc_not_double_counted(self):
-        # the grandchild VM's initial allocation is accounted once along the ancestor chain; mirrored charging does not double-count it against the caller
+        # the grandchild VM's initial allocation is accounted once along the ancestor chain; charged charging does not double-count it against the caller
         import json
 
         grandchild_source = "x = " + json.dumps("y" * 50000)

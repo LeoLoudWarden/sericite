@@ -67,7 +67,7 @@ print(vm.run(), end="")    # 42
 - 父级可以预置文件、喂输入、逐语句或逐指令单步、查看快照、随时终止；
 - 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
 
-廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.05 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。代表性循环连续执行平均约 0.65 µs/指令，逐指令调试约 1.86 µs/指令（实测环境与复现脚本见 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)）。
+廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.088 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。代表性循环连续执行平均约 0.82 µs/指令，逐指令调试约 2.60 µs/指令（实测环境与复现脚本见 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)）。
 
 ## record：类型名只是编译期的报错标签
 
@@ -110,7 +110,8 @@ p_outer2: PointA = f()
 |---|---|
 | [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | Sericite 是什么、为什么存在、边界划在哪里（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md)） |
 | [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | Safe-Tcl 证明了什么、停在哪里，Sericite 补什么（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md)） |
-| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | 自完备的语言子集与语义（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md)） |
+| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | Sericite 脚本的语言子集与语义（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md)） |
+| [宿主参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.zh-CN.md) | Python 宿主 API、VM 驱动、FFI 与调试（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.md)） |
 | [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | 引擎结构、设计不变量、资源配额（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md)） |
 | [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | 威胁模型；引擎保证什么、不保证什么（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md)） |
 | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | Sericite 0.1.0 逐阶段构建过程，含可运行检查点（`git checkout stage-1` … `stage-6`） |

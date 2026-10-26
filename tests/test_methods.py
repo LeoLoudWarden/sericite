@@ -74,12 +74,17 @@ class ListPopChargeTests(unittest.TestCase):
         counts = {}
         for size in (2, 4):
             engine = SericiteEngine()
-            vm = engine.create_root(
-                "items = make_list()\nitems.pop(0)\n",
-                functions={"make_list": lambda size=size: list(range(size))},
-            )
-            vm.run()
-            counts[size] = vm.snapshot()["instruction_count"]
+            checkpoints = []
+            engine.create_root(
+                f"items = {list(range(size))!r}\n"
+                "checkpoint()\nitems.pop(0)\ncheckpoint()\n",
+                functions={
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    )
+                },
+            ).run()
+            counts[size] = checkpoints[1] - checkpoints[0]
         self.assertEqual(counts[4] - counts[2], 2)
 
     def test_pop_from_end_has_no_size_dependent_work(self):
@@ -87,12 +92,17 @@ class ListPopChargeTests(unittest.TestCase):
             counts = []
             for size in (2, 100):
                 engine = SericiteEngine()
-                vm = engine.create_root(
-                    f"items = make_list()\n{call}\n",
-                    functions={"make_list": lambda size=size: list(range(size))},
-                )
-                vm.run()
-                counts.append(vm.snapshot()["instruction_count"])
+                checkpoints = []
+                engine.create_root(
+                    f"items = {list(range(size))!r}\n"
+                    f"checkpoint()\n{call}\ncheckpoint()\n",
+                    functions={
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(engine._contexts[0].instruction_count)
+                        )
+                    },
+                ).run()
+                counts.append(checkpoints[1] - checkpoints[0])
             self.assertEqual(counts[0], counts[1])
 
     def test_pop_front_enforces_instruction_limit(self):
@@ -110,7 +120,7 @@ class ListPopChargeTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
-    def test_cross_vm_pop_front_mirrors_shift_work_to_caller(self):
+    def test_cross_vm_pop_front_charges_shift_work_to_caller(self):
         engine = SericiteEngine()
         source = (
             "items = make_list()\n"
@@ -214,14 +224,18 @@ class DictMethodTests(unittest.TestCase):
         counts = {}
         for method in ("keys", "values"):
             for size in (2, 4):
-                vm = SericiteEngine().create_root(
-                    f"d = make_dict()\nx = d.{method}()\n",
+                data = {i: i for i in range(size)}
+                engine = SericiteEngine()
+                checkpoints = []
+                engine.create_root(
+                    f"d = {data!r}\ncheckpoint()\nx = d.{method}()\ncheckpoint()\n",
                     functions={
-                        "make_dict": lambda size=size: {i: i for i in range(size)}
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(engine._contexts[0].instruction_count)
+                        )
                     },
-                )
-                vm.run()
-                counts[method, size] = vm.snapshot()["instruction_count"]
+                ).run()
+                counts[method, size] = checkpoints[1] - checkpoints[0]
             self.assertEqual(counts[method, 4] - counts[method, 2], 2)
 
 
@@ -242,8 +256,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             source,
             functions={
                 "get_text": lambda: text,
-                "checkpoint": lambda: checkpoints.append(
-                    engine._contexts[0].alloc_bytes
+                "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                    checkpoints.append(engine._contexts[0].alloc_bytes)
                 ),
             },
         ).run()
@@ -280,7 +294,65 @@ class VMHandleMethodChargeTests(unittest.TestCase):
                 ).run()
                 self.assertGreaterEqual(checkpoints[1] - checkpoints[0], len(text) * 4)
 
-    def test_cross_vm_read_file_mirrors_result_allocation_to_caller(self):
+    def test_run_empty_inputs_charge_work_and_queue_slots_on_done_vm(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        vm = engine.create_root(
+            'sub = VM("")\nvalues = inputs()\ncheckpoint()\n'
+            "sub.run(values)\ncheckpoint()\n",
+            functions={
+                "inputs": lambda: [""] * 1000,
+                "checkpoint": lambda: checkpoints.append(
+                    (
+                        engine._contexts[0].instruction_count,
+                        engine._contexts[0].alloc_bytes,
+                    )
+                ),
+            },
+        )
+        vm.run()
+        target = engine._contexts[1]
+        self.assertEqual(target.state, "done")
+        self.assertEqual(target.io.buffered_input_count, 1000)
+        self.assertGreaterEqual(checkpoints[1][0] - checkpoints[0][0], 1000)
+        self.assertGreaterEqual(checkpoints[1][1] - checkpoints[0][1], 8000)
+
+    def test_run_inputs_rejects_partial_invalid_batch_atomically(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("")\n'
+            "try:\n"
+            "    sub.run(inputs())\n"
+            "except runtime_error:\n"
+            "    pass\n",
+            functions={"inputs": lambda: ["accepted", None]},
+        )
+        vm.run()
+        self.assertEqual(engine._contexts[1].io.buffered_input_count, 0)
+
+    def test_run_empty_inputs_enforce_memory_quota_before_queue_mutation(self):
+        engine = SericiteEngine(SericiteLimits(max_total_bytes=1000))
+        vm = engine.create_root(
+            'sub = VM("")\nsub.run(inputs())\n',
+            functions={"inputs": lambda: [""] * 100},
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(engine._contexts[1].io.buffered_input_count, 0)
+
+    def test_run_empty_inputs_enforce_instruction_quota_before_queue_mutation(self):
+        engine = SericiteEngine(SericiteLimits(max_instructions=150))
+        vm = engine.create_root(
+            'sub = VM("")\nsub.run(inputs())\n',
+            functions={"inputs": lambda: [""] * 100},
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(engine._contexts[1].io.buffered_input_count, 0)
+
+    def test_cross_vm_read_file_charges_result_allocation_to_caller(self):
         engine = SericiteEngine()
         text = "x" * 10_000
         source = (
@@ -296,7 +368,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         engine.create_root(source, functions={"get_text": lambda: text}).run()
         self.assertGreaterEqual(engine._contexts[2].alloc_bytes, len(text) * 4)
 
-    def test_cross_vm_step_mirrors_target_work_to_caller(self):
+    def test_cross_vm_step_charges_target_work_to_caller(self):
         engine = SericiteEngine()
         target_source = "value = 0" + " + 1" * 100
         source = (
@@ -331,8 +403,100 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(engine._contexts[2].state, "resource_exhausted")
 
 
-class NativeCallExceptionMirrorTests(unittest.TestCase):
-    def test_failed_vm_run_mirrors_target_work_before_exception(self):
+class VfsChargeTests(unittest.TestCase):
+    def test_directory_index_tracks_nested_files(self):
+        engine = SericiteEngine()
+        engine.create_root(
+            'write_file("/a/b/file.txt", "x")\nwrite_file("/a/other.txt", "y")\n'
+        ).run()
+        fs = engine._contexts[0].fs
+        self.assertEqual(fs.list_dir("/"), ["a"])
+        self.assertEqual(fs.list_dir("/a"), ["b", "other.txt"])
+        self.assertEqual(fs.list_dir("/a/b"), ["file.txt"])
+
+    def test_deep_path_allocation_covers_each_new_directory(self):
+        engine = SericiteEngine()
+        engine.create_root("")
+        fs = engine._contexts[0].fs
+        depth = 100
+        path = "/" + "/".join(["a"] * depth) + "/file.txt"
+        base = 64 + len(path) * 4
+        self.assertGreaterEqual(fs.write_allocation(path, ""), base + depth * 64)
+
+    def test_list_dir_charges_sort_work_and_result_allocation(self):
+        counts = {}
+        for size in (100, 1000):
+            limits = SericiteLimits(max_fs_files=2000)
+            engine = SericiteEngine(limits)
+            checkpoints = []
+            vm = engine.create_root(
+                "checkpoint()\nresult = list_dir('/')\ncheckpoint()\n",
+                functions={
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    )
+                },
+            )
+            fs = engine._contexts[0].fs
+            for index in range(size):
+                fs.write_file_trusted(f"/f{index}.txt", "")
+            vm.run()
+            counts[size] = (
+                checkpoints[1][0] - checkpoints[0][0],
+                checkpoints[1][1] - checkpoints[0][1],
+            )
+        self.assertGreater(counts[1000][0] - counts[100][0], 900)
+        self.assertGreaterEqual(counts[100][1], 100 * 8)
+        self.assertGreaterEqual(counts[1000][1], 1000 * 8)
+
+    def test_list_dir_enforces_instruction_quota_before_enumeration(self):
+        limits = SericiteLimits(max_instructions=100, max_fs_files=2000)
+        engine = SericiteEngine(limits)
+        vm = engine.create_root("result = list_dir('/')\n")
+        fs = engine._contexts[0].fs
+        for index in range(1000):
+            fs.write_file_trusted(f"/f{index}.txt", "")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_list_dir_enforces_result_memory_quota(self):
+        limits = SericiteLimits(max_total_bytes=400, max_fs_files=200)
+        engine = SericiteEngine(limits)
+        vm = engine.create_root("result = list_dir('/')\n")
+        fs = engine._contexts[0].fs
+        for index in range(100):
+            fs.write_file_trusted(f"/f{index}.txt", "")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_cross_vm_list_dir_charges_work_to_caller(self):
+        source = (
+            'target = VM("")\n'
+            "i = 0\n"
+            "while i < 1000:\n"
+            '    target.write_file("/f" + str(i), "")\n'
+            "    i = i + 1\n"
+            "bound = target.list_dir\n"
+            "def leak():\n"
+            "    return bound\n"
+            "attacker = VM(\"f = leak()\\nresult = f('/')\", "
+            "functions={'leak': leak}, max_instructions=100)\n"
+            "attacker.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            SericiteEngine().create_root(source).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+
+class NativeCallExceptionRouteTests(unittest.TestCase):
+    def test_failed_vm_run_charges_target_work_before_exception(self):
         engine = SericiteEngine()
         target_source = (
             'i = 0\nwhile i < 200:\n    value = i + 1\n    i = i + 1\nraise "boom"\n'
@@ -350,10 +514,11 @@ class NativeCallExceptionMirrorTests(unittest.TestCase):
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root(source).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
-        self.assertGreater(engine._contexts[1].instruction_count, 300)
+        self.assertGreater(engine._contexts[1].instruction_count, 250)
+        self.assertLessEqual(engine._contexts[1].instruction_count, 300)
         self.assertEqual(engine._contexts[2].state, "resource_exhausted")
 
-    def test_failed_child_compilation_mirrors_work_before_exception(self):
+    def test_failed_child_compilation_charges_work_before_exception(self):
         cases = (
             ("syntax_error", "x = (" * 1000),
             ("validation_error", "x = __class__\n" * 1000),
@@ -380,13 +545,13 @@ class NativeCallExceptionMirrorTests(unittest.TestCase):
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
                 self.assertEqual(engine._contexts[1].state, "resource_exhausted")
 
-    def test_failed_input_methods_mirror_precharged_allocation(self):
+    def test_failed_input_methods_do_not_commit_rejected_reservation(self):
         cases = (
-            ("write_file", "b(None, s)", "type_error"),
-            ("feed_input", "b(s, s)", "type_error"),
-            ("run", "b([s, None])", "runtime_error"),
+            ("write_file", "b(None, s)", "type_error", 0),
+            ("feed_input", "b(s, s)", "type_error", 0),
+            ("run", "b([s, None])", "runtime_error", 16),
         )
-        for method, call, error_kind in cases:
+        for method, call, error_kind, baseline_allocation in cases:
             with self.subTest(method=method):
                 engine = SericiteEngine()
                 text = "x" * 1000
@@ -417,7 +582,7 @@ class NativeCallExceptionMirrorTests(unittest.TestCase):
                     ).run()
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
                 attacker = engine._contexts[2]
-                self.assertGreaterEqual(attacker.alloc_bytes, len(text) * 4)
+                self.assertEqual(attacker.alloc_bytes, baseline_allocation)
                 self.assertEqual(attacker.state, "resource_exhausted")
 
     def test_input_required_still_pauses_and_resumes_caller(self):
@@ -440,10 +605,10 @@ class NativeCallExceptionMirrorTests(unittest.TestCase):
 
 
 class EscapedBoundMethodTests(unittest.TestCase):
-    def test_cross_vm_bound_method_mirrors_allocation_to_caller(self):
+    def test_cross_vm_bound_method_charges_allocation_to_caller(self):
         # A bound method created in the parent scope escapes into a child via a
         # granted function. Its resource cost still belongs to the defining VM,
-        # but must also be mirrored into the caller's quota (security.md §3.6),
+        # but must also enter the caller's causal route (security.md §3.6),
         # so a tight-quota child cannot borrow the parent's world to run past its
         # own budget.
         engine = SericiteEngine()
@@ -468,9 +633,9 @@ class EscapedBoundMethodTests(unittest.TestCase):
         self.assertEqual(child.state, "resource_exhausted")
         self.assertGreater(child.alloc_bytes, 0)
 
-    def test_cross_vm_dict_keys_mirrors_work_and_allocation_to_caller(self):
+    def test_cross_vm_dict_keys_charges_work_and_allocation_to_caller(self):
         # An escaped dict.keys() snapshot charges O(len(dict)) work and allocation
-        # to the defining VM; the causal mirror must charge the same to the child
+        # to the defining VM; the causal route must charge the same to the child
         # caller rather than letting the child pay only its own ~1 instruction.
         engine = SericiteEngine()
         source = (
@@ -487,13 +652,13 @@ class EscapedBoundMethodTests(unittest.TestCase):
         )
         engine.create_root(source).run()
         child = engine._contexts[1]
-        self.assertEqual(child.alloc_bytes, 4000)  # 500 keys * 8 bytes, mirrored
+        self.assertEqual(child.alloc_bytes, 4000)  # 500 keys * 8 bytes, charged
         self.assertGreater(child.instruction_count, 500)  # 500 units of snapshot work
 
-    def test_cross_vm_vm_method_mirrors_result_allocation_to_caller(self):
+    def test_cross_vm_vm_method_charges_result_allocation_to_caller(self):
         # A VM-handle bound method (sub.stdout) created in the parent scope escapes
         # into a grandchild via a granted function. Its result-size allocation is
-        # charged to the defining VM and must be mirrored into the caller's quota.
+        # charged to the defining VM and must be charged into the caller's quota.
         engine = SericiteEngine()
         source = (
             "sub = VM(\"print('hello world')\")\n"
@@ -506,7 +671,7 @@ class EscapedBoundMethodTests(unittest.TestCase):
         )
         engine.create_root(source).run()
         grandchild = engine._contexts[2]
-        self.assertGreater(grandchild.alloc_bytes, 0)  # stdout result size, mirrored
+        self.assertGreater(grandchild.alloc_bytes, 0)  # stdout result size, charged
 
 
 if __name__ == "__main__":

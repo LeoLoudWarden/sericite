@@ -279,7 +279,7 @@ class ResourceLimitTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         snap = vm.snapshot()
         self.assertEqual(snap["state"], "resource_exhausted")
-        self.assertEqual(snap["instruction_count"], 10_001)
+        self.assertEqual(snap["instruction_count"], 10_000)
 
     def test_output_limit(self):
         limits = SericiteLimits(max_output_bytes=10)
