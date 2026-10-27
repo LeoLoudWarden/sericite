@@ -99,8 +99,8 @@ Rationale: [design notes §3.4](https://github.com/LeoLoudWarden/sericite/blob/m
 | [Sericite-PY reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) | [sericite-py-reference.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) |
 | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) | [architecture.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) |
 | [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) | [security.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) |
-| [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | [索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
-| [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) | [索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) |
+| [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | [stages/README.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
+| [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) | [behind-the-scenes/README.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) |
 
 What each document covers and whom it serves is maintained in the [documentation index](docs/README.md). The build-journal and behind-the-scenes articles are Chinese-only (their index pages have English versions); full translations are not planned — they are frozen history.
 

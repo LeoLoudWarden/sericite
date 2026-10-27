@@ -9,7 +9,7 @@
 | 文章 | 内容 |
 |---|---|
 | [origin.zh-CN.md](origin.zh-CN.md) | 《原动力：Mica 之前》。项目立项前的探索过程：为什么需要它、为什么已有方案不够 |
-| [ai-assisted-development.zh-CN.md](ai-assisted-development.zh-CN.md) | 《AI 辅助开发说明》。这个项目如何使用 AI：用了什么、怎么分工、怎么验证 |
+| [ai-assisted-development.zh-CN.md](ai-assisted-development.zh-CN.md)（[英文摘要](ai-assisted-development.md)） | 《AI 辅助开发说明》。这个项目如何使用 AI：用了什么、怎么分工、怎么验证 |
 | [conversation.zh-CN.md](conversation.zh-CN.md) | 《开发对话选编》。开发过程中与 AI 对话的主线摘录 |
 
 ## 编辑原则
