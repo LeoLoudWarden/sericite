@@ -74,7 +74,7 @@
 - `VM(code, **limits)`：创建子 VM，可选资源配额参数（只能收紧）；特殊参数 `functions={name: fn}` 向子 VM 授予函数（sericite 函数或已持有的授予函数）。
 - 宿主注入：`SericiteEngine.create_root(source, functions={name: python_callable})` 向 root VM 授予宿主函数。
 
-容器方法：list `append`/`pop`；dict `keys`/`values`/`get`/`pop`。采用封闭的原生分发，不暴露任意 Python 属性。追加元素计入新列表槽；键/值快照按 O(n) 工作量与列表分配记账。
+容器方法：list `append`/`pop`；dict `keys`/`values`/`get`/`pop`；str `strip`/`lstrip`/`rstrip`/`split`/`splitlines`/`join`/`find`/`replace`。采用封闭的原生分发，不暴露任意 Python 属性。追加元素计入新列表槽；键/值快照按 O(n) 工作量与列表分配记账；字符串扫描、匹配和结果构造按规模计费，结果字符串与拆分列表在实际创建前计入分配。
 
 VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_input(text)`、`step()`、`step_instruction()`、`snapshot()`、`stdout()`、`terminate()`，以及 `read_file` / `write_file` / `list_dir` / `path_exists`（配置/读取该 VM 的文件系统）。
 
@@ -166,4 +166,4 @@ VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`�
 
 ## 9. 明确暂不支持
 
-字符串方法与文档所列封闭集合之外的列表/字典方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片赋值、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。
+文档所列封闭集合之外的字符串、列表与字典方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片赋值、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。

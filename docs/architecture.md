@@ -74,7 +74,7 @@ Built-in functions:
 - `VM(code, **limits)`: create a child VM, optionally with resource-quota arguments (tightening only); the special argument `functions={name: fn}` grants functions (sericite functions or already-held granted functions) to the child VM.
 - Host injection: `SericiteEngine.create_root(source, functions={name: python_callable})` grants host functions to the root VM.
 
-Container methods: list `append`/`pop`; dict `keys`/`values`/`get`/`pop`. Dispatch is closed and native — arbitrary Python attributes are never exposed. Appending charges the new list slot; key/value snapshots charge O(n) work and list allocation.
+Container methods: list `append`/`pop`; dict `keys`/`values`/`get`/`pop`; str `strip`/`lstrip`/`rstrip`/`split`/`splitlines`/`join`/`find`/`replace`. Dispatch is closed and native — arbitrary Python attributes are never exposed. Appending charges the new list slot; key/value snapshots charge O(n) work and list allocation. String scanning, matching, and result construction are charged by size; result strings and split lists are allocated before their actual creation.
 
 VM handle methods (identical on the script and host sides): `run(inputs)`, `feed_input(text)`, `step()`, `step_instruction()`, `snapshot()`, `stdout()`, `terminate()`, plus `read_file` / `write_file` / `list_dir` / `path_exists` (configure/read that VM's filesystem).
 
@@ -166,4 +166,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 9. Explicitly not supported yet
 
-String methods and list/dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slice assignment, tuples, f-strings, `import`, `del`, class field defaults/methods/inheritance.
+String, list, and dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slice assignment, tuples, f-strings, `import`, `del`, class field defaults/methods/inheritance.

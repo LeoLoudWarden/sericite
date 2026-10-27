@@ -167,7 +167,16 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - `d.get(key)` / `d.get(key, default)`：返回键对应的值；键不存在时返回 `None` 或 `default`。
 - `d.pop(key)` / `d.pop(key, default)`：删除并返回键对应的值；未提供默认值时，缺键报 `key_error`，否则返回默认值。
 
-方法集合是封闭的：其他列表/字典方法报 `attribute_error`，字符串仍没有方法。
+字符串方法（参数按位置传递）：
+
+- `s.strip()` / `s.lstrip()` / `s.rstrip()`：去除两端、左端或右端空白；`s.strip(chars)` 等形式改为去除 `chars` 中列出的任意字符，而不是去除整个前后缀。
+- `s.split()`：按连续空白拆分并忽略两端空白；`s.split(sep, maxsplit=-1)` 按非空字符串 `sep` 拆分，`sep=None` 时按空白拆分。`maxsplit` 限制拆分次数，负数表示不限制。
+- `s.splitlines(keepends=False)`：按通用换行边界拆行；`keepends` 必须是 `bool`，为 `True` 时保留行尾换行符。
+- `separator.join(values)`：用分隔符连接 `str`、列表或字典（键）中的字符串，所有元素必须是 `str`。
+- `s.find(sub, start=None, end=None)`：返回子串首次出现的位置，不存在时返回 `-1`；可指定搜索区间。
+- `s.replace(old, new, count=-1)`：替换不重叠的旧子串，`count` 限制替换次数，负数表示全部替换；`old` 为空串时按 Python 语义在字符间及两端插入。
+
+字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造计入指令配额；字符串结果按实际长度分配，`split`/`splitlines` 还计入结果列表槽位。方法集合是封闭的，未列出的列表、字典或字符串方法报 `attribute_error`。
 
 ## 7. 记录（record）：自定义含成员的对象
 
@@ -245,7 +254,7 @@ sub.run()                        # 输出 42
 
 ## 9. 明确不能写（编译期直接拒绝）
 
-`import`、`del`、字符串方法、`*args/**kwargs`、链式比较、切片赋值、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
+`import`、`del`、`*args/**kwargs`、链式比较、切片赋值、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
 
 ## 10. 一个完整例子
 

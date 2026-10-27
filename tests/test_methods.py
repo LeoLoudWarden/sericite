@@ -286,6 +286,250 @@ class DictKeyChargeTests(unittest.TestCase):
         self.assertGreaterEqual(counts[100_000] - counts[1000], 8 * 90_000)
 
 
+class StringMethodTests(unittest.TestCase):
+    def test_strip_variants_with_whitespace_and_chars(self):
+        source = (
+            'text = "  alpha beta  "\n'
+            "print(text.strip())\nprint(text.lstrip())\nprint(text.rstrip())\n"
+            'print("abba".strip("ab"), "abba".lstrip("ab"), "abba".rstrip("ab"))\n'
+            'print("abc".strip(""), "abc".strip("xyz"))\n'
+        )
+        self.assertEqual(
+            run(source),
+            "alpha beta\nalpha beta  \n  alpha beta\n  \nabc abc\n",
+        )
+
+    def test_split_with_separator_and_whitespace(self):
+        source = (
+            'print("a,b,,c".split(","))\n'
+            'print("  a  b  ".split())\n'
+            'print("  a  b  ".split(None, 1))\n'
+            'print("  a  ".split(None, 0))\n'
+            'print("".split(), "   ".split(), "".split(","))\n'
+        )
+        self.assertEqual(
+            run(source),
+            "['a', 'b', '', 'c']\n['a', 'b']\n['a', 'b  ']\n['a  ']\n[] [] ['']\n",
+        )
+
+    def test_split_respects_maxsplit(self):
+        source = (
+            'print("a,b,c".split(",", 0))\n'
+            'print("a,b,c".split(",", 1))\n'
+            'print("a,b,c".split(",", -1))\n'
+        )
+        self.assertEqual(run(source), "['a,b,c']\n['a', 'b,c']\n['a', 'b', 'c']\n")
+
+    def test_splitlines_boundaries_and_keepends(self):
+        source = (
+            'text = "a\\nb\\r\\nc\\vd\\fe\\x1cf\\x1dg\\x1eh\\x85i\\u2028j\\u2029k"\n'
+            "print(text.splitlines())\n"
+            'print("a\\nb\\r\\nc".splitlines(True))\n'
+            'print("".splitlines(), "\\n".splitlines())\n'
+        )
+        self.assertEqual(
+            run(source),
+            "['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']\n"
+            "['a\\n', 'b\\r\\n', 'c']\n[] ['']\n",
+        )
+
+    def test_join_with_list_dict_and_string(self):
+        source = (
+            'print("-".join(["a", "b", "c"]))\n'
+            'print(",".join({"a": 1, "b": 2}))\n'
+            'print("-".join("abc"))\n'
+            'print("x".join([]), "x".join(["only"]))\n'
+        )
+        self.assertEqual(run(source), "a-b-c\na,b\na-b-c\n only\n")
+
+    def test_find_with_bounds_and_empty_needle(self):
+        source = (
+            'text = "abcabc"\n'
+            'print(text.find("bc"), text.find("x"), text.find("bc", 2))\n'
+            'print(text.find("bc", 0, 2), text.find("", 100), text.find("", -100))\n'
+        )
+        self.assertEqual(run(source), "1 -1 4\n-1 -1 0\n")
+
+    def test_replace_with_count_and_empty_old(self):
+        source = (
+            'print("aaa".replace("a", "xy"))\n'
+            'print("aaa".replace("a", "xy", 2))\n'
+            'print("ab".replace("", "-"), "ab".replace("", "-", 2))\n'
+            'print("abc".replace("x", "y"), "abc".replace("a", "x", 0))\n'
+        )
+        self.assertEqual(run(source), "xyxyxy\nxyxya\n-a-b- -a-b\nabc abc\n")
+
+    def test_bound_string_methods_retain_receiver(self):
+        source = (
+            'strip = "  a  ".strip\njoin = ",".join\nprint(strip(), join(["a", "b"]))\n'
+        )
+        self.assertEqual(run(source), "a a,b\n")
+
+    def test_string_method_arity(self):
+        sources = (
+            '"a".strip(1, 2)',
+            '"a".lstrip(1, 2)',
+            '"a".rstrip(1, 2)',
+            '"a".split(",", 1, 2)',
+            '"a".splitlines(True, False)',
+            '"a".join()',
+            '"a".join([], [])',
+            '"a".find()',
+            '"a".find("a", 0, 1, 2)',
+            '"a".replace("a")',
+            '"a".replace("a", "b", 1, 2)',
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertEqual(run_error(source + "\n").kind, "arity_error")
+
+    def test_string_method_argument_types(self):
+        sources = (
+            '"a".strip(1)',
+            '"a".split(1)',
+            '"a".split("")',
+            '"a".split(None, True)',
+            '"a".splitlines(1)',
+            '"a".join(1)',
+            '"a".join(["a", 1])',
+            '"a".find(1)',
+            '"a".find("a", False)',
+            '"a".replace(1, "x")',
+            '"a".replace("a", 1)',
+            '"a".replace("a", "b", False)',
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertEqual(run_error(source + "\n").kind, "type_error")
+
+    def test_unknown_string_method_is_attribute_error(self):
+        self.assertEqual(run_error('"a".upper()\n').kind, "attribute_error")
+
+
+class StringMethodChargeTests(unittest.TestCase):
+    def allocation_delta(self, expression):
+        engine = SericiteEngine()
+        checkpoints = []
+        engine.create_root(
+            f"checkpoint()\nresult = {expression}\ncheckpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                )
+            },
+        ).run()
+        checkpoint_result_allocation = 8
+        return checkpoints[1] - checkpoints[0] - checkpoint_result_allocation
+
+    def test_result_allocations(self):
+        cases = (
+            ("'  a  '.strip()", 4),
+            ("'a,b'.split(',')", 2 * 8 + 2 * 4),
+            ("'a\\nb'.splitlines()", 2 * 8 + 2 * 4),
+            ("'--'.join('ab')", 4 * 4),
+            ("'aaa'.replace('a', 'xy', 2)", 5 * 4),
+            ("'abc'.find('b')", 0),
+        )
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                self.assertEqual(self.allocation_delta(expression), expected)
+
+    def instruction_delta(self, expression, size):
+        engine = SericiteEngine()
+        checkpoints = []
+        value = [""] * size if "join" in expression else None
+        if expression == "value.strip()":
+            value = " " * size
+        elif value is None:
+            value = "a" * size
+        engine.create_root(
+            f"value = get()\ncheckpoint()\nresult = {expression}\ncheckpoint()\n",
+            functions={
+                "get": lambda: value,
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].instruction_count
+                ),
+            },
+        ).run()
+        return checkpoints[1] - checkpoints[0]
+
+    def test_scanning_work_scales_with_input_size(self):
+        expressions = (
+            "value.strip()",
+            "value.split(',')",
+            "value.split()",
+            "value.splitlines()",
+            "value.find('x')",
+            "value.replace('x', 'y')",
+            "''.join(value)",
+        )
+        for expression in expressions:
+            counts = {
+                size: self.instruction_delta(expression, size) for size in (100, 1000)
+            }
+            with self.subTest(expression=expression):
+                self.assertGreater(counts[1000] - counts[100], 500)
+
+    def test_custom_strip_chars_charge_membership_scan(self):
+        counts = {}
+        for size in (100, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            chars = "a" * (size - 1) + "b"
+            engine.create_root(
+                'value = "b"\nchars = get()\ncheckpoint()\n'
+                "result = value.strip(chars)\ncheckpoint()\n",
+                functions={
+                    "get": lambda chars=chars: chars,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    ),
+                },
+            ).run()
+            counts[size] = checkpoints[1] - checkpoints[0]
+        self.assertGreaterEqual(counts[1000] - counts[100], 900)
+
+    def test_split_enforces_result_list_limit(self):
+        for call in ('"a,b".split(",")', '"a\\nb".splitlines()'):
+            with self.subTest(call=call):
+                exc = run_error(f"result = {call}\n", SericiteLimits(max_list_size=1))
+                self.assertEqual(exc.kind, "resource_exhausted")
+
+    def test_join_and_replace_enforce_result_string_limit(self):
+        for call in ('"-".join(["ab", "cd"])', '"aa".replace("a", "xyz")'):
+            with self.subTest(call=call):
+                exc = run_error(
+                    f"result = {call}\n", SericiteLimits(max_string_bytes=4)
+                )
+                self.assertEqual(exc.kind, "resource_exhausted")
+
+    def test_find_enforces_instruction_limit(self):
+        text = "a" * 10_000
+        exc = run_error(
+            f"value = {text!r}\nresult = value.find('x')\n",
+            SericiteLimits(max_instructions=100),
+        )
+        self.assertEqual(exc.kind, "resource_exhausted")
+
+    def test_cross_vm_bound_replace_charges_caller(self):
+        engine = SericiteEngine()
+        source = (
+            "text = get_text()\n"
+            "bound = text.replace\n"
+            "def leak():\n"
+            "    return bound\n"
+            "sub = VM(\"f = leak()\\nresult = f('a', 'b')\", "
+            "functions={'leak': leak}, max_instructions=100)\n"
+            "sub.run()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            engine.create_root(
+                source, functions={"get_text": lambda: "a" * 10_000}
+            ).run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+
 class VMHandleMethodChargeTests(unittest.TestCase):
     def test_read_file_charges_result_allocation(self):
         engine = SericiteEngine()

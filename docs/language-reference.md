@@ -167,7 +167,16 @@ List and dict methods:
 - `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
 - `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
 
-These are closed method sets: other list/dict methods raise `attribute_error`, and strings still have no methods.
+String methods (arguments are positional):
+
+- `s.strip()` / `s.lstrip()` / `s.rstrip()`: remove whitespace from both ends, the left, or the right. Forms such as `s.strip(chars)` instead remove any of the individual characters listed in `chars`, not a whole prefix or suffix.
+- `s.split()`: split on runs of whitespace and ignore whitespace at the ends. `s.split(sep, maxsplit=-1)` splits on a non-empty string `sep`; `sep=None` selects whitespace splitting. `maxsplit` limits the number of splits, with a negative value meaning no limit.
+- `s.splitlines(keepends=False)`: split at universal line boundaries. `keepends` must be a `bool`; when true, line endings are retained.
+- `separator.join(values)`: join strings from a `str`, list, or dict (its keys) using the separator; every item must be a `str`.
+- `s.find(sub, start=None, end=None)`: return the first position of the substring, or `-1` when absent; an optional search range may be supplied.
+- `s.replace(old, new, count=-1)`: replace non-overlapping occurrences, with `count` limiting replacements and a negative value replacing all. An empty `old` inserts between characters and at both ends, following Python semantics.
+
+String methods return new values rather than modifying the original string. Scanning, matching, and result construction count against the instruction quota; string results charge their actual length, and `split`/`splitlines` also charge result-list slots. These are closed method sets: unlisted list, dict, or string methods raise `attribute_error`.
 
 ## 7. Records: custom objects with members
 
@@ -245,7 +254,7 @@ A granted sericite function retains its definition-side module variables, closur
 
 ## 9. Explicitly not writable (rejected at compile time)
 
-`import`, `del`, string methods, `*args/**kwargs`, chained comparisons, slice assignment, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
+`import`, `del`, `*args/**kwargs`, chained comparisons, slice assignment, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
 
 ## 10. A complete example
 
