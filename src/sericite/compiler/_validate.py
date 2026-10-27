@@ -181,6 +181,10 @@ def _validate(tree: ast.Module, filename: str) -> None:
             _reject(node, filename, "raise ... from ... is not supported")
         if isinstance(node, ast.Compare) and len(node.ops) != 1:
             _reject(node, filename, "chained comparisons are not supported")
+        if isinstance(node, ast.AugAssign) and not isinstance(
+            node.target, (ast.Name, ast.Subscript, ast.Attribute)
+        ):
+            _reject(node, filename, "unsupported augmented assignment target")
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if not isinstance(target, (ast.Name, ast.Subscript, ast.Attribute)):

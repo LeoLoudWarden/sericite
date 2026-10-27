@@ -29,6 +29,7 @@ _CONTRACT_ONLY_NAMES = {"any", "bool", "list", "dict"}
 _ALLOWED_NODES = {
     ast.Module,
     ast.Assign,
+    ast.AugAssign,
     ast.AnnAssign,
     ast.Expr,
     ast.If,

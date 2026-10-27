@@ -27,6 +27,8 @@ not x        # logical not; and / or short-circuit
 "a" in {"a": 1}    # in / not in: dict keys, list elements, str substrings
 ```
 
+Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
+
 Key differences from Python (mistakes raise `type_error`):
 
 - `bool` does not participate in arithmetic: `True + 1` is an error.

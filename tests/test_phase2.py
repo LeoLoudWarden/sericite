@@ -43,6 +43,148 @@ class ArithmeticTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "zero_division")
 
 
+class AugmentedAssignmentTests(unittest.TestCase):
+    def test_all_supported_operators(self):
+        source = (
+            "a = 1\na += 2\n"
+            "b = 7\nb -= 10\n"
+            "c = 3\nc *= 4\n"
+            "d = 7\nd /= 2\n"
+            "e = 7\ne //= 2\n"
+            "f = 7\nf %= 4\n"
+            "print(a, b, c, d, e, f)\n"
+        )
+        self.assertEqual(run(source), "3 -3 12 3.5 3 3\n")
+
+    def test_string_and_list_concat(self):
+        source = (
+            'text = "a"\ntext += "bc"\n'
+            "values = [1]\nalias = values\nvalues += [2, 3]\n"
+            "print(text, values, alias)\n"
+        )
+        self.assertEqual(run(source), "abc [1, 2, 3] [1]\n")
+
+    def test_subscript_attribute_and_closure_targets(self):
+        source = (
+            "values = [1]\nvalues[0] += 4\n"
+            'mapping = {"n": 2}\nmapping["n"] *= 3\n'
+            "class Box:\n    value: int\n"
+            "box = Box(7)\nbox.value -= 1\n"
+            "def outer():\n"
+            "    x = 1\n"
+            "    def read():\n"
+            "        return x\n"
+            "    x += 4\n"
+            "    return read\n"
+            "read = outer()\n"
+            "print(values, mapping, box.value, read())\n"
+        )
+        self.assertEqual(run(source), "[5] {'n': 6} 6 5\n")
+
+    def test_target_address_is_evaluated_once_before_rhs(self):
+        source = (
+            "class Box:\n    value: int\n"
+            "values = [1]\nbox = Box(4)\n"
+            "def get_values():\n"
+            '    print("values")\n'
+            "    return values\n"
+            "def get_index():\n"
+            '    print("index")\n'
+            "    return 0\n"
+            "def get_box():\n"
+            '    print("box")\n'
+            "    return box\n"
+            "def rhs():\n"
+            '    print("rhs")\n'
+            "    return 2\n"
+            "get_values()[get_index()] += rhs()\n"
+            "get_box().value += rhs()\n"
+            "print(values[0], box.value)\n"
+        )
+        self.assertEqual(run(source), "values\nindex\nrhs\nbox\nrhs\n3 6\n")
+
+    def test_errors_match_plain_binary_operations(self):
+        cases = (
+            ("x = True\nx += 1\n", "type_error"),
+            ("x = 1\nx /= 0\n", "zero_division"),
+            ('x = "abc"\nx[0] += "z"\n', "type_error"),
+            ("x = 1\nx **= 2\n", "validation_error"),
+            ("x = []\nx @= []\n", "validation_error"),
+            ("[x, y] += [1, 2]\n", "syntax_error"),
+        )
+        for source, kind in cases:
+            with self.subTest(source=source):
+                engine = SericiteEngine()
+                with self.assertRaises(SericiteError) as ctx:
+                    engine.create_root(source).run()
+                self.assertEqual(ctx.exception.kind, kind)
+
+    def test_failed_operation_or_store_preserves_target(self):
+        source = (
+            "class Box:\n    value: int\n"
+            "box = Box(1)\nvalues = [2]\nmapping = {}\n"
+            "try:\n"
+            '    values[0] += "bad"\n'
+            "except type_error:\n"
+            "    pass\n"
+            "try:\n"
+            "    box.value += 0.5\n"
+            "except contract_error:\n"
+            "    pass\n"
+            "try:\n"
+            '    mapping["missing"] += 1\n'
+            "except key_error:\n"
+            "    pass\n"
+            "print(values, box.value, 3 + 4)\n"
+        )
+        self.assertEqual(run(source), "[2] 1 7\n")
+
+    def test_concat_charges_result_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        engine.create_root(
+            'text = "a"\nvalues = [1]\ncheckpoint()\n'
+            'text += "bc"\nvalues += [2, 3]\ncheckpoint()\n',
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                )
+            },
+        ).run()
+        checkpoint_result_allocation = 8
+        self.assertEqual(
+            checkpoints[1] - checkpoints[0],
+            3 * 4 + (2 + 3) * 8 + checkpoint_result_allocation,
+        )
+
+    def test_list_concat_charges_work_proportional_to_result_size(self):
+        counts = {}
+        for size in (2, 4):
+            engine = SericiteEngine()
+            checkpoints = []
+            engine.create_root(
+                f"values = {list(range(size - 1))!r}\n"
+                "checkpoint()\nvalues += [99]\ncheckpoint()\n",
+                functions={
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    )
+                },
+            ).run()
+            counts[size] = checkpoints[1] - checkpoints[0]
+        self.assertEqual(counts[4] - counts[2], 2)
+
+    def test_concat_enforces_memory_quota(self):
+        limits = SericiteLimits(max_total_bytes=1000)
+        engine = SericiteEngine(limits=limits)
+        vm = engine.create_root(
+            'text = "x"\ni = 0\nwhile i < 20:\n    text += text\n    i += 1\n'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+
 class CompareAndLogicTests(unittest.TestCase):
     def test_comparisons(self):
         self.assertEqual(
