@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.8 (unreleased) for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, the [VM reference](vm-reference.md) to drive and debug VMs (stepping, exec delivery, snapshots, states, quotas), or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.8.0 for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, the [VM reference](vm-reference.md) to drive and debug VMs (stepping, exec delivery, snapshots, states, quotas), or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
 
 ## 1. What it looks like
 

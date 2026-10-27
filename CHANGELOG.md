@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-27
+
 ### Added
 - 引擎新增 `exec`：向既有 VM 投递新源码并在其持久模块作用域中执行（宿主级 `VMHandle.exec(source)` 与脚本级 `sub.exec(code)`）。模块变量、定义、VFS 与授予的函数跨投递保留；只返回本次投递产生的输出；编译失败不改变 VM 状态，普通执行错误后可继续投递；`terminated` 的 VM 拒绝投递，未执行完的程序会被丢弃。配额仍按 VM 生命周期累计。
 - CLI 新增 `-c/--command`、stdin 源码入口和可重复的 `--include`；include 在同一 root 编译单元与全局作用域中按序组合，错误位置映射回原始文件。
