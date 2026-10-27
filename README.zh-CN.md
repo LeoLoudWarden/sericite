@@ -30,11 +30,19 @@ pip install sericite
 命令行：
 
 ```bash
+sericite -c 'print("hello from sericite")'
 printf 'print("hello from sericite")\n' > hello.sericite
 sericite hello.sericite        # hello from sericite
 ```
 
-嵌入 Python：
+代码复用与 root 应用能力配置：
+
+```bash
+sericite --include base.sericite app.sericite
+sericite --capabilities capabilities.py app.sericite
+```
+
+include 在同一 root 作用域中按序组合源码；capabilities 是操作者显式信任、只负责 FFI/配额/初始 VFS 的 Python 配置。完整契约见 [CLI 参考](docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
 
 ```python
 from sericite import SericiteEngine
@@ -85,6 +93,7 @@ print(vm.run(), end="")    # 42
 |---|---|
 | [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | Sericite 是什么、为什么存在、边界划在哪里（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md)） |
 | [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | Safe-Tcl 证明了什么、停在哪里，Sericite 补什么（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md)） |
+| [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) | 命令、include、可信能力配置与退出码（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md)） |
 | [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | Sericite 脚本的语言子集与语义（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md)） |
 | [宿主参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.zh-CN.md) | Python 宿主 API、VM 驱动、FFI 与调试（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.md)） |
 | [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | 引擎结构、设计不变量、资源配额（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md)） |

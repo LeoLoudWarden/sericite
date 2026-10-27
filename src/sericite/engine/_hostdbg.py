@@ -25,6 +25,9 @@ class _EngineHostDebug:
         kwargs: dict[str, object],
     ) -> int:
         fs = self._context(handle).fs
+        if attr == "exec":
+            source = args[0] if args else kwargs.get("source")
+            return 1 + len(source) // 4 if isinstance(source, str) else 0
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs", ())
             return len(inputs) if isinstance(inputs, (list, tuple)) else 0
@@ -78,6 +81,7 @@ class _EngineHostDebug:
             amount = target.fs.write_allocation(path, text)
             return self._meter(context).reserve(target.fs, "write", amount)
         if attr in {
+            "exec",
             "read_file",
             "list_dir",
             "path_exists",
@@ -144,6 +148,8 @@ class _EngineHostDebug:
             text = args[1] if len(args) > 1 else kwargs["text"]
             self._context(handle).fs.write_file(path, text, permit=permit)
             result = None
+        elif attr == "exec" and len(args) == 1 and not kwargs:
+            result = self._exec_source(handle, args[0])
         elif not args and not kwargs and attr == "snapshot":
             result = self._snapshot(self._context(handle), meter=meter)
         elif not args and not kwargs and attr == "step":

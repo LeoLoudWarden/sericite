@@ -6,7 +6,7 @@ practice snippet and wraps up.
 The sericite code for the intermediate session loop is supplied by the stub server "playing
 the AI" and is known to run correctly.
 
-Run: uv run --extra demo demo/mock_server.py (listens on 127.0.0.1:8399)
+Run: uv run --extra demo demos/root-agent/mock_server.py (listens on 127.0.0.1:8399)
 """
 
 from __future__ import annotations
@@ -26,6 +26,9 @@ tools = [
 
 messages = [{"role": "system", "content": prompt_inner}, {"role": "user", "content": "开始"}]
 
+sub = VM("")
+sub.write_file("/sericite语言特性速览.md", doc)
+
 final = "(无结果)"
 done = False
 rounds = 0
@@ -43,23 +46,21 @@ while not done and rounds < 20:
             args = call["args"]
             result = "(未知工具)"
             if name == "sericite_exec":
-                sub = VM(args["code"])
-                sub.write_file("/sericite语言特性速览.md", doc)
                 try:
-                    result = sub.run()
+                    result = sub.exec(args["code"])
                 except:
                     result = "(内层 sericite_exec 执行出错)"
             if name == "file_read":
                 try:
-                    result = read_file(args["path"])
+                    result = sub.read_file(args["path"])
                 except file_not_found:
                     result = "(文件不存在)"
             if name == "file_write":
-                write_file(args["path"], args["content"])
+                sub.write_file(args["path"], args["content"])
                 result = "(已写入)"
             if name == "file_list":
                 result = ""
-                for n in list_dir(args["path"]):
+                for n in sub.list_dir(args["path"]):
                     result = result + n + "\\n"
                 if result == "":
                     result = "(空)"
@@ -112,10 +113,10 @@ class Handler(BaseHTTPRequestHandler):
         system = ""
         if body.get("messages"):
             system = body["messages"][0].get("content") or ""
-        if "内部会话" in system:
-            payload = self._inner_reply()
-        else:
+        if "会话循环" in system:
             payload = self._outer_reply()
+        else:
+            payload = self._inner_reply()
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -129,7 +130,8 @@ class Handler(BaseHTTPRequestHandler):
         if turn == 1:
             return _reply(
                 tool_calls=[
-                    _tool_call(1, "file_read", {"path": "/sericite语言特性速览.md"})
+                    _tool_call(1, "file_read", {"path": "/sericite语言特性速览.md"}),
+                    _tool_call(10, "file_list", {"path": "/"}),
                 ]
             )
         if turn == 2:
@@ -138,7 +140,17 @@ class Handler(BaseHTTPRequestHandler):
             )
         if turn == 3:
             return _reply(
-                tool_calls=[_tool_call(3, "sericite_exec", {"code": MIDDLE_CODE})]
+                tool_calls=[
+                    _tool_call(
+                        3,
+                        "sericite_exec",
+                        {"code": "try:\n    pass\nexcept host_error:\n    pass"},
+                    )
+                ]
+            )
+        if turn == 4:
+            return _reply(
+                tool_calls=[_tool_call(4, "sericite_exec", {"code": MIDDLE_CODE})]
             )
         return _reply(content="外层收尾：练习完成，内层会话也跑完了。")
 
@@ -157,7 +169,13 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def make_server(port: int = 8399) -> HTTPServer:
+    Handler.outer_turn = 0
+    Handler.inner_turn = 0
+    return HTTPServer(("127.0.0.1", port), Handler)
+
+
 if __name__ == "__main__":
-    server = HTTPServer(("127.0.0.1", 8399), Handler)
+    server = make_server()
     print("mock server on http://127.0.0.1:8399/v1/chat/completions")
     server.serve_forever()

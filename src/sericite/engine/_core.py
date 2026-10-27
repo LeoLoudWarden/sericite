@@ -57,12 +57,14 @@ class _EngineCore:
         input_provider: Callable[[], str | None] | None = None,
         limits: SericiteLimits | None = None,
         functions: dict[str, Callable[..., object]] | None = None,
+        output_writer: Callable[[str], object] | None = None,
     ) -> VMHandle:
         effective = limits or self._limits
         io = VirtualIO(
             inputs=inputs,
             input_provider=input_provider,
             max_output_bytes=effective.max_output_bytes,
+            output_writer=output_writer,
         )
         granted = self._validate_host_functions(functions)
         return self._create_vm(
@@ -176,6 +178,38 @@ class _EngineCore:
         if context.error is not None:
             raise context.error
         return context.io.stdout()
+
+    def _exec_source(self, handle: VMHandle, source: object) -> str:
+        # Deliver new source to an existing VM: the fresh module frame reuses the
+        # previous module locals, so module-level names (and the world: VFS, IO,
+        # granted functions, quotas) persist across deliveries. Any program still
+        # pending (ready/waiting_input) and the old debugging frames are discarded.
+        context = self._context(handle)
+        if not isinstance(source, str):
+            raise SericiteError("VM.exec source must be a string", kind="type_error")
+        if context.running:
+            raise SericiteError("VM is already running")
+        if context.state == "terminated":
+            raise SericiteError(
+                "cannot exec into a terminated VM", kind="runtime_error"
+            )
+        if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
+            raise SericiteError(
+                "source too large", kind="validation_error", filename=context.filename
+            )
+        code = compile_source(source, context.filename)
+        _stamp_origin(code, context.vm_id)
+        self._meter(context).allocate(_const_bytes(code))
+        module_locals = context.frames[0].locals if context.frames else {}
+        context.frames = [Frame(code=code, locals=module_locals)]
+        context.error = None
+        context.last_line = None
+        context.state = (
+            "ready" if any(instr.stmt_start for instr in code.instrs) else "done"
+        )
+        before = len(context.io.stdout())
+        self._run(handle)
+        return context.io.stdout()[before:]
 
     def _step(
         self, handle: VMHandle, *, meter: Meter | None = None

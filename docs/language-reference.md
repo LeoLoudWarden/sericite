@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.7.1 for authors of **Sericite scripts**. If you want to create and drive VMs from Python, read the [host reference](host-reference.md).
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.7.1 for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, or the [host reference](host-reference.md) to create and drive VMs from Python.
 
 ## 1. What it looks like
 
@@ -277,6 +277,8 @@ print(sub.read_file("/result.txt"))      # retrieve the file it wrote
 
 Debugging: `sub.step()` single-steps statement by statement (returns a state snapshot dict), `sub.step_instruction()` steps instruction by instruction, `sub.snapshot()` shows locals/state, `sub.terminate()` kills it.
 
+A VM is not single-use: `sub.exec(code)` delivers new source into the same VM and runs it, returning only that delivery's output. Module variables and definitions, files, and granted functions all survive across deliveries, and a delivery that fails with an ordinary (catchable) error leaves the VM alive — fix and redeliver. A delivery that fails to compile changes nothing. Delivering while a program is still pending (for example suspended on `input()`) discards the pending program; a `terminated` VM rejects delivery. Quotas are per-VM lifetime budgets: instructions, memory, and output bytes accumulate across deliveries.
+
 Granting functions to a VM (so it can call your functions, including ones granted to you):
 
 ```python
@@ -291,6 +293,8 @@ A granted sericite function retains its definition-side environment: module vari
 ## 9. Explicitly not writable (rejected at compile time)
 
 `import`, `del`, `*args/**kwargs`, chained comparisons, slice assignment, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
+
+CLI `--include` is not language syntax: it only composes root source in order before compilation and provides no module, namespace, or `import` semantics. See the [CLI reference](cli-reference.md).
 
 ## 10. A complete example
 

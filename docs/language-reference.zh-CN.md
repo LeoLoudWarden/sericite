@@ -1,6 +1,6 @@
 # Sericite 语言参考
 
-Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.7.1 的语言行为，面向正在编写 **Sericite 脚本** 的读者；如果你要在 Python 中创建和驱动 VM，请读[宿主参考](host-reference.zh-CN.md)。
+Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.7.1 的语言行为，面向正在编写 **Sericite 脚本** 的读者；直接运行脚本及使用 CLI include 见 [CLI 参考](cli-reference.zh-CN.md)，在 Python 中创建和驱动 VM 见[宿主参考](host-reference.zh-CN.md)。
 
 ## 1. 基本样子
 
@@ -277,6 +277,8 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 调试：`sub.step()` 逐语句单步（返回状态快照 dict），`sub.step_instruction()` 逐指令，`sub.snapshot()` 查看 locals/状态，`sub.terminate()` 终止。
 
+VM 不是一次性的：`sub.exec(code)` 向同一个 VM 投递新源码并执行，只返回本次投递产生的输出。模块级变量与定义、文件、被授予的函数在多次投递之间全部保留；一次投递因普通（可捕获）错误失败时 VM 仍然存活——修好再投即可。编译失败的投递不改变任何状态。在程序尚未执行完（比如正暂停在 `input()` 上）时投递会丢弃未执行的程序；`terminated` 的 VM 拒绝投递。配额是 VM 生命周期预算：指令、内存与输出字节在多次投递之间累计。
+
 把函数授予 VM（它就能调用你的函数，包括你被授予的函数）：
 
 ```python
@@ -291,6 +293,8 @@ sub.run()                        # 输出 42
 ## 9. 明确不能写（编译期直接拒绝）
 
 `import`、`del`、`*args/**kwargs`、链式比较、切片赋值、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
+
+CLI 的 `--include` 不属于语言语法：它只是在编译前按序组合同一 root 的源码，不提供模块、命名空间或 `import` 语义；详见 [CLI 参考](cli-reference.zh-CN.md)。
 
 ## 10. 一个完整例子
 

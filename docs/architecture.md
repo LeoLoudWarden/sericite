@@ -19,9 +19,9 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle, resource quotas, debug snapshots |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
 | `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree and name metadata) |
-| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels) |
+| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels); optional root output_writer forwards writes live while preserving buffered stdout and is never inherited by child VMs |
 | `errors` | `SericiteError` and the central error-kind registry |
-| `cli` / `__main__` | Command-line entry points |
+| `cli` / `__main__` | Command-line entry points; include composition and source-line mapping, trusted Python capability adaptation, root driving, and host-side diagnostics without changing compilation, dispatch, or isolation invariants |
 
 The `compiler` package is split into cohesive parts:
 

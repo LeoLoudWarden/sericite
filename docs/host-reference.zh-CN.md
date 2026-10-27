@@ -2,7 +2,7 @@
 
 [English](host-reference.md)
 
-本文面向 **在 Python 中使用 Sericite-PY 的宿主程序**：创建和驱动 VM、配置配额、授予 FFI、读写虚拟文件、调试和处理错误。如果你写的是 **Sericite 脚本**，请读[语言参考](language-reference.zh-CN.md)；引擎内部的成本契约见[架构说明](architecture.zh-CN.md)。
+本文面向 **在 Python 中使用 Sericite-PY 的宿主程序**：创建和驱动 VM、配置配额、授予 FFI、读写虚拟文件、调试和处理错误。如果你写的是 **Sericite 脚本**，请读[语言参考](language-reference.zh-CN.md)；如果只是直接运行脚本或由 root Sericite 程序掌管应用流程，请读 [CLI 参考](cli-reference.zh-CN.md)，不必先写 Python 启动器。引擎内部的成本契约见[架构说明](architecture.zh-CN.md)。
 
 ## 1. 快速上手
 
@@ -33,6 +33,7 @@ engine.create_root(
     input_provider=None,
     limits=None,
     functions=None,
+    output_writer=None,
 )
 ```
 
@@ -41,6 +42,7 @@ engine.create_root(
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
 - `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。
 - `functions`：授予脚本的宿主函数表，见第 5 节。
+- `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。累计 stdout 与 `run()` 返回值不变；输出计量和上限仍先生效，子 VM 不继承该回调。
 
 ### 2.2 `SericiteLimits`
 
@@ -71,6 +73,7 @@ engine.create_root(
 | 方法 | 用途与返回 |
 |---|---|
 | `run(inputs=None) -> str` | 驱动到完成、暂停或失败，返回 stdout；`inputs` 必须是字符串 list/tuple，整批验证后才入队 |
+| `exec(source) -> str` | 向该 VM 投递新源码并在持久的模块作用域中执行；只返回本次投递产生的输出；见第 4 节 |
 | `feed_input(value)` | 向队列加入一行输入；若 VM 正在等待输入，将其唤醒 |
 | `step() -> dict` | 执行一条语句并返回快照 |
 | `step_instruction() -> dict` | 执行一条内部指令并返回快照 |
@@ -90,7 +93,7 @@ engine.create_root(
 
 - 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照，不计入脚本的内存账；
 - 文件数、单文件字节、输出字节等资源自身限制仍然有效；
-- `run()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
+- `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 
 不要把这条区别理解成“宿主调用会让 VM 免费执行”。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**
 
@@ -111,6 +114,8 @@ VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhau
 | `instruction_count` | 当前指令与工作量账 |
 
 复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 句柄或宿主对象。
+
+`exec(source)` 让 VM 换上新程序但保留它的世界：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久，VFS、输入队列与授予的函数不受影响。除 `terminated` 与运行中之外，任何状态都接受投递；尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。编译先于任何状态改变完成，编译失败的源码让 VM 保持原样。配额是生命周期预算：指令、内存与输出消耗跨投递累计，而非按投递计算。
 
 VM 终态后，引擎仍保留上下文供调试。上下文由引擎统一持有，`max_total_vms` 限制累计数量；不再需要整棵 VM 树时，应释放整个引擎。
 

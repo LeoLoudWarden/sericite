@@ -2,7 +2,7 @@
 
 [中文](host-reference.zh-CN.md)
 
-This document is for **Python hosts using Sericite-PY**: creating and driving VMs, configuring quotas, granting FFI capabilities, accessing virtual files, debugging, and handling errors. If you are writing **Sericite scripts**, read the [language reference](language-reference.md). Internal cost contracts are covered by the [architecture notes](architecture.md).
+This document is for **Python hosts using Sericite-PY**: creating and driving VMs, configuring quotas, granting FFI capabilities, accessing virtual files, debugging, and handling errors. If you are writing **Sericite scripts**, read the [language reference](language-reference.md). To run scripts directly or let a root Sericite program own the application flow, read the [CLI reference](cli-reference.md) instead of writing a Python launcher. Internal cost contracts are covered by the [architecture notes](architecture.md).
 
 ## 1. Quick start
 
@@ -33,6 +33,7 @@ engine.create_root(
     input_provider=None,
     limits=None,
     functions=None,
+    output_writer=None,
 )
 ```
 
@@ -41,6 +42,7 @@ engine.create_root(
 - `inputs`: an iterable of strings queued in order.
 - `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`.
 - `functions`: host capabilities granted to the script; see section 5.
+- `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Buffered stdout and `run()`'s return value are unchanged; output accounting and limits still apply first, and child VMs never inherit the callback.
 
 ### 2.2 `SericiteLimits`
 
@@ -71,6 +73,7 @@ Child VMs created by scripts can only tighten these limits. Instruction, memory,
 | Method | Purpose and result |
 |---|---|
 | `run(inputs=None) -> str` | Drive to completion, suspension, or failure and return stdout; `inputs` must be a string list/tuple and is validated as a batch before queueing |
+| `exec(source) -> str` | Deliver new source into this VM and run it in the persistent module scope; returns only this delivery's output; see section 4 |
 | `feed_input(value)` | Queue one input string; resumes a VM waiting for input |
 | `step() -> dict` | Execute one statement and return a snapshot |
 | `step_instruction() -> dict` | Execute one internal instruction and return a snapshot |
@@ -90,7 +93,7 @@ The host is a trusted manager:
 
 - Direct `feed_input()`, `write_file()`, file reads, stdout access, and snapshots do not enter the script's memory ledger;
 - Resource-specific limits such as file count, file bytes, and output bytes still apply;
-- Instructions and dynamic operations executed by `run()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
+- Instructions and dynamic operations executed by `run()`, `exec()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
 
 This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.**
 
@@ -111,6 +114,8 @@ A snapshot contains:
 | `instruction_count` | Current instruction/work ledger |
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose live child handles or host objects.
+
+`exec(source)` gives a VM a new program while keeping its world: the fresh module frame reuses the previous module scope, so module-level names (variables, functions, schemas) persist, and the VFS, input queue, and granted functions are untouched. Delivery is accepted from any state except `terminated` (and never while running); a program that has not finished — never started, or suspended on input — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them. Compilation completes before any state changes, so source that fails to compile leaves the VM exactly as it was. Quotas are lifetime budgets: instruction, memory, and output consumption accumulate across deliveries, not per delivery.
 
 Terminal VM contexts remain available for debugging. The engine owns all contexts, and `max_total_vms` caps their cumulative number. Release the whole engine when its VM tree is no longer needed.
 

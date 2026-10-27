@@ -2,19 +2,40 @@
 
 [中文索引](README.zh-CN.md)
 
-Sericite's documents have different natures, which determine when they change and whom they serve: design docs rarely change, references follow the language, implementation docs follow the code, and history freezes once written.
+Sericite's documentation is organized by reader task and rate of change: usage references follow public interfaces, implementation notes follow code, design documents explain durable boundaries, and history freezes once written. Files keep stable flat paths; this index provides the hierarchy.
 
-| Document | Category | Question it answers | 中文 |
-|---|---|---|---|
-| [design.md](design.md) | Design | What Sericite is, why it exists, where the boundaries are | [design.zh-CN.md](design.zh-CN.md) |
-| [language-reference.md](language-reference.md) | Reference | The Sericite script language subset and semantics; read it and start writing | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
-| [host-reference.md](host-reference.md) | Reference | Python host API, VM driving, FFI, debugging, and error handling | [host-reference.zh-CN.md](host-reference.zh-CN.md) |
-| [architecture.md](architecture.md) | Implementation | Engine structure, design invariants, quota system | [architecture.zh-CN.md](architecture.zh-CN.md) |
-| [security.md](security.md) | Design+Implementation | Threat model; what is and is not guaranteed | [security.zh-CN.md](security.zh-CN.md) |
-| [prior-art.md](prior-art.md) | Design | Prior art: what Safe-Tcl proved, where it stopped, what Sericite adds | [prior-art.zh-CN.md](prior-art.zh-CN.md) |
-| [stages/](stages/README.md) | History | *Building Sericite from Scratch*: stage-by-stage build journal | 正文 [中文](stages/README.zh-CN.md) |
-| [behind-the-scenes/](behind-the-scenes/README.md) | History | Origin story, AI-assisted development | 正文 [中文](behind-the-scenes/README.zh-CN.md) |
+## Start and examples
 
-Note that security deliberately spans two categories: the *threat model* is a design promise (rarely changes), while *quotas and known boundaries* describe implementation status (follows the code).
+- [Project README](../README.md): positioning, installation, and quick start.
+- [Application demos](../demos/README.md): a root-driven LLM application with offline verification; see `examples/` for small language snippets.
 
-Suggested reading order: **design** to understand the project; **language-reference** to write Sericite scripts; **host-reference** to use the engine from Python; **architecture** to work on the engine; **security** before running untrusted code; **stages** and **behind-the-scenes** (articles in Chinese, with English index pages) for how the project was built.
+## Usage references
+
+| Document | Audience and contents | 中文 |
+|---|---|---|
+| [CLI reference](cli-reference.md) | Running programs: commands, includes, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
+| [Language reference](language-reference.md) | Writing scripts: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
+| [Host reference](host-reference.md) | Python embedding: engine API, VM driving, FFI, debugging, and errors | [host-reference.zh-CN.md](host-reference.zh-CN.md) |
+
+Read the language reference to write scripts, the CLI reference to run root applications, and the host reference when an existing Python system owns VM lifecycles.
+
+## Design and boundaries
+
+| Document | Contents | 中文 |
+|---|---|---|
+| [Design notes](design.md) | What Sericite is, why it exists, and where its boundaries lie | [design.zh-CN.md](design.zh-CN.md) |
+| [Security model](security.md) | Threat model and the respective responsibilities of engine and capability implementers | [security.zh-CN.md](security.zh-CN.md) |
+| [Prior art](prior-art.md) | What Safe-Tcl proved, where it stopped, and what Sericite adds | [prior-art.zh-CN.md](prior-art.zh-CN.md) |
+
+Read the security model before executing untrusted code. Its threat model is a design promise; quota details and known boundaries describe implementation status.
+
+## Implementation
+
+- [Architecture](architecture.md) ([中文](architecture.zh-CN.md)): execution pipeline, module structure, invariants, resource accounting, and current implementation limits. Read this before changing the engine.
+
+## History
+
+- [Build journal](stages/README.md): the stage-by-stage construction of Sericite 0.1.0 and runnable checkpoints.
+- [Behind the scenes](behind-the-scenes/README.md): the project's origin and AI-assisted development process.
+
+The long-form articles in these two groups are Chinese-only, with English index pages; full translations are not planned. They are frozen history, not descriptions of the current CLI or API.

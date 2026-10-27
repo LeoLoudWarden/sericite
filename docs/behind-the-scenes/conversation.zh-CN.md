@@ -1070,11 +1070,11 @@ https://platform.kimi.com/docs/guide/use-kimi-api-to-complete-tool-calls.md
 - `.md` 后缀直接返回 Markdown 纯文本（约 43k 字符），中文、可整页抓取，远低于 VM 默认 1MB 的单串上限；
 - 本机网络实测可直达。
 
-**demo 的改动**（[demo/main.py](../../demo/main.py)）：
+**demo 的改动**（[demo/main.py](https://github.com/LeoLoudWarden/sericite/blob/stage-6/demo/main.py)）：
 
 1. 新增 `http_get(url)` FFI（GET 抓网页文本，截断到 200k 字符），和 `http_request` 一起授予外层 VM——之前的 `http_request` 只能 POST 到固定的 LLM 端点，模型根本没法自己查资料；
 2. PROMPT1 里明确告诉模型："如果不确定 tools 的 schema 写法，不要凭记忆手写——先用 http_get 从该网址获取帮助文本，照着它写"；
-3. [demo/README.zh-CN.md](../../demo/README.zh-CN.md) 同步说明。
+3. [demo/README.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/stage-6/demo/README.zh-CN.md) 同步说明。
 
 **已验证**：
 
@@ -1132,7 +1132,7 @@ mica.errors.MicaError: <mica:vm_0>:54:47: validation_error: unsupported syntax: 
 
 `mica_exec` handler 里只有 `vm.run()` 包了 `try`——模型的代码如果在**编译期**就被拒（比如这次的 `IfExp`），`create_root` 抛的 `MicaError` 直接裸奔到宿主，整个 demo 进程死掉。
 
-修复（[demo/main.py](../../demo/main.py)）：`create_root` / `write_file` / `run` 全部包进 try，编译错误同样作为 `(mica error: ...)` 工具结果喂回给模型。这样模型看到自己哪行不合法，会自己改写法重试——这才是 LLM code exec 该有的韧性。
+修复（[demo/main.py](https://github.com/LeoLoudWarden/sericite/blob/stage-6/demo/main.py)）：`create_root` / `write_file` / `run` 全部包进 try，编译错误同样作为 `(mica error: ...)` 工具结果喂回给模型。这样模型看到自己哪行不合法，会自己改写法重试——这才是 LLM code exec 该有的韧性。
 
 ## 问题 2：文档教了语言不支持的语法（深层原因）
 
@@ -1144,7 +1144,7 @@ mica.errors.MicaError: <mica:vm_0>:54:47: validation_error: unsupported syntax: 
 
 考虑到三元表达式是纯表达式、短路语义清晰、实现只需复用 if 语句的跳转逻辑（无安全隐患），我直接把它加进了语言：
 
-- [src/sericite/compiler.py](../../src/sericite/compiler.py)：白名单加 `ast.IfExp`，编译为 `JUMP_IF_FALSE / JUMP` 跳转序列，只计算被选中的分支；
+- [mica/compiler.py](https://github.com/LeoLoudWarden/sericite/blob/stage-6/mica/compiler.py)：白名单加 `ast.IfExp`，编译为 `JUMP_IF_FALSE / JUMP` 跳转序列，只计算被选中的分支；
 - [tests/test_phase5.py](../../tests/test_phase5.py)：新增 `TernaryTests`（基本求值、短路——未选中分支的函数不会被调用、嵌套三元 + 用在调用实参里）；
 - [docs/language-reference.zh-CN.md](../../docs/language-reference.zh-CN.md)：控制流一节正式写明三元表达式可用，文档那个示例现在合法了。
 

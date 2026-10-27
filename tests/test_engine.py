@@ -178,5 +178,110 @@ class ValidationTests(unittest.TestCase):
             vm.run()
 
 
+class ExecSourceTests(unittest.TestCase):
+    def test_module_scope_persists_across_exec(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 41")
+        vm.run()
+        self.assertEqual(vm.exec("x += 1\ndef answer():\n    return x"), "")
+        self.assertEqual(vm.exec("print(answer())"), "42\n")
+
+    def test_old_functions_see_new_module_bindings(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("def get():\n    return later")
+        vm.run()
+        self.assertEqual(vm.exec("later = 7\nprint(get())"), "7\n")
+
+    def test_vfs_persists_across_exec(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        vm.exec("write_file('/note.txt', 'hello')")
+        self.assertEqual(vm.exec("print(read_file('/note.txt'))"), "hello\n")
+
+    def test_exec_returns_only_new_output(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("print('first')")
+        self.assertEqual(vm.run(), "first\n")
+        self.assertEqual(vm.exec("print('second')"), "second\n")
+        self.assertEqual(vm.stdout(), "first\nsecond\n")
+
+    def test_exec_recovers_from_runtime_error(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 5")
+        vm.run()
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec('raise "boom"')
+        self.assertEqual(ctx.exception.kind, "raise_error")
+        self.assertEqual(vm.snapshot()["state"], "error")
+        self.assertEqual(vm.exec("print(x)"), "5\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_exec_compile_failure_leaves_vm_untouched(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 9")
+        vm.run()
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec("def broken(:")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
+        self.assertEqual(vm.snapshot()["state"], "done")
+        self.assertEqual(vm.exec("print(x)"), "9\n")
+
+    def test_exec_rejects_terminated_vm(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 1")
+        vm.terminate()
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec("print(1)")
+        self.assertEqual(ctx.exception.kind, "runtime_error")
+
+    def test_exec_rejects_non_string_source(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec(42)
+        self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_exec_replaces_pending_program(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("print('never ran')\nx = 1")
+        self.assertEqual(vm.exec("print('replacement')"), "replacement\n")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec("print(x)")
+        self.assertEqual(ctx.exception.kind, "name_error")
+        self.assertEqual(vm.stdout(), "replacement\n")
+
+    def test_script_level_exec_keeps_child_alive(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("")\n'
+            'print(sub.exec("y = 10"))\n'
+            'print(sub.exec("y += 5\\nprint(y)"))\n'
+            "try:\n"
+            '    sub.exec("raise \\"x\\"")\n'
+            "except:\n"
+            '    print("recovered")\n'
+            'print(sub.exec("print(y + 1)"))\n'
+        )
+        self.assertEqual(vm.run(), "\n15\n\nrecovered\n16\n\n")
+
+    def test_script_level_exec_shares_vfs_with_handle_methods(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("")\n'
+            'sub.write_file("/seed.txt", "seed")\n'
+            "print(sub.exec(\"write_file('/made.txt', read_file('/seed.txt'))\"))\n"
+            'print(sub.read_file("/made.txt"))\n'
+        )
+        self.assertEqual(vm.run(), "\nseed\n")
+
+    def test_exec_counts_against_vm_quotas(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("", limits=None)
+        before = vm.snapshot()["instruction_count"]
+        vm.exec("print('metered')")
+        after = vm.snapshot()["instruction_count"]
+        self.assertGreater(after, before)
+
+
 if __name__ == "__main__":
     unittest.main()

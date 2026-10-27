@@ -261,6 +261,9 @@ class VMHandle:
                 context.state = "ready"
         return self._engine._run(self)
 
+    def exec(self, source: object) -> str:
+        return self._engine._exec_source(self, source)
+
     def feed_input(self, value: object) -> None:
         if not isinstance(value, str):
             raise SericiteError("VM input must be a string")

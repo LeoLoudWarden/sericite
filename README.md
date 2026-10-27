@@ -30,11 +30,19 @@ The distribution is named `sericite`; the import package is `sericite`.
 As a CLI:
 
 ```bash
+sericite -c 'print("hello from sericite")'
 printf 'print("hello from sericite")\n' > hello.sericite
 sericite hello.sericite        # hello from sericite
 ```
 
-Embedded in Python:
+For source reuse and root-application capabilities:
+
+```bash
+sericite --include base.sericite app.sericite
+sericite --capabilities capabilities.py app.sericite
+```
+
+Includes compose source in order in one root scope; capabilities are operator-trusted Python configuration limited to FFI, limits, and initial VFS files. See the [CLI reference](docs/cli-reference.md) for the contract and the [root-agent demo](demos/root-agent/README.md) for a complete application. Embed Python when an existing host needs to own VM lifecycles:
 
 ```python
 from sericite import SericiteEngine
@@ -85,6 +93,7 @@ Rationale: [design notes §3.4](https://github.com/LeoLoudWarden/sericite/blob/m
 |---|---|---|
 | [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) | EN | What Sericite is, why it exists, where the boundaries are ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)) |
 | [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) | EN | Safe-Tcl and related work: what Sericite inherits, what it adds ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md)) |
+| [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) | EN | Commands, includes, trusted capabilities, and exit codes ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md)) |
 | [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) | EN | The Sericite script language subset and semantics, self-contained ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)) |
 | [Host reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.md) | EN | Python host API, VM driving, FFI, and debugging ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.zh-CN.md)) |
 | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) | EN | Engine structure, invariants, resource quotas ([中文](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)) |
