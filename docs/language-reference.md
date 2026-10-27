@@ -29,7 +29,18 @@ not x        # logical not; and / or short-circuit
 
 Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
 
-Strings and lists support read-only slices: `value[start:stop]` and `value[start:stop:step]`. All three positions may be omitted, and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing creates a new string or list; copying work and result memory are charged according to result length. Slice assignment is not supported.
+Strings and lists support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
+
+```python
+s = "abcdef"
+s[1:4]      # "bcd": from index 1 up to (not including) 4
+s[:3]       # "abc": start omitted
+s[::2]      # "ace": step 2
+s[::-1]     # "fedcba": negative step walks backwards
+s[2:99]     # "cdef": out-of-range positions clip, no error
+```
+
+Rules: all three positions may be omitted (omission means `None`), and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero; slice assignment is not supported. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing has a cost: it always creates a new string or list.
 
 Key differences from Python (mistakes raise `type_error`):
 
@@ -176,7 +187,7 @@ String methods (arguments are positional):
 - `s.find(sub, start=None, end=None)`: return the first position of the substring, or `-1` when absent; an optional search range may be supplied.
 - `s.replace(old, new, count=-1)`: replace non-overlapping occurrences, with `count` limiting replacements and a negative value replacing all. An empty `old` inserts between characters and at both ends, following Python semantics.
 
-String methods return new values rather than modifying the original string. Scanning, matching, and result construction count against the instruction quota; string results charge their actual length, and `split`/`splitlines` also charge result-list slots. These are closed method sets: unlisted list, dict, or string methods raise `attribute_error`.
+String methods return new values rather than modifying the original string. Scanning, matching, and result construction all count against the instruction quota: string results charge their actual length, and `split`/`splitlines` also charge result-list slots. These are closed method sets: unlisted list, dict, or string methods raise `attribute_error`.
 
 ## 7. Records: custom objects with members
 
@@ -192,13 +203,32 @@ print(p.x)               # dot access reads a member
 p.x = 10                 # dot assignment writes, still checked against the field contract
 ```
 
-A class body only allows field declarations, in two forms: `x` (contract `any`, any value) or `y: int` (a specific contract). A contract can be `int/float/str/bool/list/dict`, `any`, or another schema (nested constraint). `any/bool/list/dict` are annotation-only contract names — they cannot be called or assigned; `int/float/str` remain conversion builtins. Defaults, methods, and inheritance are not supported yet.
+A class body only allows field declarations, in two forms: `x` (contract `any`, any value) or `y: int` (a specific contract). Defaults, methods, and inheritance are not supported yet. Available contract names:
+
+- `int`/`float`/`str`/`bool`/`list`/`dict`, `any`, or another schema (nested constraint);
+- `any`/`bool`/`list`/`dict` are annotation-only contract names: they cannot be called or assigned;
+- `int`/`float`/`str` remain conversion builtins.
 
 Record semantics:
 
 - **Fixed shape**: fields can never be added or removed — reading or writing an unknown field raises `attribute_error`; field values are mutable but must satisfy their contract (violations raise `contract_error`).
 - **Structural equality**: two separately written identical class bodies produce equal schemas; records are equal when their schemas are structurally equal and their payloads are equal; a record never equals a dict — even with the same shape, a dict carries no contract.
-- **Equality ignores declaration order; construction depends on it**: schema equality compares the field set — the order of `x` and `y` makes no difference; positional construction, however, binds arguments in each schema's own declaration order. Two schemas with the same fields in reversed order are equal, yet the same positional call produces records with different payloads. Prefer keyword construction when passing arguments positionally across separately defined schemas.
+- **Equality ignores declaration order; construction depends on it**: schema equality compares the field set — the order of `x` and `y` makes no difference. Positional construction, however, binds arguments in each schema's own declaration order — two schemas with the same fields in reversed order are equal, yet the same positional call produces records with different payloads:
+
+  ```python
+  class A:
+      x: int
+      y: int
+
+  class B:
+      y: int
+      x: int
+
+  print(A == B)              # True: equality ignores declaration order
+  print(A(1, 2) == B(1, 2))  # False: construction binds in each schema's order
+  ```
+
+  Prefer keyword construction (`B(x=1, y=2)`) when passing arguments across separately defined schemas.
 - **Wrap/unwrap**: `unwrap(p)` peels a record into a plain dict (a shallow copy); `wrap(Point, d)` wraps a dict whose keys exactly match the schema into a record (missing/extra keys raise `contract_error` naming them).
 - Records are not indexable, not iterable, not usable as dict keys, and always truthy.
 
@@ -211,13 +241,19 @@ def move(p: Point) -> int:
 p: Point = Point(1, 2)
 ```
 
-Parameter annotations are checked at call time, return annotations at return time, and annotated assignments at assignment time; the three error messages name the responsible position (argument / return value / annotated assignment). Dicts are never auto-wrapped at annotation positions. The check is **width-based**: an argument record passes as long as it contains every field the expected schema requires, with compatible contracts; extra fields are fine.
+Annotations are checked at three points, and the error messages name the responsible position:
 
-Names in error messages are **compile-time, scope-local labels**: a class name or annotation text becomes the display name for related errors in that scope (e.g. `record Point {x: int} has no field 'y'`). Labels never enter values and disappear at scope exit; unlabeled values display structurally (`record {x: int} ...`). Across branches, loops, and exception paths, a label is retained only when the same label can be established; otherwise the value falls back to an anonymous structural display. Labels are diagnostics only — they play no role in equality or contract checks.
+- Parameter annotations: checked at call time (argument);
+- Return annotations: checked at return time (return value);
+- Annotated assignments: checked at assignment time (annotated assignment).
 
-When width checking accepts a value with extra fields, attribute errors still retain the variable's annotation label while listing the value's actual, complete schema. Thus, after `p: Point = Coord(1, 2)`, `p.z` can report `record Point {x: int, y: int} has no field 'z'`; `Point` is only a diagnostic label and does not mean the value's schema was rewritten.
+The check is **width-based**: an argument record passes as long as it contains every field the expected schema requires, with compatible contracts; extra fields are fine. Dicts are never auto-wrapped at annotation positions.
 
-Records and schemas cannot cross the host FFI boundary (a host function receiving a record raises `ffi_error` — `unwrap` first); they pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs. Only structure crosses VMs: when a granted function reports an error inside a child VM, it does so under the granted name (the key in `functions={"f": ...}`) with structural descriptions — the definition-side function name and type labels never appear in the child's error text.
+Names in error messages are **compile-time, scope-local labels**, used only as diagnostics — they play no role in equality or contract checks. A class name or annotation text becomes the display name for related errors in that scope. Labels never enter values and disappear at scope exit; unlabeled values display structurally (`record {x: int} ...`). Across branches, loops, and exception paths, a label is retained only when the same label can be established; otherwise the value falls back to an anonymous structural display.
+
+When width checking accepts a value with extra fields, attribute errors still retain the annotation label written by the receiver. For example, after `p: Point = Coord(1, 2)`, `p.z` can report `record Point {x: int, y: int} has no field 'z'` — `Point` is only a diagnostic label and does not mean the value's schema was rewritten.
+
+Only structure crosses the VM and FFI boundaries. Records and schemas cannot cross the host FFI boundary (a host function receiving a record raises `ffi_error` — `unwrap` first). They pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs — but errors reported inside the child VM use only the granted name (the key in `functions={"f": ...}`) with structural descriptions; the definition-side function name and type labels never appear.
 
 ## 8. Creating VMs
 
@@ -229,7 +265,7 @@ out = sub.run()                  # run and get back all of its output (a string)
 print(out)                       # 'hi\n'
 ```
 
-VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files — it has its own empty filesystem. Configuration:
+VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. Configuration:
 
 ```python
 sub = VM(code, max_instructions=10000)   # quotas can only be tightened
@@ -250,7 +286,7 @@ sub = VM("print(double(21))", functions={"double": double})
 sub.run()                        # prints 42
 ```
 
-A granted sericite function retains its definition-side module variables, closure cells, and already-granted functions by reference, and builtins (`print`/`read_file` and other IO/filesystem services) also resolve back to the VM that defined it — a function value carries its whole world with it. Mutable state reachable through those environments is shared capability: only grant functions whose reachable state the child VM may observe or modify.
+A granted sericite function retains its definition-side environment: module variables, closures, and already-granted functions, and builtins (`print`, filesystem services, …) resolve back to the VM that defined it — a function value carries its whole world with it. Grant only functions whose reachable state the child VM may observe or modify; details are in the [host reference](host-reference.md) §6.
 
 ## 9. Explicitly not writable (rejected at compile time)
 

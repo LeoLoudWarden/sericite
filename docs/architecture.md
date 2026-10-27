@@ -57,39 +57,34 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10. `resource_exhausted` and `internal_error` must not be catchable by script `try/except` — quotas must not be swallowed by scripts.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
-12. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross; the FFI exception contract is that host callbacks signal failure only by raising `SericiteError` with a contract kind — any other `Exception` is a governance failure and kills the VM with the uncatchable `host_error`, whose message contains only the host exception's type name, not its text (to prevent leaking host paths or internal information); `BaseException`s (`SystemExit`, `KeyboardInterrupt`, …) are process-level events and propagate to the host unchanged. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
-13. A granted sericite function executes on the **calling VM's frame stack** (instructions charged to the caller and its ancestors), but retains the **defining function's closure cells, the defining VM's module variables, the defining side's granted-function environment, and the defining VM's builtin services** (IO / filesystem / child-VM creation all resolve back to the defining VM — the function's home); the reverse or cross combinations are not allowed. Re-granting must preserve all of these definition-side environments.
+12.
+  - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross.
+  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [host reference](host-reference.md), section 5.3.
+  - c. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
+13.
+  - a. A granted sericite function executes on the **calling VM's frame stack**, with instructions charged to the caller and its ancestors.
+  - b. The function also retains the **definition-side environment**: the defining function's closure cells, the defining VM's module variables, the definition side's granted-function environment, and the defining VM's builtin services (IO / filesystem / child-VM creation all resolve back to the defining VM — the function's home).
+  - c. Reverse or cross combinations are not allowed; re-granting must preserve all of these definition-side environments.
 14. Every resource that can grow must have a quota. Every instruction and dynamic operation must go through a Meter and AccountRoute; post-hoc charging, ledger-delta mirroring, and bypassing resource permits are forbidden. Debugging, errors, suspension, and cross-VM paths follow the same rule. See section 5 for the concrete contracts.
 15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `step()` on the same VM from inside an `input_provider`/FFI callback).
-16. Only structure crosses VMs: records/schemas carry no names (schema equality compares the structure of field sets and contracts); class names, annotation names, and other labels are compile-time, scope-local diagnostic data, baked only into the current layer's CodeUnit instructions and metadata, and expire at scope exit. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values.
+16.
+  - a. Only structure crosses VMs: records/schemas carry no names, and schema equality compares the structure of field sets and contracts; class names, annotation names, and other labels are compile-time, scope-local diagnostic data that expires at scope exit.
+  - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear;
+  - c. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values. Design rationale is in [design](design.md) §3.4; script-visible semantics in the [language reference](language-reference.md) §7.
 
 ## 4. Script interface
 
-Built-in functions:
+The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [host reference](host-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
-- `input()`: read one line of the current VM's input.
-- `print(value, ..., end="\n")`: write to the current VM's stdout buffer; the keyword-only string `end` controls the trailing text.
-- `len(x)`, `int(x)`, `float(x)`, `str(x)`, `range(...)`.
-- `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`: operate on this VM's private filesystem (text only).
-- `VM(code, **limits)`: create a child VM, optionally with resource-quota arguments (tightening only); the special argument `functions={name: fn}` grants functions (sericite functions or already-held granted functions) to the child VM.
-- Host injection: `SericiteEngine.create_root(source, functions={name: python_callable})` grants host functions to the root VM.
-
-Container methods: list `append`/`pop`; dict `keys`/`values`/`get`/`pop`; str `strip`/`lstrip`/`rstrip`/`split`/`splitlines`/`join`/`find`/`replace`. Dispatch is closed and native — arbitrary Python attributes are never exposed. Appending charges the new list slot; key/value snapshots charge O(n) work and list allocation. String scanning, matching, and result construction are charged by size; result strings and split lists are allocated before their actual creation.
-
-VM handle methods (identical on the script and host sides): `run(inputs)`, `feed_input(text)`, `step()`, `step_instruction()`, `snapshot()`, `stdout()`, `terminate()`, plus `read_file` / `write_file` / `list_dir` / `path_exists` (configure/read that VM's filesystem).
-
-VM states: `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, `terminated`.
-
-Error kinds: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `zero_division`, `conversion_error`, `index_error`, `key_error`, `name_error`, `arity_error`, `raise_error`, `file_not_found`, `is_directory`, `not_directory`, `ffi_error`, `input_error`, `attribute_error`, `contract_error`, `resource_exhausted`, `internal_error`, `host_error`. The `errors` module is their single registry. All except `resource_exhausted`/`internal_error`/`host_error` can be caught by `try/except` with kind filtering; the compiler rejects unknown filter names and the uncatchable kinds as `validation_error`.
+Error kinds are centrally registered in the `errors` module, and catchability is compiler-enforced: unknown filter names and uncatchable kinds are both rejected at compile time as `validation_error`. The full kind list is in the [language reference](language-reference.md) §5.
 
 ## 5. Resource quotas
 
-Quotas are defined by `SericiteLimits`: `max_instructions`, `max_output_bytes`, `max_frames`, `max_child_vms`, `max_list_size`, `max_dict_size`, `max_string_bytes`, `max_int_bits`, `max_total_bytes`, `max_total_vms`, `max_vm_depth`, `max_fs_files`, `max_fs_file_bytes`. See the [host reference](host-reference.md) for host-side configuration.
+Quotas are defined by `SericiteLimits`; the field list and defaults are in the [host reference](host-reference.md) §2.2. This section covers only the charging model.
 
 ### 5.1 Basic rules
 
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
-- Total source length has a fixed cap of 4MB (in UTF-8 bytes).
 - Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any ring fails.
 - The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
@@ -138,7 +133,13 @@ Latest recorded runs use an Intel i3-9100 on Linux x86_64 with CPython 3.13.13 (
 | Drive the same loop with `step_instruction()` | ~2.60 µs/instruction (3.19× `run()`) | [debugging.py](../benchmarks/debugging.py) |
 | Drive the same loop with `step()` | ~6.32 µs/step call (~1.40 µs/instruction) | [debugging.py](../benchmarks/debugging.py) |
 
-The instruction figure is a workload-weighted average, not a uniform per-opcode cost; VM creation and compilation are excluded. Stepping figures include single-step control and a safe snapshot after every step, for a workload with one simple local variable. These are measurements of the Python prototype, not performance guarantees; future engine changes require re-measurement.
+Caveats:
+
+- The instruction figure is a workload-weighted average, not a uniform per-opcode cost.
+- VM creation and compilation are excluded from the table.
+- Stepping figures include single-step control and a safe snapshot after every step.
+- The workload has a single simple local variable.
+- These are measurements of the Python prototype, not performance guarantees; future engine changes require re-measurement.
 
 ## 7. Current prototype capability overview
 

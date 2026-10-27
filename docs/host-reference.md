@@ -19,7 +19,7 @@ output = vm.run(["world"])
 assert output == "hello world\n"
 ```
 
-`create_root()` compiles the source and returns a `VMHandle`. A VM has independent virtual IO, an empty in-memory filesystem, and its own execution state. A handle can only be driven by the engine that created it.
+`create_root()` compiles the source and returns a `VMHandle`; a handle can only be driven by the engine that created it. A VM is an isolated workspace — the isolation promises are in the [security model](security.md) §2.
 
 ## 2. Engines and quotas
 
@@ -145,7 +145,8 @@ Records/schemas, VM handles, functions, and other host objects cannot cross. Cal
 ### 5.3 Exceptions and reentrancy
 
 - The FFI exception contract: a well-behaved host callback either returns a result or raises `SericiteError` with a contract kind (`file_not_found`, `runtime_error`, …) — this says "I'm alive, and this job cannot be delivered." A `SericiteError` propagates unchanged and is catchable by the script under its kind, so the host must keep secrets out of its message.
-- Any **other** `Exception` escaping a host callback is a governance failure: the callback's internal state is no longer trustworthy, so the engine kills the VM with the **uncatchable** `host_error` (message: only the host exception's type name, never its text) and returns control to the host. Scripts cannot catch it — not even with a bare `except:` — and cannot probe host exception types through it. Catch your own exceptions inside the callback and translate the ones scripts may see into contract kinds.
+- Any **other** `Exception` escaping a host callback is a governance failure: the callback's internal state is no longer trustworthy. The engine kills the VM with the **uncatchable** `host_error` — message: only the host exception's type name, never its text — and returns control to the host.
+- Scripts cannot catch this failure — not even with a bare `except:` — and cannot probe host exception types through it. Catch your own exceptions inside the callback and translate the ones scripts may see into contract kinds.
 - `SystemExit`, `KeyboardInterrupt`, and other `BaseException`s are process-level events addressed to the host: they propagate out of `run()` unchanged. Do not grant functions whose libraries can call `sys.exit()` on adversarial input paths — same discipline as not granting functions that can be driven to delete files.
 - Do not call `run()`, `step()`, or another driving method on the same VM from inside its callback; nested dispatch is rejected.
 
@@ -165,7 +166,7 @@ Scripts create child VMs with `VM(code, **limits)` and can grant Sericite functi
 - World services and target execution are jointly constrained by causal routes spanning home/target and caller, with shared ancestors charged once;
 - Result ownership enters the actual caller.
 
-Granting or re-granting a function grants the world reachable through it. VM handles themselves cannot cross FFI into the host.
+Granting or re-granting a function grants the world reachable through it. VM handles themselves cannot cross FFI into the host. The mechanism and its design invariants are in the [architecture notes](architecture.md), invariant 13 and section 5.4.
 
 ## 7. Host-side error handling
 

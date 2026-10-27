@@ -15,10 +15,10 @@ Tcl 内建的这套机制：
 Safe-Tcl 停在了哪里——用它自己的话说：
 
 - 1998 年 USENIX 安全模型论文（Levy、Demailly、Ousterhout、Welch）明确写道："Safe-Tcl currently does not prevent most denial-of-service attacks. We will address this in the future with a combination of resource controls and a kill-key that lets a user intervene when an applet misbehaves."（Safe-Tcl 目前无法防止多数拒绝服务攻击；我们未来将以资源管制加 kill-key 的组合来解决。）
-- 资源管制直到 Tcl 8.5 才经 TIP 143（2003 年）落地，其 rationale 承认"脚本即使在安全解释器中运行，发起拒绝服务攻击也是轻而易举的"。TIP 143 只加了两种限制——墙钟时间与命令数——且按单个解释器计。内存限制被明确以"代价过高"搁置；输出统计不存在；也没有任何向上计费：被限额的解释器创建的子解释器继承时间限，但命令数配额重新归零，TIP 只是建议 master"或许可以"自行扣减配额。
+- 资源管制直到 Tcl 8.5 才经 TIP 143（2003 年）落地，其 rationale 承认"脚本即使在安全解释器中运行，发起拒绝服务攻击也是轻而易举的"。TIP 143 只加了两种限制——墙钟时间与命令数——且按单个解释器计。内存限制被明确以"代价过高"搁置；输出统计不存在。也没有任何向上计费：被限额的解释器创建的子解释器继承时间限，但命令数配额重新归零——TIP 只是建议 master"或许可以"自行扣减配额。
 - kill-key 来得更晚：`interp cancel`，经 TIP 285 于 Tcl 8.6 引入。
 
-于是历史记录是这样的：隔离机制本身是成立的，1996 年就已发布；资源治理这一半在 1998 年被承诺，十年后才部分兑现，且从未兑现为跨层级的配额会计。与此同时，这套机制获得过外部认可——NIST 的《Countermeasures for Mobile Agent Security》（2000）称 Safe Tcl 是"probably the best known of the safe interpreters for script-based languages"——而主流平台的另一条路线，Java 的 SecurityManager，已被标记废弃（JEP 411，JDK 17）并在 JDK 24 中被永久禁用（JEP 486）。
+于是历史记录是这样的：隔离机制本身是成立的，1996 年就已发布；资源治理这一半在 1998 年被承诺，十年后才部分兑现，且从未兑现为跨层级的配额会计。与此同时，这套机制获得过外部认可：NIST 的《Countermeasures for Mobile Agent Security》（2000）称 Safe Tcl 是"probably the best known of the safe interpreters for script-based languages"。主流平台的另一条路线——Java 的 SecurityManager——已被标记废弃（JEP 411，JDK 17），并在 JDK 24 中被永久禁用（JEP 486）。
 
 Safe-Tcl 之死，不是机制输了。它是随宿主语言的生态位一起萎缩的。padded cell 没有输掉任何东西；是 Tcl 输掉了市场。
 
