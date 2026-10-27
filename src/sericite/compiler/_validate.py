@@ -58,6 +58,12 @@ def _validate(tree: ast.Module, filename: str) -> None:
                     )
         if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
             _reject(node, filename, "dunder attributes are not available")
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.ctx, ast.Store)
+            and isinstance(node.slice, ast.Slice)
+        ):
+            _reject(node, filename, "slice assignment is not supported")
         if isinstance(node, ast.ClassDef):
             if node.name.startswith("__"):
                 _reject(node, filename, "dunder names are not available")

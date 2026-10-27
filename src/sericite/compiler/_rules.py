@@ -52,6 +52,7 @@ _ALLOWED_NODES = {
     ast.List,
     ast.Dict,
     ast.Subscript,
+    ast.Slice,
     ast.BinOp,
     ast.UnaryOp,
     ast.BoolOp,

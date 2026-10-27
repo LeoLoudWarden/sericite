@@ -371,6 +371,12 @@ class _EngineCore:
             index = stack.pop()
             value = stack.pop()
             stack.append(self._index(context, value, index))
+        elif op == isa.LOAD_SLICE:
+            step = stack.pop()
+            stop = stack.pop()
+            start = stack.pop()
+            value = stack.pop()
+            stack.append(self._slice(context, value, start, stop, step))
         elif op == isa.STORE_INDEX:
             index = stack.pop()
             target = stack.pop()

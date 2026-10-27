@@ -166,4 +166,4 @@ VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`�
 
 ## 9. 明确暂不支持
 
-字符串方法与文档所列封闭集合之外的列表/字典方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。
+字符串方法与文档所列封闭集合之外的列表/字典方法、可变参数/仅关键字参数、`**` 展开、链式比较、切片赋值、元组、f-string、`import`、`del`、class 字段默认值/方法/继承。

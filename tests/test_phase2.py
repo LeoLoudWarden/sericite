@@ -357,6 +357,128 @@ class ListTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "type_error")
 
 
+class SliceTests(unittest.TestCase):
+    def test_string_start_and_stop(self):
+        source = (
+            'text = "abcdef"\n'
+            "print(text[1:4])\nprint(text[:3])\nprint(text[3:])\n"
+            "print(text[-4:-1])\nprint(text[-100:100])\nprint(text[4:1])\n"
+        )
+        self.assertEqual(run(source), "bcd\nabc\ndef\ncde\nabcdef\n\n")
+
+    def test_list_slices_are_independent_results(self):
+        source = (
+            "values = [0, 1, 2, 3, 4]\n"
+            "result = values[1:4]\nresult[0] = 9\n"
+            "copy = values[:]\ncopy[1] = 8\n"
+            "print(result, copy)\nprint(values)\n"
+        )
+        self.assertEqual(run(source), "[9, 2, 3] [0, 8, 2, 3, 4]\n[0, 1, 2, 3, 4]\n")
+
+    def test_positive_and_negative_steps(self):
+        source = (
+            'text = "abcdef"\nvalues = [0, 1, 2, 3, 4, 5]\n'
+            "print(text[::2], text[1:6:2], text[::-1], text[5:1:-2])\n"
+            "print(values[::2], values[::-1], values[1:4:-1])\n"
+        )
+        self.assertEqual(
+            run(source),
+            "ace bdf fedcba fd\n[0, 2, 4] [5, 4, 3, 2, 1, 0] []\n",
+        )
+
+    def test_slice_expressions_are_evaluated_once_in_order(self):
+        source = (
+            "def get_value():\n"
+            '    print("value")\n'
+            '    return "abcdef"\n'
+            "def get_start():\n"
+            '    print("start")\n'
+            "    return 0\n"
+            "def get_stop():\n"
+            '    print("stop")\n'
+            "    return 5\n"
+            "def get_step():\n"
+            '    print("step")\n'
+            "    return 2\n"
+            "print(get_value()[get_start():get_stop():get_step()])\n"
+        )
+        self.assertEqual(run(source), "value\nstart\nstop\nstep\nace\n")
+
+    def test_invalid_slices_are_type_errors(self):
+        cases = (
+            'text = "abc"\nprint(text[::0])\n',
+            'text = "abc"\nprint(text[0.0:1])\n',
+            'text = "abc"\nprint(text[False:1])\n',
+            'text = "abc"\nprint(text[::"x"])\n',
+            "values = {1: 2}\nprint(values[0:1])\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                engine = SericiteEngine()
+                vm = engine.create_root(source)
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_slice_assignment_is_rejected_at_compile_time(self):
+        for statement in ("values[0:1] = [3]", "values[0:1] += [3]"):
+            with self.subTest(statement=statement):
+                engine = SericiteEngine()
+                with self.assertRaises(SericiteError) as ctx:
+                    engine.create_root(f"values = [1, 2]\n{statement}\n")
+                self.assertEqual(ctx.exception.kind, "validation_error")
+                self.assertIn("slice assignment", ctx.exception.message)
+
+    def test_slices_charge_result_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        engine.create_root(
+            'text = "abcdef"\nvalues = [0, 1, 2, 3]\ncheckpoint()\n'
+            "a = text[1:5]\nb = values[1:3]\ncheckpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                )
+            },
+        ).run()
+        checkpoint_result_allocation = 8
+        self.assertEqual(
+            checkpoints[1] - checkpoints[0],
+            4 * 4 + 2 * 8 + checkpoint_result_allocation,
+        )
+
+    def test_slices_charge_work_proportional_to_result_size(self):
+        for kind in ("str", "list"):
+            counts = {}
+            for size in (100, 1000):
+                engine = SericiteEngine()
+                checkpoints = []
+                engine.create_root(
+                    "value = get()\ncheckpoint()\nresult = value[:]\ncheckpoint()\n",
+                    functions={
+                        "get": lambda kind=kind, size=size: (
+                            "x" * size if kind == "str" else [0] * size
+                        ),
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(engine._contexts[0].instruction_count)
+                        ),
+                    },
+                ).run()
+                counts[size] = checkpoints[1] - checkpoints[0]
+            with self.subTest(kind=kind):
+                self.assertGreater(counts[1000], counts[100])
+
+    def test_repeated_slices_enforce_memory_quota(self):
+        limits = SericiteLimits(max_total_bytes=2000)
+        engine = SericiteEngine(limits=limits)
+        vm = engine.create_root(
+            "values = range(100)\nwhile True:\n    values = values[:]\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+
 class BuiltinTests(unittest.TestCase):
     def test_print_end(self):
         source = (
