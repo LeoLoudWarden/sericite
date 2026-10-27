@@ -13,6 +13,7 @@ _STACK_DELTAS = {
     isa.POP: -1,
     isa.GET_ITER: -1,
     isa.LOAD_INDEX: -1,
+    isa.LOAD_SLICE: -3,
     isa.BINARY_OP: -1,
     isa.COMPARE_OP: -1,
     isa.STORE_INDEX: -3,

@@ -147,6 +147,44 @@ class _EngineOperators:
             f"'{_type_name(value)}' is not indexable", kind="type_error"
         )
 
+    def _slice(
+        self,
+        context: VMContext,
+        value: object,
+        start: object,
+        stop: object,
+        step: object,
+    ) -> object:
+        if not isinstance(value, (str, list)):
+            raise SericiteError(
+                f"'{_type_name(value)}' is not sliceable", kind="type_error"
+            )
+        for index in (start, stop, step):
+            if index is not None and type(index) is not int:
+                raise SericiteError(
+                    f"slice indices must be int or None, got {_type_name(index)}",
+                    kind="type_error",
+                )
+        if step == 0:
+            raise SericiteError("slice step cannot be zero", kind="type_error")
+        indices = slice(start, stop, step).indices(len(value))
+        size = len(range(*indices))
+        if type(value) is str:
+            if size > context.limits.max_string_bytes:
+                raise SericiteError(
+                    "string size limit exceeded", kind="resource_exhausted"
+                )
+            self._meter(context).allocate(size * 4)
+            self._meter(context).work(size // 64)
+        else:
+            if size > context.limits.max_list_size:
+                raise SericiteError(
+                    "list size limit exceeded", kind="resource_exhausted"
+                )
+            self._meter(context).allocate(size * 8)
+            self._meter(context).work(size)
+        return value[start:stop:step]
+
     def _store_index(
         self, context: VMContext, target: object, index: object, value: object
     ) -> None:

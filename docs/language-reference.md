@@ -18,7 +18,7 @@ Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user
 7 / 2        # 3.5 (division always yields float)
 7 // 2       # 3
 7 % 3        # 1
-"ab" + "cd"  # string concatenation (only +; no * repetition, no f-strings, no slicing)
+"ab" + "cd"  # string concatenation (only +; no * repetition, no f-strings)
 """line1
 line2""" # multi-line
 [1, 2] + [3] # list concatenation
@@ -29,12 +29,14 @@ not x        # logical not; and / or short-circuit
 
 Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
 
+Strings and lists support read-only slices: `value[start:stop]` and `value[start:stop:step]`. All three positions may be omitted, and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing creates a new string or list; copying work and result memory are charged according to result length. Slice assignment is not supported.
+
 Key differences from Python (mistakes raise `type_error`):
 
 - `bool` does not participate in arithmetic: `True + 1` is an error.
 - Cross-type ordering comparison is an error: `1 < "a"` raises (`==`/`!=` may cross types, evaluating to False/True).
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
-- Strings support integer-index reads only (`s[0]`); no writes, no slicing. Lists support indexed reads and writes.
+- Strings support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
 
 ## 3. Control flow
 
@@ -243,7 +245,7 @@ A granted sericite function retains its definition-side module variables, closur
 
 ## 9. Explicitly not writable (rejected at compile time)
 
-`import`, `del`, string methods, `*args/**kwargs`, chained comparisons, slicing, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
+`import`, `del`, string methods, `*args/**kwargs`, chained comparisons, slice assignment, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
 
 ## 10. A complete example
 

@@ -538,8 +538,16 @@ class _Compiler:
             return
         if isinstance(node, ast.Subscript):
             self.compile_expression(node.value, code)
-            self.compile_expression(node.slice, code)
-            self.emit(code, isa.LOAD_INDEX, None, line)
+            if isinstance(node.slice, ast.Slice):
+                for part in (node.slice.lower, node.slice.upper, node.slice.step):
+                    if part is None:
+                        self.emit(code, isa.LOAD_CONST, None, line)
+                    else:
+                        self.compile_expression(part, code)
+                self.emit(code, isa.LOAD_SLICE, None, line)
+            else:
+                self.compile_expression(node.slice, code)
+                self.emit(code, isa.LOAD_INDEX, None, line)
             return
         if isinstance(node, ast.Attribute):
             self.compile_expression(node.value, code)
