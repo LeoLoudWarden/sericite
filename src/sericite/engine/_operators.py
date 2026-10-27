@@ -258,6 +258,25 @@ class _EngineOperators:
                     work=lambda *args: self._list_pop_work(value, args),
                     allocation=_no_allocation,
                 )
+        if type(value) is str:
+            if attr in (
+                "strip",
+                "lstrip",
+                "rstrip",
+                "split",
+                "splitlines",
+                "join",
+                "find",
+                "replace",
+            ):
+                return _NativeFunction(
+                    f"str.{attr}",
+                    lambda *args: self._string_method(context, value, attr, args),
+                    context,
+                    work=_no_work,
+                    allocation=_no_allocation,
+                )
+            raise SericiteError(f"str has no method '{attr}'", kind="attribute_error")
         if type(value) is dict:
             if attr in ("keys", "values"):
                 return _NativeFunction(
@@ -291,6 +310,320 @@ class _EngineOperators:
             f"'{_type_name(value)}' does not support attribute access",
             kind="type_error",
         )
+
+    def _string_method(
+        self,
+        context: VMContext,
+        target: str,
+        attr: str,
+        args: tuple[object, ...],
+    ) -> object:
+        if attr in ("strip", "lstrip", "rstrip"):
+            return self._string_strip(context, target, attr, args)
+        if attr == "split":
+            return self._string_split(context, target, args)
+        if attr == "splitlines":
+            return self._string_splitlines(context, target, args)
+        if attr == "join":
+            return self._string_join(context, target, args)
+        if attr == "find":
+            return self._string_find(context, target, args)
+        if attr == "replace":
+            return self._string_replace(context, target, args)
+        raise SericiteError(f"unknown string method: {attr}", kind="internal_error")
+
+    @staticmethod
+    def _string_arity(
+        name: str, args: tuple[object, ...], minimum: int, maximum: int
+    ) -> None:
+        if minimum <= len(args) <= maximum:
+            return
+        expected = str(minimum) if minimum == maximum else f"{minimum} to {maximum}"
+        raise SericiteError(
+            f"str.{name}() expects {expected} argument(s), got {len(args)}",
+            kind="arity_error",
+        )
+
+    def _string_copy(
+        self, context: VMContext, target: str, start: int, stop: int
+    ) -> str:
+        size = stop - start
+        if size > context.limits.max_string_bytes:
+            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(size * 4)
+        self._meter(context).work(size // 64)
+        return target[start:stop]
+
+    def _string_append_piece(
+        self,
+        context: VMContext,
+        result: list[str],
+        target: str,
+        start: int,
+        stop: int,
+    ) -> None:
+        if len(result) >= context.limits.max_list_size:
+            raise SericiteError("list size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(8)
+        result.append(self._string_copy(context, target, start, stop))
+
+    def _string_find_from(
+        self,
+        context: VMContext,
+        target: str,
+        needle: str,
+        start: int,
+        stop: int,
+    ) -> int:
+        for position in range(start, stop - len(needle) + 1):
+            self._meter(context).work(1 + len(needle))
+            if target.startswith(needle, position):
+                return position
+        return -1
+
+    def _string_strip(
+        self,
+        context: VMContext,
+        target: str,
+        attr: str,
+        args: tuple[object, ...],
+    ) -> str:
+        self._string_arity(attr, args, 0, 1)
+        chars = args[0] if args else None
+        if chars is not None and type(chars) is not str:
+            raise SericiteError(
+                f"str.{attr}() chars must be str or None, got {_type_name(chars)}",
+                kind="type_error",
+            )
+        start = 0
+        stop = len(target)
+        membership_cost = len(chars) if chars is not None else 0
+        if attr != "rstrip":
+            while start < stop:
+                self._meter(context).work(1 + membership_cost)
+                char = target[start]
+                trimmed = char.isspace() if chars is None else char in chars
+                if not trimmed:
+                    break
+                start += 1
+        if attr != "lstrip":
+            while stop > start:
+                self._meter(context).work(1 + membership_cost)
+                char = target[stop - 1]
+                trimmed = char.isspace() if chars is None else char in chars
+                if not trimmed:
+                    break
+                stop -= 1
+        return self._string_copy(context, target, start, stop)
+
+    def _string_skip_whitespace(
+        self, context: VMContext, target: str, position: int
+    ) -> int:
+        while position < len(target):
+            self._meter(context).work(1)
+            if not target[position].isspace():
+                break
+            position += 1
+        return position
+
+    def _string_split(
+        self,
+        context: VMContext,
+        target: str,
+        args: tuple[object, ...],
+    ) -> list[str]:
+        self._string_arity("split", args, 0, 2)
+        separator = args[0] if args else None
+        maxsplit = args[1] if len(args) == 2 else -1
+        if separator is not None and type(separator) is not str:
+            raise SericiteError(
+                f"str.split() separator must be str or None, got {_type_name(separator)}",
+                kind="type_error",
+            )
+        if separator == "":
+            raise SericiteError(
+                "str.split() separator cannot be empty", kind="type_error"
+            )
+        if type(maxsplit) is not int:
+            raise SericiteError(
+                f"str.split() maxsplit must be int, got {_type_name(maxsplit)}",
+                kind="type_error",
+            )
+        result: list[str] = []
+        if separator is None:
+            position = self._string_skip_whitespace(context, target, 0)
+            while position < len(target) and (maxsplit < 0 or len(result) < maxsplit):
+                start = position
+                while position < len(target):
+                    self._meter(context).work(1)
+                    if target[position].isspace():
+                        break
+                    position += 1
+                self._string_append_piece(context, result, target, start, position)
+                position = self._string_skip_whitespace(context, target, position)
+            if position < len(target):
+                self._string_append_piece(
+                    context, result, target, position, len(target)
+                )
+            return result
+        position = 0
+        piece_start = 0
+        while maxsplit < 0 or len(result) < maxsplit:
+            found = self._string_find_from(
+                context, target, separator, position, len(target)
+            )
+            if found < 0:
+                break
+            self._string_append_piece(context, result, target, piece_start, found)
+            position = found + len(separator)
+            piece_start = position
+        self._string_append_piece(context, result, target, piece_start, len(target))
+        return result
+
+    def _string_splitlines(
+        self,
+        context: VMContext,
+        target: str,
+        args: tuple[object, ...],
+    ) -> list[str]:
+        self._string_arity("splitlines", args, 0, 1)
+        keepends = args[0] if args else False
+        if type(keepends) is not bool:
+            raise SericiteError(
+                f"str.splitlines() keepends must be bool, got {_type_name(keepends)}",
+                kind="type_error",
+            )
+        result: list[str] = []
+        line_breaks = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+        position = 0
+        line_start = 0
+        while position < len(target):
+            self._meter(context).work(1)
+            char = target[position]
+            if char not in line_breaks:
+                position += 1
+                continue
+            line_end = position + 1
+            if char == "\r" and line_end < len(target) and target[line_end] == "\n":
+                line_end += 1
+            self._string_append_piece(
+                context,
+                result,
+                target,
+                line_start,
+                line_end if keepends else position,
+            )
+            position = line_end
+            line_start = line_end
+        if line_start < len(target):
+            self._string_append_piece(context, result, target, line_start, len(target))
+        return result
+
+    def _string_join(
+        self,
+        context: VMContext,
+        separator: str,
+        args: tuple[object, ...],
+    ) -> str:
+        self._string_arity("join", args, 1, 1)
+        values = args[0]
+        if not isinstance(values, (str, list, dict)):
+            raise SericiteError(
+                f"str.join() expects str, list, or dict, got {_type_name(values)}",
+                kind="type_error",
+            )
+        size = 0
+        count = 0
+        for value in values:
+            self._meter(context).work(2)
+            if type(value) is not str:
+                raise SericiteError(
+                    f"str.join() items must be str, got {_type_name(value)}",
+                    kind="type_error",
+                )
+            size += len(value)
+            count += 1
+        if count > 1:
+            size += len(separator) * (count - 1)
+        if size > context.limits.max_string_bytes:
+            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(size * 4)
+        self._meter(context).work(size // 64)
+        return separator.join(values)
+
+    def _string_find(
+        self,
+        context: VMContext,
+        target: str,
+        args: tuple[object, ...],
+    ) -> int:
+        self._string_arity("find", args, 1, 3)
+        needle = args[0]
+        start = args[1] if len(args) >= 2 else None
+        stop = args[2] if len(args) == 3 else None
+        if type(needle) is not str:
+            raise SericiteError(
+                f"str.find() substring must be str, got {_type_name(needle)}",
+                kind="type_error",
+            )
+        for bound in (start, stop):
+            if bound is not None and type(bound) is not int:
+                raise SericiteError(
+                    f"str.find() bounds must be int or None, got {_type_name(bound)}",
+                    kind="type_error",
+                )
+        if needle == "":
+            self._meter(context).work(1)
+            return target.find(needle, start, stop)
+        normalized_start, normalized_stop, _ = slice(start, stop).indices(len(target))
+        return self._string_find_from(
+            context, target, needle, normalized_start, normalized_stop
+        )
+
+    def _string_replace(
+        self,
+        context: VMContext,
+        target: str,
+        args: tuple[object, ...],
+    ) -> str:
+        self._string_arity("replace", args, 2, 3)
+        old = args[0]
+        new = args[1]
+        count = args[2] if len(args) == 3 else -1
+        if type(old) is not str or type(new) is not str:
+            raise SericiteError(
+                "str.replace() old and new must be str", kind="type_error"
+            )
+        if type(count) is not int:
+            raise SericiteError(
+                f"str.replace() count must be int, got {_type_name(count)}",
+                kind="type_error",
+            )
+        replacements = 0
+        if count != 0:
+            if old == "":
+                replacements = (
+                    len(target) + 1 if count < 0 else min(count, len(target) + 1)
+                )
+            else:
+                position = 0
+                while count < 0 or replacements < count:
+                    found = self._string_find_from(
+                        context, target, old, position, len(target)
+                    )
+                    if found < 0:
+                        break
+                    replacements += 1
+                    position = found + len(old)
+        size = len(target) + replacements * (len(new) - len(old))
+        if size > context.limits.max_string_bytes:
+            raise SericiteError("string size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(size * 4)
+        construction_work = size // 64
+        if count != 0:
+            construction_work += len(target)
+        self._meter(context).work(construction_work)
+        return target.replace(old, new, count)
 
     def _list_append(
         self, context: VMContext, target: list[object], args: tuple[object, ...]
