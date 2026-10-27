@@ -17,9 +17,9 @@ By design promise (and covered by regression tests), a script inside a VM:
 
 - **cannot see** ungranted parent variables, parent files, host objects, or Python reflection entry points;
 - **cannot tell** how deeply it is nested; error and debug views contain only logical source locations and safe values — no host tracebacks or real paths leak through;
-- **cannot bypass** resource quotas: instruction count, output bytes, call depth, child VM count, nesting depth, container sizes, string bytes, integer bit width, approximate total memory, file count and per-file bytes are all capped, and a child VM's consumption is charged to all its ancestors;
+- **cannot bypass** resource quotas: instructions, memory, output, call depth, container sizes, string and integer width, files, child VM count, and nesting depth are all capped, and a child VM's consumption is charged to all its ancestors (the field list is in the [host reference](host-reference.md) §2.2);
 - **cannot swallow** `resource_exhausted` or `internal_error` — these two kinds are not catchable by script try/except, so quotas cannot be eaten by the script;
-- **cannot receive** raw host exceptions: the FFI contract is that a host callback either returns a result or raises `SericiteError` with a contract kind ("I'm alive, and this job cannot be delivered"). Any other `Exception` from a host callback means a governance failure — nothing about that callback's state is trustworthy anymore — so the VM dies with the uncatchable `host_error`, whose message carries only the host exception's type name (never its text), and control returns to the host. `SystemExit`, `KeyboardInterrupt`, and other `BaseException`s are process-level events addressed to the host itself: the engine never intercepts them, they propagate unchanged;
+- **cannot receive** raw host exceptions: a host exception outside the FFI contract kills the VM with the uncatchable `host_error` — the message carries only the host exception's type name, never its text, the script cannot catch it, and it cannot be used to probe host exception types. The full FFI exception contract is in the [host reference](host-reference.md) §5.3;
 - **cannot see** other layers' names: records/schemas carry no names; compile-time labels such as class names and annotation names are visible only in the error messages of the VM that defined them. A granted function reporting an error inside your VM does so under its granted name with structural descriptions — definition-side function names and type labels never appear.
 
 Isolation holds on the premise of a single execution path: all VMs are driven by the same engine through one dispatch loop, and scripts cannot reach the host around the compiler's whitelist.
@@ -28,13 +28,12 @@ Isolation holds on the premise of a single execution path: all VMs are driven by
 
 Each of the following matters equally; evaluate them before use:
 
-1. **The current engine is implemented in Python and runs in the host's process.** Implementation flaws in the engine or CPython itself could, in theory, break isolation. Sericite has not been through a formal external security audit; before 0.1.0 it only received internal and third-party adversarial review (section 4). **Against truly adversarial code, do not treat Sericite as your only isolation boundary** — production deployments should add an OS-level layer (separate process, container, etc.) around Sericite; Sericite's job is language-level behavioral constraint and resource governance.
+1. **The current engine is implemented in Python and runs in the host's process.** Implementation flaws in the engine or CPython itself could, in theory, break isolation. Sericite has not been through a formal external security audit — before 0.1.0 it only received internal and third-party adversarial review (section 4). **Against truly adversarial code, do not treat Sericite as your only isolation boundary**: production deployments should add an OS-level layer (separate process, container, etc.) around Sericite. Sericite's job is language-level behavioral constraint and resource governance.
 2. **Host function execution time and memory are not metered.** FFI functions are trusted code; their CPU/memory cost is the host's own discipline. A malicious or runaway host function is outside quota coverage.
 3. **The cost model is approximate.** Memory accounting uses approximate byte counts and only ever increases (high-water mark); O(n) operations are charged to the instruction count at a discounted rate. It defends against *unbounded growth*, not exact measurement.
 4. **Default quotas are not safe values.** Defaults target development and debugging; tighten them explicitly when running untrusted code.
-5. **Granting a function also grants its definition-side state.** A sericite function granted between VMs retains by reference its defining module variables, closure cells, and already-granted function environment. If that function returns or mutates a mutable object from those environments, the calling VM can affect definition-side state. Grant only functions and state the child VM is allowed to influence. Likewise, records passed across VMs through granted functions travel by reference — handing out a record shares its mutable payload.
-6. **A function value carries its whole world with it.** Granting or re-granting a function grants the state, IO/VFS, and child-VM capabilities reachable from its defining world; share only what you intend to open. World services still resolve to home, while execution is jointly constrained by a causal route spanning home and caller, with shared ancestors charged once. See the [architecture notes](architecture.md) and [host reference](host-reference.md).
-7. **A VM handle's display exposes the engine-global VM counter.** `print(sub)` shows `<VM id=N state=...>`, where `id` is an engine-wide incrementing counter — a script can use it to infer how many VMs the engine has created in total. This is a known information boundary: the display may change in a future release, but no known alternative simultaneously keeps the cost negligible, adds no third-party dependency, and preserves debugging convenience.
+5. **Granting a function also grants its definition-side state.** A sericite function granted between VMs retains by reference its defining module variables, closure cells, and already-granted function environment — a function value carries its whole world with it: the state, IO/VFS, and child-VM capabilities reachable from its defining world. World services still resolve to home, while execution is jointly constrained by a causal route spanning home and caller, with shared ancestors charged once. Records likewise pass across VMs through granted functions by reference — handing out a record shares its mutable payload. Grant only functions and state the child VM is allowed to influence. See the [architecture notes](architecture.md) and [host reference](host-reference.md).
+6. **A VM handle's display exposes the engine-global VM counter.** `print(sub)` shows `<VM id=N state=...>`, where `id` is an engine-wide incrementing counter. A script can use it to infer how many VMs the engine has created in total — this is a known information boundary. The display may change in a future release; no known alternative simultaneously keeps the cost negligible, adds no third-party dependency, and preserves debugging convenience.
 
 ## 4. Review so far
 
@@ -46,14 +45,7 @@ For responsible disclosure, concrete attack payloads are not listed in public do
 
 ## 5. Known semantic deviations
 
-The following behaviors differ from intuition or from Python, as deliberate prototype trade-offs. They are not security holes, but you should know them before writing programs that depend on exact semantics:
-
-- If an exception is raised inside a finally copy, the outer finally may run one extra time;
-- A bare `raise` after nested except blocks may re-throw an exception other than the outermost one;
-- Iterating a list with for is a live view; iterating a dict is a key snapshot;
-- A finished VM's execution context stays on the engine (for debug inspection); there is no explicit disposal yet.
-
-The full list is in the "known boundaries" section of the architecture notes ([中文](architecture.zh-CN.md)).
+The engine has a list of known semantic deviations — behaviors that differ from intuition or from Python as deliberate prototype trade-offs. They are not security holes, but you should know them before writing programs that depend on exact semantics. The full list is in the "known boundaries" section of the [architecture notes](architecture.md).
 
 ## 6. Reporting security issues
 

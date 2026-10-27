@@ -57,39 +57,34 @@
 9. Sericite 值语义由引擎助手函数定义，不直接继承 Python 运算符的隐式行为（如 bool 不参与算术）。
 10. `resource_exhausted` 与 `internal_error` 不可被脚本 try/except 捕获——配额不能被脚本吞掉。
 11. VM 句柄方法白名单只有一个来源（编译器侧定义），引擎侧引用它，两边不得分叉。
-12. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界；FFI 异常契约是宿主回调只能通过抛契约 kind 的 `SericiteError` 报告失败——契约之外的任何 `Exception` 都视为治理失败，当前 VM 以不可捕获的 `host_error` 终止，消息只含宿主异常的类型名、不含异常文本（防宿主路径/内部信息泄漏）；`BaseException`（`SystemExit`、`KeyboardInterrupt` 等）是进程级事件，原样穿透给宿主。VM 之间的函数授予在同一引擎信任域内按引用传递，不拷贝。
-13. 授予的 sericite 函数执行在**调用方 VM 的帧栈**上（指令计入调用方及祖先），但保留**定义方函数的闭包 cell、定义方 VM 的模块变量、定义方已持有的授予函数环境，以及定义方 VM 的内建服务**（IO/文件系统/子 VM 创建均解析回定义 VM，即函数的 home）；反过来或交叉的组合都不允许。再次授予时必须完整保留这些定义方环境。
+12.
+  - a. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界。
+  - b. FFI 异常契约：宿主回调只能通过抛契约 kind 的 `SericiteError` 报告失败；契约之外的任何 `Exception` 都视为治理失败，当前 VM 以不可捕获的 `host_error` 终止。完整契约见[宿主参考](host-reference.zh-CN.md)第 5.3 节。
+  - c. VM 之间的函数授予在同一引擎信任域内按引用传递，不拷贝。
+13.
+  - a. 授予的 sericite 函数执行在**调用方 VM 的帧栈**上，指令计入调用方及祖先。
+  - b. 函数同时保留**定义方环境**：定义方函数的闭包 cell、定义方 VM 的模块变量、定义方已持有的授予函数环境，以及定义方 VM 的内建服务（IO/文件系统/子 VM 创建均解析回定义 VM，即函数的 home）。
+  - c. 反向或交叉的组合都不允许；再次授予时必须完整保留这些定义方环境。
 14. 一切会增长的资源都必须有配额。所有指令与动态操作必须经由 Meter 和 AccountRoute，禁止事后补账、差值镜像及绕过资源许可；调试、异常、暂停和跨 VM 路径同样适用。具体契约见第 5 节。
 15. 调度入口有重入保护：同一 VM 不得被两个调度循环同时驱动（例如宿主在 `input_provider`/FFI 回调里对同一 VM 再调 `step()`）。
-16. 跨 VM 的只有结构：record/schema 不携带名字（schema 相等按字段集与契约的结构比较）；类名、注解名等标签是编译期、作用域本地的诊断数据，只烘焙进本层 CodeUnit 的指令与元数据，出作用域即失效。外来代码（`origin_vm` 不同的 CodeUnit）在当前 VM 的报错——属性 hint、参数/返回契约、参数数量——一律退为结构描述与授予名，定义方的函数名、类型标签、参数名（以位置序号替代）不得出现。新增值形式或跨层通道时，必须同样保证名字不随值越层。
+16.
+  - a. 跨 VM 的只有结构：record/schema 不携带名字，schema 相等按字段集与契约的结构比较；类名、注解名等标签是编译期、作用域本地的诊断数据，出作用域即失效。
+  - b. 外来代码（`origin_vm` 不同的 CodeUnit）在当前 VM 的报错（属性 hint、参数/返回契约、参数数量）一律退为结构描述与授予名，定义方的函数名、类型标签、参数名（以位置序号替代）不得出现；
+  - c. 新增值形式或跨层通道时，必须同样保证名字不随值越层。设计论证见[设计说明](design.zh-CN.md)第 3.4 节，脚本可见语义见[语言参考](language-reference.zh-CN.md)第 7 节。
 
 ## 4. 脚本接口
 
-内建函数：
+脚本可见的内建函数与容器方法以[语言参考](language-reference.zh-CN.md)第 6 节为准；VM 句柄方法与 VM 状态以[宿主参考](host-reference.zh-CN.md)第 3、4 节为准。引擎侧对这份接口只承担两条内部职责：这些名字的编译器白名单有唯一来源（不变量 11）；容器与字符串方法走封闭的原生分发，不暴露任意 Python 属性。方法调用的计费规则见第 5 节。
 
-- `input()`：读取当前 VM 的一行输入。
-- `print(value, ..., end="\n")`：写入当前 VM 的 stdout 缓冲区；仅关键字字符串参数 `end` 控制末尾文本。
-- `len(x)`、`int(x)`、`float(x)`、`str(x)`、`range(...)`。
-- `read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`：操作本 VM 的私有文件系统（仅文本）。
-- `VM(code, **limits)`：创建子 VM，可选资源配额参数（只能收紧）；特殊参数 `functions={name: fn}` 向子 VM 授予函数（sericite 函数或已持有的授予函数）。
-- 宿主注入：`SericiteEngine.create_root(source, functions={name: python_callable})` 向 root VM 授予宿主函数。
-
-容器方法：list `append`/`pop`；dict `keys`/`values`/`get`/`pop`；str `strip`/`lstrip`/`rstrip`/`split`/`splitlines`/`join`/`find`/`replace`。采用封闭的原生分发，不暴露任意 Python 属性。追加元素计入新列表槽；键/值快照按 O(n) 工作量与列表分配记账；字符串扫描、匹配和结果构造按规模计费，结果字符串与拆分列表在实际创建前计入分配。
-
-VM 句柄可用方法（脚本内与宿主侧一致）：`run(inputs)`、`feed_input(text)`、`step()`、`step_instruction()`、`snapshot()`、`stdout()`、`terminate()`，以及 `read_file` / `write_file` / `list_dir` / `path_exists`（配置/读取该 VM 的文件系统）。
-
-VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
-
-错误分类：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`zero_division`、`conversion_error`、`index_error`、`key_error`、`name_error`、`arity_error`、`raise_error`、`file_not_found`、`is_directory`、`not_directory`、`ffi_error`、`input_error`、`attribute_error`、`contract_error`、`resource_exhausted`、`internal_error`、`host_error`。`errors` 模块是这些 kind 的单一注册表。除 `resource_exhausted`/`internal_error`/`host_error` 外均可被 try/except 按 kind 过滤捕获；编译器将未知过滤名字以及不可捕获 kind 都拒绝为 `validation_error`。
+错误 kind 由 `errors` 模块集中注册，可捕获性由编译器强制：未知过滤名字与不可捕获 kind 都在编译期拒绝为 `validation_error`。完整 kind 清单见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 ## 5. 资源配额
 
-配额由 `SericiteLimits` 定义：`max_instructions`、`max_output_bytes`、`max_frames`、`max_child_vms`、`max_list_size`、`max_dict_size`、`max_string_bytes`、`max_int_bits`、`max_total_bytes`、`max_total_vms`、`max_vm_depth`、`max_fs_files`、`max_fs_file_bytes`。宿主配置方法见[宿主参考](host-reference.zh-CN.md)。
+配额由 `SericiteLimits` 定义，字段清单与默认值见[宿主参考](host-reference.zh-CN.md)第 2.2 节。本节只讲计费模型。
 
 ### 5.1 基本规则
 
 - 子 VM 默认继承父 VM 配额，`VM()` 参数只能收紧。
-- 源码总长度固定上限 4MB（按 UTF-8 字节计）。
 - 指令、内存和子 VM 消耗计入所有祖先，祖先链上任一环超限即失败。
 - 内存总账是近似高水位，只增不减；闭包 cell 与捕获环境也计入。
 - O(n) 及以上的工作按规模折价计入 `instruction_count`，不能按一条指令打发。
@@ -138,7 +133,13 @@ VM 状态：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`�
 | 用 `step_instruction()` 执行同一循环 | ~2.60 µs/指令（`run()` 的 3.19 倍） | [debugging.py](../benchmarks/debugging.py) |
 | 用 `step()` 执行同一循环 | ~6.32 µs/次调用（约 1.40 µs/指令） | [debugging.py](../benchmarks/debugging.py) |
 
-指令成本是该工作负载的加权平均值，不代表每种 opcode 都有相同成本，且不含 VM 创建与编译。单步数据包含逐步控制以及每步生成安全快照的成本，测试工作负载只有一个简单局部变量。这些数字是 Python 原型的实测结果，不是性能承诺；引擎变更后需要重新测量。
+补充限定：
+
+- 指令成本是该工作负载的加权平均值，不代表每种 opcode 都有相同成本。
+- 表中数字不含 VM 创建与编译的成本。
+- 单步数据包含逐步控制以及每步生成安全快照的成本。
+- 测试工作负载只有一个简单局部变量。
+- 这些数字是 Python 原型的实测结果，不是性能承诺；引擎变更后需要重新测量。
 
 ## 7. 当前原型能力概览
 

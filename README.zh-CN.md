@@ -67,7 +67,7 @@ print(vm.run(), end="")    # 42
 - 父级可以预置文件、喂输入、逐语句或逐指令单步、查看快照、随时终止；
 - 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
 
-廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.088 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。代表性循环连续执行平均约 0.82 µs/指令，逐指令调试约 2.60 µs/指令（实测环境与复现脚本见 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)）。
+廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.088 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
 
 ## record：类型名只是编译期的报错标签
 
@@ -77,32 +77,7 @@ print(vm.run(), end="")    # 42
 - record 只携带数据和契约。类型名是编译期、作用域本地的透明别名（同 Elm `type alias`），只用于报错文本——不参与相等、不参与契约判断，出作用域即擦除；
 - 命名是接收方的本地行为：一个值在不同作用域可以有不同的名字，也可以没有名字。
 
-```python
-class PointA:
-    x: int
-    y: int
-
-def f():
-    class PointB:                 # 与 PointA 同形，但是两次独立的定义
-        x: int
-        y: int
-    p1: PointA = PointA(1, 2)     # 注解在本作用域写下名字
-    p2 = PointB(1, 2)
-    print(p1 == p2)               # True：结构相等，名字不参与
-    # p1.z → record PointA {x: int, y: int} has no field 'z'
-    # p2.z → record PointB {x: int, y: int} has no field 'z'
-    return p2
-
-p_outer1 = f()
-# p_outer1.z → record {x: int, y: int} has no field 'z'
-#   匿名：标签不随值旅行，出作用域即擦除
-
-p_outer2: PointA = f()
-# p_outer2.z → record PointA {x: int, y: int} has no field 'z'
-#   接收方在自己的作用域重新命名，报错即可读
-```
-
-设计论证见[设计说明 §3.4](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)，完整语义见[语言参考 §7](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)。
+设计论证见[设计说明 §3.4](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)，完整语义与示例见[语言参考 §7](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)。
 
 ## 文档
 
@@ -132,9 +107,7 @@ Sericite 全程使用 AI 辅助开发——设计讨论、实现、测试、对�
 
 ## 名字由来
 
-Sericite 即绢云母，云母族中晶粒最细的一支：丝绢光泽的细小鳞片层层叠置，与所有云母一样是绝缘体。这个名字保留了项目命名时的三个承诺：层叠、绝缘、轻量。
-
-（本项目曾短暂名为 Mica/MicaLang；后发现该名字已被多方占用——包括一门活跃开发的商业语言，其 Docker 镜像发布在 `micalang` 命名空间下——遂更名。）
+Sericite 即绢云母，云母族中晶粒最细的一支：细小的丝绢鳞片层层叠置，与所有云母一样是绝缘体——这个名字保留了项目命名时的三个承诺：层叠、绝缘、轻量。（本项目曾短暂名为 Mica/MicaLang，因名字被占用而更名。）完整叙述见[设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)第 6 节。
 
 ## 许可证
 

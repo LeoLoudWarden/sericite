@@ -29,7 +29,18 @@ not x        # 逻辑非；and / or 短路求值
 
 增强赋值支持 `+=`、`-=`、`*=`、`/=`、`//=`、`%=`，目标可以是名字、列表/字典下标或 record 字段。`target += rhs` 等价于 `target = target + rhs`，但目标地址只求值一次；其他运算符同理。运算规则与普通二元运算完全一致，例如列表 `+=` 仍创建拼接后的新列表，而不是原地扩展。
 
-字符串和列表支持只读切片 `value[start:stop]` 与 `value[start:stop:step]`。三个位置都可省略，缺省步长为 1；位置只能是整数或 `None`，步长不能为 0。负索引、越界截断和负步长遵循 Python 语义。切片创建新字符串或新列表，结果复制的工作量与内存按结果长度计入配额；不支持切片赋值。
+字符串和列表支持只读切片 `value[start:stop]` 与 `value[start:stop:step]`：
+
+```python
+s = "abcdef"
+s[1:4]      # "bcd"：起止于索引 1、4（不含 4）
+s[:3]       # "abc"：起点省略
+s[::2]      # "ace"：步长 2
+s[::-1]     # "fedcba"：负步长反向
+s[2:99]     # "cdef"：越界按截断处理，不报错
+```
+
+规则：三个位置都可省略，省略即为 `None`；位置只能是整数或 `None`，缺省步长为 1，步长不能为 0；不支持切片赋值。负索引、越界截断和负步长遵循 Python 语义。切片有开销：总是创建新的字符串或列表。
 
 与 Python 的关键差异（写错会报 `type_error`）：
 
@@ -142,7 +153,7 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝；不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝。不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
 
 可捕获 kind 的完整列表：
 
@@ -176,7 +187,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - `s.find(sub, start=None, end=None)`：返回子串首次出现的位置，不存在时返回 `-1`；可指定搜索区间。
 - `s.replace(old, new, count=-1)`：替换不重叠的旧子串，`count` 限制替换次数，负数表示全部替换；`old` 为空串时按 Python 语义在字符间及两端插入。
 
-字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造计入指令配额；字符串结果按实际长度分配，`split`/`splitlines` 还计入结果列表槽位。方法集合是封闭的，未列出的列表、字典或字符串方法报 `attribute_error`。
+字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造都计入指令配额：字符串结果按实际长度分配，`split`/`splitlines` 还计入结果列表槽位。方法集合是封闭的，未列出的列表、字典或字符串方法报 `attribute_error`。
 
 ## 7. 记录（record）：自定义含成员的对象
 
@@ -192,13 +203,32 @@ print(p.x)               # 点号读成员
 p.x = 10                 # 点号写成员，仍受字段契约约束
 ```
 
-class 体只允许字段声明，两种形式：`x`（契约 any，任意值）或 `y: int`（指定契约）。契约可以是 `int/float/str/bool/list/dict`、`any`、或另一个 schema（嵌套约束）。其中 `any/bool/list/dict` 是仅注解位的契约名——不可调用、不可赋值；`int/float/str` 同时仍是转换内建。暂不支持默认值、方法、继承。
+class 体只允许字段声明，两种形式：`x`（契约 any，任意值）或 `y: int`（指定契约）。暂不支持默认值、方法、继承。可用的契约名：
+
+- `int`/`float`/`str`/`bool`/`list`/`dict`、`any`，或另一个 schema（嵌套约束）；
+- `any`/`bool`/`list`/`dict` 是仅注解位的契约名：不可调用、不可赋值；
+- `int`/`float`/`str` 同时仍是转换内建。
 
 record 的语义边界：
 
 - **形状固定**：字段不可增删——读写不存在的字段报 `attribute_error`；字段值可改，但必须满足字段契约（违反报 `contract_error`）。
 - **结构相等**：两处分别定义的同构 schema 彼此相等；record 相等要求 schema 结构相等且载荷相等；record 与 dict 永不相等——即使形状一样，dict 也没有"检疫章"。
-- **相等忽略声明顺序，构造依赖声明顺序**：schema 相等按字段集合比较，`x`、`y` 谁先谁后不影响相等；但位置构造按各自 schema 的声明顺序绑定参数。字段相同而顺序颠倒的两个 schema 彼此相等，对它们做同样的位置构造却得到载荷不同的 record。跨定义位置传参时建议用关键字构造，避开顺序陷阱。
+- **相等忽略声明顺序，构造依赖声明顺序**：schema 相等按字段集合比较，`x`、`y` 谁先谁后不影响相等。但位置构造按各自 schema 的声明顺序绑定参数——字段相同而顺序颠倒的两个 schema 彼此相等，同样的位置实参却得到载荷不同的 record：
+
+  ```python
+  class A:
+      x: int
+      y: int
+
+  class B:
+      y: int
+      x: int
+
+  print(A == B)              # True：相等忽略声明顺序
+  print(A(1, 2) == B(1, 2))  # False：构造按各自声明顺序绑定
+  ```
+
+  跨定义位置传参时建议用关键字构造（`B(x=1, y=2)`），避开顺序陷阱。
 - **扒皮与套皮**：`unwrap(p)` 把 record 扒成普通 dict（浅拷贝）；`wrap(Point, d)` 把键集与 schema 严格一致的 dict 套上契约变成 record（缺/多键报 `contract_error` 并列明）。
 - record 不可下标、不可迭代、不可做 dict 键，恒为真值。
 
@@ -211,13 +241,19 @@ def move(p: Point) -> int:
 p: Point = Point(1, 2)
 ```
 
-参数注解在调用时检查、返回注解在返回时检查、带注解的赋值在赋值时检查；三类报错的措辞分别指认责任位置（argument / return value / annotated assignment）。dict 不会在注解位自动套皮。检查是**宽度**的：实参 record 只要包含期望 schema 的全部字段且契约兼容即可通过，多余字段允许存在。
+注解在三个时点检查，报错措辞分别指认责任位置：
 
-报错中的名字是**编译期、作用域本地的标签**：`class Point` 的类名、`p: Point` 的注解文本会成为该作用域内相关报错的显示名（如 `record Point {x: int} has no field 'y'`）。标签不进入值本身，出作用域即失效；没有标签的值按结构显示（`record {x: int} ...`）。经过分支、循环或异常路径时，只有能确定同一标签才会保留；无法确定时退回匿名结构显示。标签只用于诊断，不参与任何相等或契约判断。
+- 参数注解：调用时检查（argument）；
+- 返回注解：返回时检查（return value）；
+- 带注解的赋值：赋值时检查（annotated assignment）。
 
-宽度检查放行带额外字段的值时，属性报错仍保留变量的注解标签，同时列出值的实际完整 schema。因此 `p: Point = Coord(1, 2)` 后的 `p.z` 可显示为 `record Point {x: int, y: int} has no field 'z'`；其中 `Point` 只是诊断标签，不表示值的 schema 被改写。
+检查是**宽度**的：实参 record 只要包含期望 schema 的全部字段且契约兼容即可通过，多余字段允许存在。dict 不会在注解位自动套皮。
 
-record 与 schema 不能跨宿主 FFI 边界（授予宿主的函数收到 record 会报 `ffi_error`，先 `unwrap`）；经授予函数在父子 VM 之间按引用传递，契约检查跨 VM 依然成立。跨 VM 的只有结构：授予函数在子 VM 中报错时，使用的是授予时的名字（`functions={"f": ...}` 里的 `f`）与结构描述，定义方的函数名和类型标签不会出现在子层的报错文本中。
+报错中的名字是**编译期、作用域本地的标签**，只用于诊断，不参与任何相等或契约判断：`class Point` 的类名、`p: Point` 的注解文本会成为该作用域内相关报错的显示名。标签不进入值本身，出作用域即失效；没有标签的值按结构显示（`record {x: int} ...`）。经过分支、循环或异常路径时，只有能确定同一标签才会保留，否则退回匿名结构显示。
+
+宽度检查放行带额外字段的值时，属性报错仍保留接收方写下的注解标签。例如 `p: Point = Coord(1, 2)` 后的 `p.z` 可显示为 `record Point {x: int, y: int} has no field 'z'`——`Point` 只是诊断标签，不表示值的 schema 被改写。
+
+跨 VM 与跨 FFI 边界的只有结构。record 与 schema 不能跨宿主 FFI 边界（授予宿主的函数收到 record 会报 `ffi_error`，先 `unwrap`）；经授予函数在父子 VM 之间按引用传递，契约检查跨 VM 依然成立，但子 VM 中的报错只使用授予名（`functions={"f": ...}` 里的 `f`）与结构描述，定义方的函数名和类型标签不会出现。
 
 ## 8. 创建虚拟机（VM）
 
@@ -229,7 +265,7 @@ out = sub.run()                  # 运行并取回它的全部输出（字符串
 print(out)                       # 'hi\n'
 ```
 
-VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件——它有自己的空白文件系统。配置方式：
+VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件。配置方式：
 
 ```python
 sub = VM(code, max_instructions=10000)   # 资源配额，只能比当前环境更严
@@ -250,7 +286,7 @@ sub = VM("print(double(21))", functions={"double": double})
 sub.run()                        # 输出 42
 ```
 
-被授予的 sericite 函数按引用保留定义方的模块变量、闭包 cell 与已授予函数环境，内建（`print`/`read_file` 等 IO 与文件系统）也解析回定义它的 VM——函数值自带它的整个世界。这些环境中可达的可变状态属于共享能力：只应授予允许子 VM 读取或修改其可达状态的函数。
+被授予的 sericite 函数保留定义方环境：模块变量、闭包、已授予的函数，以及 `print`/文件系统等内建服务都解析回定义它的 VM——函数值自带它的整个世界。因此只应授予允许子 VM 读取或修改其可达状态的函数；细节见[宿主参考](host-reference.zh-CN.md)第 6 节。
 
 ## 9. 明确不能写（编译期直接拒绝）
 
