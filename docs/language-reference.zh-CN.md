@@ -1,6 +1,6 @@
 # Sericite 语言参考
 
-Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.6.2 的语言行为，面向正在编写 **Sericite 脚本** 的读者；如果你要在 Python 中创建和驱动 VM，请读[宿主参考](host-reference.zh-CN.md)。
+Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.7.0 的语言行为，面向正在编写 **Sericite 脚本** 的读者；如果你要在 Python 中创建和驱动 VM，请读[宿主参考](host-reference.zh-CN.md)。
 
 ## 1. 基本样子
 
