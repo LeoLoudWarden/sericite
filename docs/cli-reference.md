@@ -2,7 +2,7 @@
 
 [中文](cli-reference.zh-CN.md)
 
-This document is for operators running Sericite programs directly. It describes the shared behavior of `sericite` and `python -m sericite`. See the [language reference](language-reference.md) for script semantics, or the [host reference](host-reference.md) to embed the engine and drive VMs from Python.
+This document is for operators running Sericite programs directly. It describes the shared behavior of `sericite` and `python -m sericite`. See the [language reference](language-reference.md) for script semantics, the [VM reference](vm-reference.md) for VM driving and debugging, or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
 
 ## 1. Three ways to run
 
@@ -13,7 +13,7 @@ sericite --capabilities capabilities.py app.sericite
 
 - **Plain CLI**: run a Sericite program using only built-in capabilities.
 - **CLI + capabilities**: a Python file supplies trusted FFI, limits, and initial VFS files while the application itself runs in the root Sericite VM.
-- **Python embedding**: an existing host uses `SericiteEngine` directly without the CLI; see the host reference.
+- **Python embedding**: an existing host uses `SericiteEngine` directly without the CLI; see the [Sericite-PY reference](sericite-py-reference.md).
 
 `sericite` is the installed command; use `uv run sericite` in a source checkout. `python -m sericite` uses the same entry point.
 
@@ -46,7 +46,7 @@ There is currently no REPL, script argv, or individual command-line flag for eac
 
 ## 3. Includes: source composition in one root
 
-`--include` is a CLI code-reuse facility, not Sericite `import`:
+`--include` is a CLI code-reuse facility, not Sericite `import` — a future module system is a separate design, with no promise of include-compatible semantics:
 
 1. Read every include in option order, followed by the main file, command, or stdin source.
 2. Combine all text into **one compilation unit**, running in one root VM and one module-global scope.
@@ -69,13 +69,17 @@ sericite --include math_utils.sericite -c 'print(double(21))'
 # 42
 ```
 
-Root error locations map back to the original include/main file and its local line number. Commands appear as `<command>` and stdin as `<stdin>`; nested VMs retain `<sericite:vm_N>`. A future module system is a separate design, with no promise of include-compatible semantics.
+Error diagnostics mark positions by source of origin:
+
+- includes and the main file map back to the original file and its local line number;
+- a command string appears as `<command>` and stdin source as `<stdin>`;
+- nested VMs retain `<sericite:vm_N>`.
 
 ## 4. Capabilities: trusted Python startup configuration
 
 ### 4.1 Configuration entry point
 
-The file passed to `--capabilities FILE` must define a zero-argument `configure()`. The CLI calls it once before creating the engine or executing any Sericite code:
+The file passed to `--capabilities FILE` must define a zero-argument `configure()`. Loading the file executes its top-level code (`runpy.run_path`); the CLI then calls `configure()` once, before creating the engine or executing any Sericite code:
 
 ```python
 from sericite import SericiteLimits
@@ -101,7 +105,11 @@ It returns a dict. Every key is optional; an empty dict is equivalent to no conf
 | `limits` | `SericiteLimits`; the complete limits configuration for this root |
 | `files` | `dict[str, str]`; virtual paths and text written to the root VFS before execution |
 
-Startup fails on unknown keys, a missing or non-callable `configure()`, a non-dict return, or invalid field types. The engine still validates grant names. `files` uses the public VM handle and remains subject to file-count, per-file-byte, and other limits. See the [host reference](host-reference.md) for those authoritative rules.
+- Startup fails on unknown keys, a missing or non-callable `configure()`, a non-dict return, or invalid field types.
+- The engine still validates grant names in `functions`.
+- `files` uses the public VM handle and remains subject to file-count, per-file-byte, and other limits.
+
+See the [Sericite-PY reference](sericite-py-reference.md) for the FFI rules and the [VM reference](vm-reference.md) §5 for quota fields; they are not duplicated here.
 
 A capability file can use `__file__` to locate its resources. It is not a Sericite module, its directory need not be a Python package, and the CLI does not create a Sericite module search path.
 
@@ -109,7 +117,9 @@ A capability file can use `__file__` to locate its resources. It is not a Serici
 
 > **A capability file has full host privileges. Trust it as you would any Python file you execute.**
 
-It can import third-party libraries, read environment variables and the real disk, and access the network. Its Python does **not** run inside the Sericite sandbox, and its CPU, memory, and external side effects are not metered by the engine. Only the operator may select this file; never let a model or Sericite source choose it.
+- It can import third-party libraries, read environment variables and the real disk, and access the network.
+- Its Python does **not** run inside the Sericite sandbox, and its CPU, memory, and external side effects are not metered by the engine (cost responsibility: [Sericite-PY reference](sericite-py-reference.md) §5.4).
+- Only the operator may select this file; never let a model or Sericite source choose it.
 
 Main and included sources still run in the root VM and gain no host privileges merely because a capability file exists. They can call only explicitly granted functions. `files` initializes only the root's in-memory VFS; it does not map the real disk.
 
@@ -131,7 +141,7 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 | Exit code | Meaning |
 |---:|---|
 | 0 | Root completed normally |
-| 1 | File/configuration loading or validation failed, compilation/runtime failed, or input was exhausted |
+| 1 | File/configuration loading or validation failed, compilation/runtime failed, or input was exhausted (`input_error`) |
 | 2 | Command-line usage error |
 
 Process-level events such as `KeyboardInterrupt` and `SystemExit` are not swallowed as ordinary script or configuration errors.

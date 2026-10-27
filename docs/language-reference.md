@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.7.1 for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, or the [host reference](host-reference.md) to create and drive VMs from Python.
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.8 (unreleased) for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, the [VM reference](vm-reference.md) to drive and debug VMs (stepping, exec delivery, snapshots, states, quotas), or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
 
 ## 1. What it looks like
 
@@ -265,30 +265,13 @@ out = sub.run()                  # run and get back all of its output (a string)
 print(out)                       # 'hi\n'
 ```
 
-VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. Configuration:
+VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions:
 
 ```python
-sub = VM(code, max_instructions=10000)   # quotas can only be tightened
-sub.write_file("/input.txt", "data")     # preset a file for it
-sub.feed_input("one line")               # feed input()
-out = sub.run()
-print(sub.read_file("/result.txt"))      # retrieve the file it wrote
+sub = VM(code, max_instructions=10000, functions={"double": double})
 ```
 
-Debugging: `sub.step()` single-steps statement by statement (returns a state snapshot dict), `sub.step_instruction()` steps instruction by instruction, `sub.snapshot()` shows locals/state, `sub.terminate()` kills it.
-
-A VM is not single-use: `sub.exec(code)` delivers new source into the same VM and runs it, returning only that delivery's output. Module variables and definitions, files, and granted functions all survive across deliveries, and a delivery that fails with an ordinary (catchable) error leaves the VM alive — fix and redeliver. A delivery that fails to compile changes nothing. Delivering while a program is still pending (for example suspended on `input()`) discards the pending program; a `terminated` VM rejects delivery. Quotas are per-VM lifetime budgets: instructions, memory, and output bytes accumulate across deliveries.
-
-Granting functions to a VM (so it can call your functions, including ones granted to you):
-
-```python
-def double(x):
-    return x * 2
-sub = VM("print(double(21))", functions={"double": double})
-sub.run()                        # prints 42
-```
-
-A granted sericite function retains its definition-side environment: module variables, closures, and already-granted functions, and builtins (`print`, filesystem services, …) resolve back to the VM that defined it — a function value carries its whole world with it. Grant only functions whose reachable state the child VM may observe or modify; details are in the [host reference](host-reference.md) §6.
+The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. The full contracts for VM states, driving methods, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
 
 ## 9. Explicitly not writable (rejected at compile time)
 

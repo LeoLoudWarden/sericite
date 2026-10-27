@@ -8,4 +8,4 @@
 |---|---|---|
 | [root-agent](root-agent/README.zh-CN.md) | 薄 Python 能力配置 + root Sericite 应用 | 外层/内层 LLM 会话、嵌套 VM、逐层能力授予、VFS 文件收种；含离线桩 |
 
-运行方式与通用配置契约见 [CLI 参考](../docs/cli-reference.zh-CN.md)。需要把 VM 嵌入既有 Python 生命周期时，仍应使用[宿主 API](../docs/host-reference.zh-CN.md)。
+运行方式与通用配置契约见 [CLI 参考](../docs/cli-reference.zh-CN.md)。需要把 VM 嵌入既有 Python 生命周期时，仍应使用 [Sericite-PY 参考](../docs/sericite-py-reference.zh-CN.md)中的宿主 API。

@@ -2,11 +2,15 @@
 
 [中文](README.zh-CN.md)
 
-This demo replaces the old thick-host `main.py`'s root environment with Sericite. **Root itself runs the outer LLM session**: it builds messages/tools, reads the outer prompt, sends requests, and dispatches tools. Python only supplies `llm_chat` / `http_get` and root VFS initialization through `configure()`.
+This demo is a multi-layer LLM application whose root environment is Sericite itself. **Root runs the outer LLM session**: it builds messages/tools, reads the outer prompt, sends requests, and dispatches tools. Python only supplies `llm_chat` / `http_get` and root VFS initialization through `configure()`.
 
-Root keeps one persistent first-level VM for the whole outer session, granted those two functions and seeded once with the model workspace. When the outer model calls `sericite_exec`, root delivers the code to that VM with `exec` — module variables, definitions, and files survive across calls. Model-generated code runs freely there and can use `llm_chat` to start its own inner session. When that session calls `sericite_exec`, model-written code maintains a second-level VM without network grants, terminating the recursion. The inner session and its VM management are written by the model, not supplied as another prewritten agent.
+- **Outer session**: root keeps one persistent first-level VM for the whole session, granted those two functions and seeded once with the model workspace.
+- **First-level VM**: when the outer model calls `sericite_exec`, root delivers the code to that VM with `exec` — module variables, definitions, and files survive across calls. Model-generated code runs freely there and can use `llm_chat` to start its own inner session.
+- **Second-level VM**: when that session calls `sericite_exec`, model-written code maintains a second-level VM without network grants, terminating the recursion. The inner session and its VM management are written by the model, not supplied as another prewritten agent.
 
-Root VFS is divided into `/control` and `/workspace`: the outer prompt stays in control, and the workspace seeds the execution VM once at startup. The model's file tools operate on the persistent VM's filesystem directly, so files written by `sericite_exec` code and by `file_write` live in one place with no re-seeding or harvesting. Prompts tell the model that it can create VMs, not that its own code and files are already inside one.
+- Root VFS is divided into `/control` and `/workspace`: the outer prompt stays in control, and the workspace seeds the execution VM once at startup.
+- The model's file tools operate on the persistent VM's filesystem directly, so files written by `sericite_exec` code and by `file_write` live in one place with no re-seeding or harvesting.
+- Prompts tell the model that it can create VMs, not that its own code and files are already inside one.
 
 ## Run
 
@@ -54,7 +58,14 @@ LOG_LLM = True
 LOG_LLM_FULL_JSON = False
 ```
 
-`LOG_LLM` is the master switch. By default, one compact line per call reports its number, model, message/tool counts, HTTP status, elapsed time, response text length, and tool-call count; network retries are also logged. Set `LOG_LLM_FULL_JSON = True` to include complete request/response JSON as well. Logs flush immediately and never record Authorization headers or API keys.
+`LOG_LLM` is the master switch. By default, one compact line per call reports:
+
+- call number and model;
+- message/tool counts;
+- HTTP status and elapsed time;
+- response text length and tool-call count.
+
+Network retries are also logged. Set `LOG_LLM_FULL_JSON = True` to include complete request/response JSON as well. Logs flush immediately and never record Authorization headers or API keys.
 
 Full JSON contains prompts, model-generated code, and tool results; review it before sharing. Use `2>llm.log` to save it separately. Root `print()` output is also forwarded live by the CLI, so neither application progress nor host network logs need to wait for program exit.
 
@@ -66,4 +77,4 @@ Full JSON contains prompts, model-generated code, and tool results; review it be
 - `mock_server.py`: local OpenAI-compatible stub.
 - `.env.example`: environment template.
 
-`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/cli-reference.md) for general options, includes, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [host reference](../../docs/host-reference.md).
+`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/cli-reference.md) for general options, includes, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [Sericite-PY reference](../../docs/sericite-py-reference.md).

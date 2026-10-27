@@ -15,9 +15,10 @@ Sericite 的文档按读者任务和变化频率分层：使用参考跟随公�
 |---|---|---|
 | [CLI 参考](cli-reference.zh-CN.md) | 直接运行程序：命令、include、可信能力配置、退出码 | [cli-reference.md](cli-reference.md) |
 | [语言参考](language-reference.zh-CN.md) | 编写脚本：语言子集、内建、record、VM 与异常语义 | [language-reference.md](language-reference.md) |
-| [宿主参考](host-reference.zh-CN.md) | 嵌入 Python：引擎 API、VM 驱动、FFI、调试与错误处理 | [host-reference.md](host-reference.md) |
+| [虚拟机参考](vm-reference.zh-CN.md) | 驱动与调试 VM：状态、驱动方法、exec 投递、配额、授予语义 | [vm-reference.md](vm-reference.md) |
+| [Sericite-PY 参考](sericite-py-reference.zh-CN.md) | 嵌入 Python：引擎 API、FFI、宿主错误处理 | [sericite-py-reference.md](sericite-py-reference.md) |
 
-写脚本先读语言参考；运行 root 应用读 CLI 参考；需要由既有 Python 系统掌管 VM 生命周期时读宿主参考。
+写脚本先读语言参考；运行 root 应用读 CLI 参考；驱动与调试 VM 读虚拟机参考；需要由既有 Python 系统掌管 VM 生命周期时读 Sericite-PY 参考。
 
 ## 设计与边界
 
@@ -27,7 +28,7 @@ Sericite 的文档按读者任务和变化频率分层：使用参考跟随公�
 | [安全模型](security.zh-CN.md) | 威胁模型；引擎和能力实现者各自保证什么 | [security.md](security.md) |
 | [先例与相关工作](prior-art.zh-CN.md) | Safe-Tcl 证明了什么、停在哪里，Sericite 补什么 | [prior-art.md](prior-art.md) |
 
-执行不可信代码前先读安全模型。security 中的威胁模型属于设计承诺，配额与已知边界属于实现现状。
+执行不可信代码前先读安全模型。
 
 ## 实现
 
