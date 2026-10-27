@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-27
+
+### Fixed
+- 修复 `str.replace(old, new, count)` 的 `count` 超出宿主 C `ssize_t` 范围时错误抛出 `conversion_error` 的问题；负数和超过可能替换次数的正数现按文档语义执行全部替换，包括 `old` 为空串的情况。
+
 ## [0.7.0] - 2026-10-27
 
 ### Added

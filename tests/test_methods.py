@@ -359,6 +359,14 @@ class StringMethodTests(unittest.TestCase):
         )
         self.assertEqual(run(source), "xyxyxy\nxyxya\n-a-b- -a-b\nabc abc\n")
 
+    def test_replace_accepts_counts_beyond_ssize_t(self):
+        source = (
+            'print("aaa".replace("a", "b", 9223372036854775808))\n'
+            'print("aaa".replace("a", "b", -9223372036854775809))\n'
+            'print("ab".replace("", "-", 9223372036854775808))\n'
+        )
+        self.assertEqual(run(source), "bbb\nbbb\n-a-b-\n")
+
     def test_bound_string_methods_retain_receiver(self):
         source = (
             'strip = "  a  ".strip\njoin = ",".join\nprint(strip(), join(["a", "b"]))\n'

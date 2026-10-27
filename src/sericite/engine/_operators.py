@@ -599,6 +599,8 @@ class _EngineOperators:
                 f"str.replace() count must be int, got {_type_name(count)}",
                 kind="type_error",
             )
+        if count < 0 or count > len(target):
+            count = -1
         replacements = 0
         if count != 0:
             if old == "":
