@@ -52,7 +52,7 @@ Why not build network access into the VM? Because that road ends in absurdity: b
 
 So capabilities like network access belong outside, injected via FFI, not built into the engine.
 
-This mechanism is already working in the prototype: the host injects Python functions into the root VM, and any VM can grant functions it defined with `def` (or granted functions it already holds) to the next layer. Across the host boundary, arguments and return values are deep-copied in both directions and restricted to pure data types — no shared mutable objects exist between VM and host. A host callback signals failure by raising a `SericiteError` with a contract kind; any host exception outside the contract terminates the VM with the uncatchable `host_error`. The full exception contract is in the [host reference](host-reference.md), section 5.3.
+This mechanism is already working in the prototype: the host injects Python functions into the root VM, and any VM can grant functions it defined with `def` (or granted functions it already holds) to the next layer. Across the host boundary, arguments and return values are deep-copied in both directions and restricted to pure data types — no shared mutable objects exist between VM and host. A host callback signals failure by raising a `SericiteError` with a contract kind; any host exception outside the contract terminates the VM with the uncatchable `host_error`. The full exception contract is in the [Sericite-PY reference](sericite-py-reference.md), section 5.3.
 
 ### 3.3 Division of security responsibility
 

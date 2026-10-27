@@ -30,11 +30,19 @@ pip install sericite
 命令行：
 
 ```bash
+sericite -c 'print("hello from sericite")'
 printf 'print("hello from sericite")\n' > hello.sericite
 sericite hello.sericite        # hello from sericite
 ```
 
-嵌入 Python：
+代码复用与 root 应用能力配置：
+
+```bash
+sericite --include base.sericite app.sericite
+sericite --capabilities capabilities.py app.sericite
+```
+
+include 在同一 root 作用域中按序组合源码；capabilities 是操作者显式信任、只负责 FFI/配额/初始 VFS 的 Python 配置。完整契约见 [CLI 参考](docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
 
 ```python
 from sericite import SericiteEngine
@@ -81,18 +89,20 @@ print(vm.run(), end="")    # 42
 
 ## 文档
 
-| 文档 | 内容 |
+| 文档 | English |
 |---|---|
-| [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | Sericite 是什么、为什么存在、边界划在哪里（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md)） |
-| [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | Safe-Tcl 证明了什么、停在哪里，Sericite 补什么（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md)） |
-| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | Sericite 脚本的语言子集与语义（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md)） |
-| [宿主参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.zh-CN.md) | Python 宿主 API、VM 驱动、FFI 与调试（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/host-reference.md)） |
-| [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | 引擎结构、设计不变量、资源配额（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md)） |
-| [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | 威胁模型；引擎保证什么、不保证什么（[English](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md)） |
-| [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | Sericite 0.1.0 逐阶段构建过程，含可运行检查点（`git checkout stage-1` … `stage-6`） |
-| [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | 项目由来与 AI 辅助开发过程 |
+| [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | [design.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) |
+| [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | [prior-art.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) |
+| [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) | [cli-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) |
+| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | [language-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) |
+| [虚拟机参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) | [vm-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) |
+| [Sericite-PY 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) | [sericite-py-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) |
+| [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | [architecture.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) |
+| [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | [security.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) |
+| [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |
+| [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | [索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) |
 
-构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
+每篇文档的定位与读者指引集中在[文档索引](docs/README.zh-CN.md)维护。构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
 
 ## 这个项目是怎么写出来的
 

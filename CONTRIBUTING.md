@@ -12,7 +12,7 @@ English readers: this project's development workflow is currently documented in 
 修改引擎、编译器或脚本接口后，必须先运行回归套件：
 
 ```bash
-uv sync
+uv sync --extra demo
 uv run ruff check .
 uv run ruff format --check .
 uv run python -m unittest discover -s tests
@@ -35,6 +35,7 @@ lint 与格式检查由 CI 强制执行（ruff，配置见 `pyproject.toml`）�
 - 理念问题以 [`docs/design.zh-CN.md`](docs/design.zh-CN.md) 为准。改理念先改它，不要在别处另造表述。
 - 架构不变量见 [`docs/architecture.zh-CN.md`](docs/architecture.zh-CN.md)。新语法必须先过编译器白名单，禁止引入 `exec`/`eval`。
 - 不给引擎加网络/设备等内建能力；能力的正确形态是 FFI 授予。安全边界见 [`docs/security.zh-CN.md`](docs/security.zh-CN.md)。
+- 修改 CLI 命令、include、能力配置或退出码时，同步更新中英文 [`docs/cli-reference`](docs/cli-reference.zh-CN.md) 与端到端测试。完整验证需安装 `demo` extra；离线 root-agent 测试不得依赖真实 API。
 
 ## 文档流程
 

@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-27
+
+### Added
+- 引擎新增 `exec`：向既有 VM 投递新源码并在其持久模块作用域中执行（宿主级 `VMHandle.exec(source)` 与脚本级 `sub.exec(code)`）。模块变量、定义、VFS 与授予的函数跨投递保留；只返回本次投递产生的输出；编译失败不改变 VM 状态，普通执行错误后可继续投递；`terminated` 的 VM 拒绝投递，未执行完的程序会被丢弃。配额仍按 VM 生命周期累计。
+- CLI 新增 `-c/--command`、stdin 源码入口和可重复的 `--include`；include 在同一 root 编译单元与全局作用域中按序组合，错误位置映射回原始文件。
+- CLI 新增 `--capabilities`：通过可信 Python `configure()` 配置 root 的 FFI、配额与初始 VFS，使应用主体可以直接运行在 root Sericite 中。
+- CLI 实时转发并 flush root stdout，包括无换行输出；`create_root()` 新增可选 `output_writer`，保留累计输出且不被子 VM 继承。
+- 新增双语 CLI 参考，收录命令契约、include 语义、信任边界与退出码。
+- root-agent demo 新增可开关的 `llm_chat` 实时 stderr 日志：默认单行摘要，可选完整请求/响应 JSON，且不记录认证头。
+
+### Changed
+- root-agent demo 改为会话级持久执行 VM：`sericite_exec` 复用同一个第一层 VM（`exec` 投递新代码），file 工具直接对接该 VM 的文件系统，删除每次执行的播种/收种同步；外层提示词同步改为指导模型为内层会话维护持久 VM。
+- 原厚宿主 LLM demo 原位转换为 `demos/root-agent`：Python 仅保留能力适配，会话循环、工具分发、子 VM 与文件收种迁移到 Sericite；新增离线全链回归测试。
+- 文档索引按入门、使用参考、设计边界、实现与历史分层，并更新目录迁移指针。
+- 原《宿主参考》拆分为《虚拟机参考》（VM 状态、驱动方法、exec 投递、配额与授予语义）与《Sericite-PY 参考》（Python 库 API 与 FFI）；语言参考的 VM 章节收窄为入口与指针，其余文档的引用同步更新。
+
+### Fixed
+- root-agent demo 按旧厚宿主逻辑划分 root 控制区与模型工作区：root 自己运行外层会话，第一层 VM 只接收工作区和必要能力，外层提示词等控制资产不暴露给模型。
+- sdist 改用公开内容白名单，只从明确公开的目录与文件构建，避免本地未跟踪内容意外进入发布包。
+
 ## [0.7.1] - 2026-10-27
 
 ### Fixed

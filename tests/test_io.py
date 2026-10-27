@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from sericite.accounting import Meter
-from sericite.engine import SericiteEngine
+from sericite.engine import SericiteEngine, SericiteError, SericiteLimits
 
 
 class VirtualInputStoreTests(unittest.TestCase):
@@ -32,6 +32,39 @@ class VirtualInputStoreTests(unittest.TestCase):
         self.io.feed_input_trusted("x")
         self.assertEqual(self.io.buffered_input_count, 1)
         self.assertEqual(self.context.alloc_bytes, 0)
+
+
+class VirtualOutputWriterTests(unittest.TestCase):
+    def test_root_writer_observes_writes_and_preserves_stdout(self) -> None:
+        chunks = []
+        root = SericiteEngine().create_root(
+            'print("a", end="")\nprint("b")', output_writer=chunks.append
+        )
+        self.assertEqual(root.run(), "ab\n")
+        self.assertEqual(chunks, ["a", "b\n"])
+        self.assertEqual(root.stdout(), "ab\n")
+
+    def test_child_does_not_inherit_root_writer(self) -> None:
+        chunks = []
+        root = SericiteEngine().create_root(
+            'sub = VM("print(\'child\')")\nsub.run()\nprint("root")',
+            output_writer=chunks.append,
+        )
+        self.assertEqual(root.run(), "root\n")
+        self.assertEqual(chunks, ["root\n"])
+
+    def test_rejected_output_is_not_forwarded(self) -> None:
+        chunks = []
+        root = SericiteEngine().create_root(
+            'print("abc")',
+            limits=SericiteLimits(max_output_bytes=2),
+            output_writer=chunks.append,
+        )
+        with self.assertRaises(SericiteError) as raised:
+            root.run()
+        self.assertEqual(raised.exception.kind, "resource_exhausted")
+        self.assertEqual(chunks, [])
+        self.assertEqual(root.stdout(), "")
 
 
 if __name__ == "__main__":

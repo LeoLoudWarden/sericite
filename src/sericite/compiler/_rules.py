@@ -104,6 +104,7 @@ _COMPARE_OPS = {
 
 VM_METHODS = {
     "run",
+    "exec",
     "feed_input",
     "step",
     "step_instruction",

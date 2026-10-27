@@ -16,12 +16,12 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 |---|---|
 | `isa` | Instruction, code-unit, and exception-handler-table definitions (stack machine) |
 | `compiler` | AST whitelist and except-kind validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
-| `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle, resource quotas, debug snapshots |
+| `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
 | `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree and name metadata) |
-| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels) |
+| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels); root output can be forwarded live through an optional callback (user contract: [Sericite-PY reference](sericite-py-reference.md) §2) |
 | `errors` | `SericiteError` and the central error-kind registry |
-| `cli` / `__main__` | Command-line entry points |
+| `cli` / `__main__` | Command-line entry points: source loading with include composition and source-line mapping, trusted capability-file loading, root driving, and host-side diagnostics; does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
 
 The `compiler` package is split into cohesive parts:
 
@@ -50,7 +50,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 2. A child VM must not implicitly read its parent's or the host's stdin, nor write directly to the host's stdout; a child VM's filesystem starts fresh and empty, sharing no files with its parent.
 3. A child VM by default cannot obtain parent locals, parent handles, host objects, or Python reflection entry points.
 4. Script capabilities are provided through controlled native functions and VM handle methods; arbitrary Python attributes must not be exposed.
-5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics. `run()` takes no per-statement snapshots; snapshots are produced only by explicit `step()/snapshot()` calls.
+5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `exec()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics. `run()` takes no per-statement snapshots; snapshots are produced only by explicit `step()/snapshot()` calls.
 6. New syntax must first pass the compiler whitelist and then be compiled to instructions; introducing `exec`/`eval` for convenience is forbidden.
 7. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
@@ -59,14 +59,14 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross.
-  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [host reference](host-reference.md), section 5.3.
+  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 5.3.
   - c. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
 13.
   - a. A granted sericite function executes on the **calling VM's frame stack**, with instructions charged to the caller and its ancestors.
   - b. The function also retains the **definition-side environment**: the defining function's closure cells, the defining VM's module variables, the definition side's granted-function environment, and the defining VM's builtin services (IO / filesystem / child-VM creation all resolve back to the defining VM — the function's home).
   - c. Reverse or cross combinations are not allowed; re-granting must preserve all of these definition-side environments.
 14. Every resource that can grow must have a quota. Every instruction and dynamic operation must go through a Meter and AccountRoute; post-hoc charging, ledger-delta mirroring, and bypassing resource permits are forbidden. Debugging, errors, suspension, and cross-VM paths follow the same rule. See section 5 for the concrete contracts.
-15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `step()` on the same VM from inside an `input_provider`/FFI callback).
+15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `run()`, `exec()`, or `step()` on the same VM from inside an `input_provider`/FFI callback).
 16.
   - a. Only structure crosses VMs: records/schemas carry no names, and schema equality compares the structure of field sets and contracts; class names, annotation names, and other labels are compile-time, scope-local diagnostic data that expires at scope exit.
   - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear;
@@ -74,13 +74,13 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 
 ## 4. Script interface
 
-The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [host reference](host-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
+The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [VM reference](vm-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
 Error kinds are centrally registered in the `errors` module, and catchability is compiler-enforced: unknown filter names and uncatchable kinds are both rejected at compile time as `validation_error`. The full kind list is in the [language reference](language-reference.md) §5.
 
 ## 5. Resource quotas
 
-Quotas are defined by `SericiteLimits`; the field list and defaults are in the [host reference](host-reference.md) §2.2. This section covers only the charging model.
+Quotas are defined by `SericiteLimits`; the field list and defaults are in the [VM reference](vm-reference.md) §5. This section covers only the charging model.
 
 ### 5.1 Basic rules
 
