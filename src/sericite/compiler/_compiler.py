@@ -125,6 +125,48 @@ class _Compiler:
                 self.compile_expression(last.slice, code)
                 self.emit(code, isa.STORE_INDEX, None, line)
             return
+        if isinstance(node, ast.AugAssign):
+            target = node.target
+            op = _BINARY_OPS[type(node.op)]
+            if isinstance(target, ast.Name):
+                load_op = (
+                    isa.LOAD_DEREF
+                    if target.id in code.cell_names or target.id in code.free_names
+                    else isa.LOAD_NAME
+                )
+                self.emit(code, load_op, target.id, line)
+                self.compile_expression(node.value, code)
+                self.emit(code, isa.BINARY_OP, op, line)
+                self._store_name(code, target.id, line)
+                self._label_stack[-1].pop(target.id, None)
+                return
+            target_name = f"$aug_target_{self._tmp_counter}"
+            self._tmp_counter += 1
+            self.compile_expression(target.value, code)
+            self.emit(code, isa.STORE_NAME, target_name, line)
+            self.emit(code, isa.LOAD_NAME, target_name, line)
+            if isinstance(target, ast.Attribute):
+                attr = (target.attr, self._attr_hint(target.value))
+                self.emit(code, isa.LOAD_ATTR, attr, line)
+                self.compile_expression(node.value, code)
+                self.emit(code, isa.BINARY_OP, op, line)
+                self.emit(code, isa.LOAD_NAME, target_name, line)
+                self.emit(code, isa.STORE_ATTR, attr, line)
+                return
+            assert isinstance(target, ast.Subscript)
+            index_name = f"$aug_index_{self._tmp_counter}"
+            self._tmp_counter += 1
+            self.compile_expression(target.slice, code)
+            self.emit(code, isa.STORE_NAME, index_name, line)
+            self.emit(code, isa.LOAD_NAME, target_name, line)
+            self.emit(code, isa.LOAD_NAME, index_name, line)
+            self.emit(code, isa.LOAD_INDEX, None, line)
+            self.compile_expression(node.value, code)
+            self.emit(code, isa.BINARY_OP, op, line)
+            self.emit(code, isa.LOAD_NAME, target_name, line)
+            self.emit(code, isa.LOAD_NAME, index_name, line)
+            self.emit(code, isa.STORE_INDEX, None, line)
+            return
         if isinstance(node, ast.AnnAssign):
             label = ast.unparse(node.annotation)
             self.compile_expression(node.value, code)
