@@ -33,7 +33,7 @@ class _Compiler:
         self._filename = filename
         self._scopes = scopes
         self._loops: list[tuple[int, list[int], int]] = []
-        self._finally_stack: list[list[ast.stmt]] = []
+        self._finally_stack: list[tuple[list[ast.stmt], list[tuple[int, int]]]] = []
         self._function_depth = 0
         self._tmp_counter = 0
         # Compile-time label table (diagnostics only): name -> label text, pushed/popped with the function scope.
@@ -77,14 +77,22 @@ class _Compiler:
         self.emit(code, op, name, line)
 
     def _compile_finally_exits(
-        self, code: isa.CodeUnit, line: int, bodies: list[list[ast.stmt]]
+        self,
+        code: isa.CodeUnit,
+        line: int,
+        scopes: list[tuple[list[ast.stmt], list[tuple[int, int]]]],
     ) -> None:
-        for body in reversed(bodies):
-            self._finally_stack.pop()
-            try:
+        keep = len(self._finally_stack) - len(scopes)
+        saved = self._finally_stack[keep:]
+        try:
+            for position in range(len(saved) - 1, -1, -1):
+                body, exit_ranges = saved[position]
+                self._finally_stack[keep:] = saved[:position]
+                start = len(code.instrs)
                 self.compile_body(body, code)
-            finally:
-                self._finally_stack.append(body)
+                exit_ranges.append((start, len(code.instrs)))
+        finally:
+            self._finally_stack[keep:] = saved
 
     def emit(self, code: isa.CodeUnit, op: str, arg: object, line: int) -> int:
         code.instrs.append(isa.Instr(op=op, arg=arg, line=line))
@@ -405,15 +413,16 @@ class _Compiler:
         exit_labels = self._without_labels(entry_labels, assigned)
         body_assigned = _assigned_names(node.body)
         has_finally = bool(node.finalbody)
+        exit_ranges: list[tuple[int, int]] = []
         if has_finally:
-            self._finally_stack.append(node.finalbody)
+            self._finally_stack.append((node.finalbody, exit_ranges))
         body_start = len(code.instrs)
         self.compile_body(node.body, code)
         body_labels = self._label_stack[-1].copy()
         body_end = len(code.instrs)
         body_exit = self.emit(code, isa.JUMP, None, line)
         handler_entries: list[
-            tuple[int, int, int, tuple[str, ...] | None, str | None]
+            tuple[int, int, int, int, tuple[str, ...] | None, str | None]
         ] = []
         handler_exits: list[int] = []
         for handler in node.handlers:
@@ -421,12 +430,15 @@ class _Compiler:
             kinds = (
                 None if handler.type is None else (handler.type.id,)  # type: ignore[union-attr]
             )
-            handler_entries.append((body_start, body_end, target, kinds, handler.name))
             handler_labels = self._without_labels(entry_labels, body_assigned)
             if handler.name is not None:
                 handler_labels.pop(handler.name, None)
             self._set_labels(handler_labels)
             self.compile_body(handler.body, code)
+            handler_end = len(code.instrs)
+            handler_entries.append(
+                (body_start, body_end, target, handler_end, kinds, handler.name)
+            )
             handler_exits.append(self.emit(code, isa.JUMP, None, line))
         else_label = len(code.instrs)
         code.instrs[body_exit].arg = else_label
@@ -435,7 +447,7 @@ class _Compiler:
         after_else = len(code.instrs)
         for index in handler_exits:
             code.instrs[index].arg = after_else
-        for start, stop, target, kinds, bind in handler_entries:
+        for start, stop, target, handler_end, kinds, bind in handler_entries:
             code.handlers.append(
                 isa.Handler(
                     start=start,
@@ -443,6 +455,8 @@ class _Compiler:
                     target=target,
                     kinds=kinds,
                     bind=bind,
+                    body_end=handler_end,
+                    exit_ranges=tuple(exit_ranges),
                 )
             )
         if not has_finally:
@@ -459,6 +473,7 @@ class _Compiler:
         self._tmp_counter += 1
         self._set_labels(finally_labels)
         self.compile_body(node.finalbody, code)
+        catch_end = len(code.instrs)
         self._set_labels(normal_labels)
         self.emit(code, isa.RAISE, ("saved", error_name), line)
         end = len(code.instrs)
@@ -471,6 +486,8 @@ class _Compiler:
                 kinds=None,
                 bind=None,
                 error_name=error_name,
+                body_end=catch_end,
+                exit_ranges=tuple(exit_ranges),
             )
         )
 

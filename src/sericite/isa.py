@@ -53,6 +53,8 @@ class Handler:
     bind: str | None
     stack_depth: int = 0
     error_name: str | None = None
+    body_end: int = 0
+    exit_ranges: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass

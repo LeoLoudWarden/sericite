@@ -636,6 +636,117 @@ class FinallyTests(unittest.TestCase):
             vm.run()
         self.assertEqual(vm.stdout(), "inner\nouter\n")
 
+    def test_nested_finally_multiple_return_paths(self):
+        source = (
+            "def f(flag):\n"
+            "    try:\n"
+            "        try:\n"
+            "            if flag:\n"
+            "                return 1\n"
+            "            return 2\n"
+            "        finally:\n"
+            '            print("inner")\n'
+            "    finally:\n"
+            '        print("outer")\n'
+            "print(f(True))\n"
+            "print(f(False))\n"
+        )
+        self.assertEqual(run(source), "inner\nouter\n1\ninner\nouter\n2\n")
+
+    def test_nested_finally_multiple_loop_exit_paths(self):
+        source = (
+            "def f(flag):\n"
+            "    for i in range(1):\n"
+            "        try:\n"
+            "            try:\n"
+            "                if flag:\n"
+            "                    continue\n"
+            "                break\n"
+            "            finally:\n"
+            '                print("inner")\n'
+            "        finally:\n"
+            '            print("outer")\n'
+            "f(True)\n"
+            "f(False)\n"
+        )
+        self.assertEqual(run(source), "inner\nouter\ninner\nouter\n")
+
+    def test_early_exit_finally_error_runs_once(self):
+        cases = {
+            "return": (
+                "def f():\n"
+                "    try:\n"
+                "        return 1\n"
+                "    finally:\n"
+                '        print("cleanup")\n'
+                "        x = 1 / 0\n"
+                "try:\n"
+                "    f()\n"
+                "except zero_division:\n"
+                '    print("caught")\n'
+            ),
+            "break": (
+                "try:\n"
+                "    while True:\n"
+                "        try:\n"
+                "            break\n"
+                "        finally:\n"
+                '            print("cleanup")\n'
+                "            x = 1 / 0\n"
+                "except zero_division:\n"
+                '    print("caught")\n'
+            ),
+            "continue": (
+                "try:\n"
+                "    for i in range(1):\n"
+                "        try:\n"
+                "            continue\n"
+                "        finally:\n"
+                '            print("cleanup")\n'
+                "            x = 1 / 0\n"
+                "except zero_division:\n"
+                '    print("caught")\n'
+            ),
+        }
+        for name, source in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(run(source), "cleanup\ncaught\n")
+
+    def test_early_exit_finally_error_bypasses_same_try_except(self):
+        source = (
+            "def f():\n"
+            "    try:\n"
+            "        return 1\n"
+            "    except zero_division:\n"
+            '        print("wrong")\n'
+            "    finally:\n"
+            '        print("cleanup")\n'
+            "        x = 1 / 0\n"
+            "try:\n"
+            "    f()\n"
+            "except zero_division:\n"
+            '    print("caught")\n'
+        )
+        self.assertEqual(run(source), "cleanup\ncaught\n")
+
+    def test_nested_early_exit_finally_error_order(self):
+        source = (
+            "def f():\n"
+            "    try:\n"
+            "        try:\n"
+            "            return 1\n"
+            "        finally:\n"
+            '            print("inner")\n'
+            "            x = 1 / 0\n"
+            "    finally:\n"
+            '        print("outer")\n'
+            "try:\n"
+            "    f()\n"
+            "except zero_division:\n"
+            '    print("caught")\n'
+        )
+        self.assertEqual(run(source), "inner\nouter\ncaught\n")
+
 
 class RaiseTests(unittest.TestCase):
     def test_raise_message_catchable(self):
@@ -658,6 +769,59 @@ class RaiseTests(unittest.TestCase):
             '    print("got: " + e)\n'
         )
         self.assertEqual(run(source), "got: inner\n")
+
+    def test_bare_raise_after_nested_except_restores_outer_error(self):
+        source = (
+            "try:\n"
+            "    try:\n"
+            '        raise "outer"\n'
+            "    except raise_error:\n"
+            "        try:\n"
+            '            raise "inner"\n'
+            "        except raise_error:\n"
+            "            pass\n"
+            "        raise\n"
+            "except raise_error as e:\n"
+            '    print("got: " + e)\n'
+        )
+        self.assertEqual(run(source), "got: outer\n")
+
+    def test_bare_raise_after_exceptional_nested_handler_restores_outer_error(self):
+        source = (
+            "try:\n"
+            "    try:\n"
+            '        raise "outer"\n'
+            "    except raise_error:\n"
+            "        try:\n"
+            "            try:\n"
+            '                raise "inner"\n'
+            "            except raise_error:\n"
+            "                x = 1 / 0\n"
+            "        except zero_division:\n"
+            "            pass\n"
+            "        raise\n"
+            "except raise_error as e:\n"
+            '    print("got: " + e)\n'
+        )
+        self.assertEqual(run(source), "got: outer\n")
+
+    def test_bare_raise_in_finally_after_nested_except_restores_outer_error(self):
+        source = (
+            "try:\n"
+            "    try:\n"
+            '        raise "outer"\n'
+            "    except raise_error:\n"
+            "        try:\n"
+            "            try:\n"
+            '                raise "inner"\n'
+            "            except raise_error:\n"
+            "                pass\n"
+            "        finally:\n"
+            "            raise\n"
+            "except raise_error as e:\n"
+            '    print("got: " + e)\n'
+        )
+        self.assertEqual(run(source), "got: outer\n")
 
     def test_raise_non_string_rejected(self):
         engine = SericiteEngine()

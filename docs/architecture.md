@@ -163,8 +163,8 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 - Host callback execution time and memory are self-policed by the host and are not metered. Engine-side FFI argument/result copying is charged per node, and host return structures are also bounded by a node budget and depth limit.
 - The total memory ledger is approximate (strings counted as chars ×4, list slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
-- When a `finally` copy raises again, the outer `finally` may execute one extra time.
-- After a nested `except` inside `except`, a bare `raise` may re-raise an object other than the outermost one.
+- `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce an uncatchable `resource_exhausted` when its rendered result exceeds the limit.
+- Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
 - A VM's execution context is retained after reaching a terminal state for debug snapshots and further `exec` deliveries; release it with `dispose()` (contract in the [VM reference](vm-reference.md) §3).
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.

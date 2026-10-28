@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from sericite.accounting import Meter
-from sericite.engine import SericiteEngine, SericiteError, SericiteLimits
+from sericite.engine import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
 class VirtualInputStoreTests(unittest.TestCase):
@@ -221,6 +221,29 @@ class ScriptOutputWriterTests(unittest.TestCase):
             root.run()
         self.assertEqual(raised.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_writer_failure_restores_child_debug_frames(self) -> None:
+        engine = SericiteEngine()
+        root = engine.create_root(
+            "def make_writer(prefix):\n"
+            "    def busy(text):\n"
+            "        for i in range(1000):\n"
+            "            pass\n"
+            '        print(prefix, end="")\n'
+            "    return busy\n"
+            "sub = VM('module_value = 42\\nprint(\"x\")', "
+            "output_writer=make_writer('closure secret'), max_instructions=100)\n"
+            "sub.run()"
+        )
+        with self.assertRaises(SericiteError) as raised:
+            root.run()
+        self.assertEqual(raised.exception.kind, "resource_exhausted")
+
+        child = engine._contexts[1]
+        handle = VMHandle(engine, 1)
+        self.assertEqual([frame.code.name for frame in child.frames], ["<module>"])
+        self.assertEqual(handle.snapshot()["locals"], {"module_value": 42})
+        self.assertEqual(handle.step()["locals"], {"module_value": 42})
 
     def test_writer_must_be_a_grantable_function(self) -> None:
         root = SericiteEngine().create_root('sub = VM("", output_writer=42)')
