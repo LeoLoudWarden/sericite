@@ -218,6 +218,26 @@ class SnapshotViewTests(unittest.TestCase):
         )
         self.assertEqual(vm.run(), "1\n\n")
 
+    def test_failed_const_allocation_leaves_no_orphan_context(self):
+        engine = SericiteEngine()
+        source = (
+            's = "a"\n'
+            "i = 0\n"
+            "while i < 12:\n"
+            "    s = s + s\n"
+            "    i += 1\n"
+            'src = "x = \\"" + s + "\\""\n'
+            "sub = VM(src, max_total_bytes=2048)\n"
+        )
+        vm = engine.create_root(source)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(len(engine._contexts), 1)
+        self.assertEqual(vm.snapshot()["child_count"], 0)
+        second = engine.create_root("print(1)\n")
+        self.assertEqual(second.snapshot()["vm_id"], 1)
+
     def test_error_views_never_expose_engine_filename(self):
         engine = SericiteEngine()
         source = (
