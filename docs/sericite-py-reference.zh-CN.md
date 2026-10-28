@@ -48,9 +48,9 @@ engine.create_root(
 
 引擎构造时设置默认配额；`create_root()` 再传 `limits` 时会替换该 root 的整套配置，而不是逐字段合并。
 
-对于可信、长期运行的 root，`max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 这五项累计配额可用 `-1` 表示本层不设上限；结构性配额必须保持有限。有限父级下的子 VM 即使请求 `-1`，也只能继承该有限上限，无法逃离祖先计费。无限账户仍持续累计诊断账本。完整收紧规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。
+对于可信、长期运行的 root，`max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 这五项累计配额可用 `-1` 表示本层不设上限；结构性配额必须保持有限。合并与继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。
 
-无限配额是显式的信任决定：真实 CPU 与宿主内存仍然有限，无限 stdout 在经 `output_writer` 转发的同时也会继续缓冲。不要对不可信代码使用 `-1`。
+`-1` 是显式的信任决定，只用于你掌控的代码。无限配额对资源安全的含义与边界见[安全模型](security.zh-CN.md)第 3 节。
 
 ## 4. 驱动 VM
 

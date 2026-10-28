@@ -48,9 +48,9 @@ The `SericiteLimits` field list and defaults are in the [VM reference](vm-refere
 
 The engine constructor supplies the default quotas. Passing `limits` to `create_root()` replaces the whole configuration for that root rather than merging individual fields.
 
-For a trusted, long-running root, the five cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap. Structural limits must remain finite. A child requesting `-1` under a finite parent inherits that finite ceiling; it cannot escape ancestor accounting. Unlimited accounts still accumulate diagnostic ledgers. See the [VM reference](vm-reference.md) §5 for the complete tightening rules.
+For a trusted, long-running root, the five cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap; structural limits must remain finite. Combining and inheritance rules are in the [VM reference](vm-reference.md) §5.
 
-Unlimited quotas are an explicit trust decision: actual CPU and host memory are still finite, and unlimited stdout remains buffered as well as being forwarded through `output_writer`. Do not use `-1` for untrusted code.
+`-1` is an explicit trust decision: use it only for code you control. For what unlimited quotas do and do not mean for resource safety, see the [security model](security.md) §3.
 
 ## 4. Driving VMs
 
