@@ -2,7 +2,7 @@
 
 [English](vm-reference.md)
 
-本文面向**需要创建和驱动 VM 的读者**：在 Sericite 脚本里创建子 VM，或经宿主 API 驱动任意 VM。VM 的状态、驱动方法、exec 投递、配额与函数授予的契约都在这里。脚本语法见[语言参考](language-reference.zh-CN.md)；Python 库 API（引擎、FFI、宿主错误处理）见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
+本文面向**需要创建和驱动 VM 的读者**：在 Sericite 脚本里创建子 VM，或经宿主 API 驱动任意 VM。VM 的状态、驱动方法、exec 投递、配额与函数授予的契约都在这里。
 
 脚本内的 VM 值与宿主侧的 `VMHandle` 提供同一组驱动方法，驱动语义相同；下文统一用 `sub.` 书写，宿主侧换成自己的句柄变量即可。有一处刻意的不对称：宿主侧拿到的快照带有额外的宿主专属诊断字段（§4）。
 

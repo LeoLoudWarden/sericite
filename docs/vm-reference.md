@@ -2,7 +2,7 @@
 
 [中文](vm-reference.zh-CN.md)
 
-This document is for **anyone who creates and drives VMs**: creating child VMs inside a Sericite script, or driving any VM through the host API. The contracts for VM states, driving methods, exec delivery, quotas, and function granting live here. For script syntax see the [language reference](language-reference.md); for the Python library API (engine, FFI, host-side error handling) see the [Sericite-PY reference](sericite-py-reference.md).
+This document is for **anyone who creates and drives VMs**: creating child VMs inside a Sericite script, or driving any VM through the host API. The contracts for VM states, driving methods, exec delivery, quotas, and function granting live here.
 
 A VM value inside a script and a host-side `VMHandle` expose the same set of driving methods, and driving semantics are identical. Examples below use `sub.`; on the host side, substitute your own handle variable. One deliberate asymmetry: snapshots returned to the host carry additional host-only diagnostic fields (§4).
 

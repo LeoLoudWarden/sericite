@@ -2,7 +2,7 @@
 
 [中文](cli-reference.zh-CN.md)
 
-This document is for operators running Sericite programs directly. It describes the shared behavior of `sericite` and `python -m sericite`. See the [language reference](language-reference.md) for script semantics, the [VM reference](vm-reference.md) for VM driving and debugging, or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
+This document is for operators running Sericite programs directly. It describes the shared behavior of `sericite` and `python -m sericite`.
 
 ## 1. Ways to run
 
@@ -62,7 +62,14 @@ History, completion, advanced line editing, and debugging commands are not inclu
 
 ### Script argv
 
-The root module starts with an ordinary list variable named `argv`, containing only strings: `[SOURCE_FILE, *ARG]` in file mode, `["-c", *ARG]` in command mode, `["-", *ARG]` for stdin source, and initially `[]` in the REPL. It can be read, modified, or rebound like any other module variable and persists across `exec()` deliveries. Child VMs do not inherit it implicitly.
+The root module starts with a string-list variable named `argv`:
+
+- `[SOURCE_FILE, *ARG]` in file mode;
+- `["-c", *ARG]` in command mode;
+- `["-", *ARG]` for stdin source;
+- `[]` in the REPL.
+
+It is an ordinary module variable: it can be read, modified, or rebound, and it persists across `exec()` deliveries. Child VMs do not inherit it implicitly. Embedded roots can set it with `create_root(argv=...)`; see the [Sericite-PY reference](sericite-py-reference.md) §2.
 
 ## 3. Includes: source composition in one root
 
@@ -157,7 +164,7 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 - In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. Requesting more input after EOF is reported as `input_error`.
 - `sericite -` consumes all stdin as source, so that stdin cannot also supply runtime input.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
-- Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error but still exits on startup errors.
+- Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error.
 
 | Exit code | Meaning |
 |---:|---|
