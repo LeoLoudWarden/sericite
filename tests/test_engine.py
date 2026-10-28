@@ -1,6 +1,6 @@
 import unittest
 
-from sericite import SericiteEngine, SericiteError
+from sericite import SericiteEngine, SericiteError, VMHandle
 
 ADD_PROGRAM = """\
 a = input()
@@ -84,14 +84,14 @@ class SubVMTests(unittest.TestCase):
         output = vm.run()
         self.assertEqual(output, "23\n\n")
 
-    def test_handle_repr_shows_id_and_state(self):
+    def test_handle_repr_shows_state_without_engine_counter(self):
         engine = SericiteEngine()
         vm = engine.create_root(SUB_VM_PROGRAM)
         vm.step()
         vm.step()
         sub = vm.snapshot()["locals"]["sub"]
-        self.assertIn("id=1", sub)
-        self.assertIn("state=ready", sub)
+        self.assertEqual(sub, "<VM state=ready>")
+        self.assertNotIn("id=", sub)
 
     def test_nested_vm_creation(self):
         mid_src = "inner = VM(\"print('deep')\")\nprint(inner.run())\n"
@@ -126,6 +126,67 @@ class SubVMTests(unittest.TestCase):
         )
         output = vm.run()
         self.assertEqual(output, "outer\n")
+
+
+class SnapshotViewTests(unittest.TestCase):
+    def test_host_snapshot_includes_diagnostics(self):
+        engine = SericiteEngine()
+        vm = engine.create_root('sub = VM("inner = VM(\\"x = 1\\")")\nsub.run()\n')
+        vm.run()
+        root = vm.snapshot()
+        self.assertEqual(root["vm_id"], 0)
+        self.assertIsNone(root["parent_id"])
+        self.assertEqual(root["depth"], 0)
+        self.assertEqual(root["child_count"], 1)
+        sub = VMHandle(engine, 1).snapshot()
+        self.assertEqual(sub["vm_id"], 1)
+        self.assertEqual(sub["parent_id"], 0)
+        self.assertEqual(sub["depth"], 1)
+        self.assertEqual(sub["child_count"], 1)
+        inner = VMHandle(engine, 2).snapshot()
+        self.assertEqual(inner["parent_id"], 1)
+        self.assertEqual(inner["depth"], 2)
+        self.assertEqual(inner["child_count"], 0)
+
+    def test_host_step_and_step_instruction_include_diagnostics(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 1\n")
+        for snap in (vm.step(), vm.step_instruction()):
+            self.assertEqual(snap["vm_id"], 0)
+            self.assertEqual(snap["depth"], 0)
+            self.assertEqual(snap["child_count"], 0)
+
+    def test_script_snapshot_never_includes_diagnostics(self):
+        engine = SericiteEngine()
+        source = (
+            'sub = VM("x = 1")\n'
+            "snap = sub.snapshot()\n"
+            "print(len(snap))\n"
+            'print("vm_id" in snap)\n'
+            'print("parent_id" in snap)\n'
+            'print("depth" in snap)\n'
+            'print("child_count" in snap)\n'
+            "after_step = sub.step()\n"
+            "print(len(after_step))\n"
+            'print("vm_id" in after_step)\n'
+            'print("state" in after_step)\n'
+        )
+        output = engine.create_root(source).run()
+        self.assertEqual(
+            output,
+            "7\nFalse\nFalse\nFalse\nFalse\n7\nFalse\nTrue\n",
+        )
+
+    def test_vm_repr_hides_engine_counter(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("x = 1")\nprint(sub)\nprint(sub.snapshot())\n'
+        )
+        output = vm.run()
+        lines = output.splitlines()
+        self.assertEqual(lines[0], "<VM state=ready>")
+        self.assertNotIn("vm_id", output)
+        self.assertEqual(repr(VMHandle(engine, 1)), "<VM state=ready>")
 
 
 class ValidationTests(unittest.TestCase):

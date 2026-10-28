@@ -273,13 +273,13 @@ class VMHandle:
             context.state = "ready"
 
     def step(self) -> dict[str, object]:
-        return self._engine._step(self)
+        return self._engine._step(self, host=True)
 
     def step_instruction(self) -> dict[str, object]:
-        return self._engine._step_instruction(self)
+        return self._engine._step_instruction(self, host=True)
 
     def snapshot(self) -> dict[str, object]:
-        return self._engine._snapshot(self._engine._context(self))
+        return self._engine._host_snapshot(self._engine._context(self))
 
     def stdout(self) -> str:
         return self._engine._context(self).io.stdout()
@@ -303,7 +303,7 @@ class VMHandle:
 
     def __repr__(self) -> str:
         context = self._engine._context(self)
-        return f"<VM id={context.vm_id} state={context.state}>"
+        return f"<VM state={context.state}>"
 
 
 def _contract_key(contract: object) -> object:

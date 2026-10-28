@@ -50,7 +50,7 @@ engine.create_root(
 
 ## 4. 驱动 VM
 
-`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/文件操作等）与脚本内 VM 值的方法一一对应，状态与契约见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主侧多一条特权规则——宿主管理不计入脚本账：
+`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/文件操作等）与脚本内 VM 值的方法一一对应，但有一处刻意的不对称：宿主侧返回的快照带有额外的宿主专属诊断字段（`vm_id`/`parent_id`/`depth`/`child_count`，见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。状态与契约见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主侧多一条特权规则——宿主管理不计入脚本账：
 
 - 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照，不计入脚本的内存账；
 - 文件数、单文件字节、输出字节等资源自身限制仍然有效；
