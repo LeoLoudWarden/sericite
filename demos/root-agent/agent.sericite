@@ -86,18 +86,63 @@ def seed_tree(sub, prefix="/"):
             sub.write_file(path, text)
 
 
+def layer_1_output(text):
+    print("[外层VM实时] " + repr(text))
+
+
 # One persistent execution VM for the whole session: variables, definitions,
 # and files all survive across sericite_exec calls, and the file tools below
-# operate on this VM's filesystem directly.
-sub = VM("", functions={"llm_chat": llm_chat, "http_get": http_get})
+# operate on this VM's filesystem directly. Its output is forwarded live while
+# remaining buffered for sericite_exec tool results.
+sub = VM(
+    "",
+    functions={"llm_chat": llm_chat, "http_get": http_get},
+    output_writer=layer_1_output,
+)
 seed_tree(sub)
+
+
+def exec_error(kind, message):
+    return "(" + kind + ": " + message + ")"
 
 
 def execute_code(code):
     try:
         output = sub.exec(code)
-    except:
-        return "(sericite execution failed)"
+    except arity_error as e:
+        return exec_error("arity_error", e)
+    except attribute_error as e:
+        return exec_error("attribute_error", e)
+    except contract_error as e:
+        return exec_error("contract_error", e)
+    except conversion_error as e:
+        return exec_error("conversion_error", e)
+    except ffi_error as e:
+        return exec_error("ffi_error", e)
+    except file_not_found as e:
+        return exec_error("file_not_found", e)
+    except index_error as e:
+        return exec_error("index_error", e)
+    except input_error as e:
+        return exec_error("input_error", e)
+    except is_directory as e:
+        return exec_error("is_directory", e)
+    except key_error as e:
+        return exec_error("key_error", e)
+    except name_error as e:
+        return exec_error("name_error", e)
+    except not_directory as e:
+        return exec_error("not_directory", e)
+    except raise_error as e:
+        return exec_error("raise_error", e)
+    except runtime_error as e:
+        return exec_error("runtime_error", e)
+    except syntax_error as e:
+        return exec_error("syntax_error", e)
+    except type_error as e:
+        return exec_error("type_error", e)
+    except zero_division as e:
+        return exec_error("zero_division", e)
     return output[:MAX_RESULT_CHARS] or "(no output)"
 
 
@@ -131,7 +176,7 @@ rounds = 0
 while rounds < MAX_ROUNDS:
     resp = llm_chat({"messages": messages, "tools": TOOLS})
     if resp["content"]:
-        print("[外层 第" + str(rounds + 1) + "轮] " + resp["content"][:300])
+        print("[外层 第" + str(rounds + 1) + "轮] " + resp["content"])
     messages.append(resp["assistant_message"])
     calls = resp["tool_calls"]
     if len(calls) == 0:
@@ -139,8 +184,12 @@ while rounds < MAX_ROUNDS:
         break
     for call in calls:
         print("[外层 工具调用] " + call["name"])
+        call_args = call["args"]
+        for k in call_args.keys():
+            v = call_args[k]
+            print("[外层 工具参数(" + k + ")] " + repr(v))
         result = dispatch_tool(call["name"], call["args"])
-        print("[外层 工具结果] " + result[:300])
+        print("[外层 工具结果] " + repr(result))
         messages.append(
             {"role": "tool", "tool_call_id": call["id"], "content": result}
         )

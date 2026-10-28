@@ -64,9 +64,9 @@ class _EngineHostDebug:
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> int | AllocationPermit:
-        context = kwargs["_caller_context"]
         if attr == "dispose":
             return 0
+        context = kwargs["_caller_context"]
         target = self._context(handle)
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs")

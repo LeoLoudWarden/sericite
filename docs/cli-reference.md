@@ -136,7 +136,7 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 
 - In file and `-c` modes, script `input()` reads host stdin line by line. Requesting more input after EOF fails with `input_error`.
 - `sericite -` consumes all stdin as source, so that stdin cannot also supply runtime input.
-- Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. Child output remains explicit: a parent obtains it through APIs such as `sub.run()`.
+- Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
 - Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr.
 
 | Exit code | Meaning |

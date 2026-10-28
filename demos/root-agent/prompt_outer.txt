@@ -2,7 +2,7 @@
 
 你可以使用 sericite_exec 工具执行代码，以及 file_read / file_write / file_list 工具读写当前工作目录的文件。
 
-工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 借用 Python 的语法子集，但语义有差异，尤其没有 import 和 f-string。
+工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 借用 Python 的语法子集，但语义有差异，尤其没有 import 和 except e 以及 f-string。
 
 请完成两件事：
 
@@ -22,7 +22,8 @@
      获取帮助文本（OpenAI 兼容 API 的 tool_calls 协议说明，Markdown 纯文本），照着它写。
    - 对方调用 sericite_exec 时：为它维护一个持久的 VM——首次创建（VM("")）并 write_file 把 `sericite语言特性速览.md` 放进它的工作目录一次，之后每次用它的 exec 方法投递新代码执行（exec 返回该次执行的输出；变量、定义和文件在多次执行之间保留）。不要给它授予任何 functions。
    - 对方调用 file_read / file_write / file_list 时：对接到它的 VM 的文件系统（用该 VM 句柄的 read_file / write_file / list_dir 方法，而不是你自己环境里的文件函数）。
-   - 循环直到对方不再调用工具（tool_calls 为空列表），把对方的最终回答 print 出来。
+   - 循环直到对方不再调用工具（tool_calls 为空列表），把对方的每次工具调用输入 / 输出 / 最终回答 print 出来。
    - 所有文件内容都用 read_file 读出来后嵌入，不要凭记忆复述。
 
-把 LLM 会话循环写进一次 sericite_exec 里执行。代码尽量朴素，并遵守语言参考中的当前语法与字符串方法能力。
+把 LLM 会话循环写进一次 sericite_exec 里执行。代码尽量朴素，并遵守语言参考中的当前语法，尤其是字符串方法和异常处理。
+执行结束后，分别评估你和对方的代码能力。

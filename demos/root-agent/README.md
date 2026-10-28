@@ -67,7 +67,14 @@ LOG_LLM_FULL_JSON = False
 
 Network retries are also logged. Set `LOG_LLM_FULL_JSON = True` to include complete request/response JSON as well. Logs flush immediately and never record Authorization headers or API keys.
 
-Full JSON contains prompts, model-generated code, and tool results; review it before sharing. Use `2>llm.log` to save it separately. Root `print()` output is also forwarded live by the CLI, so neither application progress nor host network logs need to wait for program exit.
+Full JSON contains prompts, model-generated code, and tool results; review it before sharing. Use `2>llm.log` to save it separately.
+
+Progress is also visible live:
+
+- Root `print()` output is forwarded live by the CLI.
+- The first-level VM forwards its own output through root with an `output_writer`, so model-generated progress appears during execution.
+- Live output, tool arguments, and tool results are displayed with `repr`, keeping multiline text on a single log line without changing the raw tool results sent back to the model.
+- The first-level VM keeps stdout buffered because `sub.exec()` still returns that text as the `sericite_exec` tool result.
 
 ## Files and responsibilities
 

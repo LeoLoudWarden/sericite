@@ -19,7 +19,7 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
 | `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree and name metadata) |
-| `io` | Per-VM virtual input and output (output byte cap; script input mutations require permits, while host preconfiguration uses explicit trusted channels); root output can be forwarded live through an optional callback (user contract: [Sericite-PY reference](sericite-py-reference.md) §2) |
+| `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels); every VM can explicitly forward output through a configured writer, with a host callback available at root (user contracts: [Sericite-PY reference](sericite-py-reference.md) §2 and [VM reference](vm-reference.md) §4) |
 | `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points: source loading with include composition and source-line mapping, trusted capability-file loading, root driving, and host-side diagnostics; does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
 
@@ -68,6 +68,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. A granted sericite function executes on the **calling VM's frame stack**, with instructions charged to the caller and its ancestors.
   - b. The function also retains the **definition-side environment**: the defining function's closure cells, the defining VM's module variables, the definition side's granted-function environment, and the defining VM's builtin services (IO / filesystem / child-VM creation all resolve back to the defining VM — the function's home).
   - c. Reverse or cross combinations are not allowed; re-granting must preserve all of these definition-side environments.
+  - d. A script output writer is invoked synchronously after output accounting. Its frames have an exception-unwinding boundary at the triggering `print()`, and writer suspension is rejected rather than suspending a native call midway.
 14. Every resource that can grow must have a quota. Every instruction and dynamic operation must go through a Meter and AccountRoute; post-hoc charging, ledger-delta mirroring, and bypassing resource permits are forbidden. Debugging, errors, suspension, and cross-VM paths follow the same rule. See section 5 for the concrete contracts.
 15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `run()`, `exec()`, or `step()` on the same VM from inside an `input_provider`/FFI callback).
 16.

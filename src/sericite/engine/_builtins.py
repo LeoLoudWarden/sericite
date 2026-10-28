@@ -48,10 +48,13 @@ class _EngineBuiltins:
         if name == "print":
             return _NativeFunction(
                 "print",
-                lambda *values, end="\n": self._print(home, values, end),
+                lambda *values, end="\n", _caller_context=None, _caller_meter=None: (
+                    self._print(home, values, end, _caller_context)
+                ),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
+                needs_caller=True,
             )
         if name == "len":
             return _NativeFunction(
@@ -81,6 +84,14 @@ class _EngineBuiltins:
             return _NativeFunction(
                 "str",
                 lambda value: self._str_builtin(home, value),
+                home,
+                work=_no_work,
+                allocation=_no_allocation,
+            )
+        if name == "repr":
+            return _NativeFunction(
+                "repr",
+                lambda value: self._repr_builtin(home, value),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
@@ -180,6 +191,16 @@ class _EngineBuiltins:
         if not isinstance(source, str):
             raise SericiteError("VM source must be a string", kind="type_error")
         granted = self._validate_child_functions(parent, config.pop("functions", None))
+        output_writer = config.pop("output_writer", None)
+        if output_writer is not None:
+            output_writer = self._validate_child_functions(
+                parent, {"output_writer": output_writer}
+            )["output_writer"]
+        buffer_output = config.pop("buffer_output", True)
+        if type(buffer_output) is not bool:
+            raise SericiteError(
+                "VM option buffer_output must be a bool", kind="type_error"
+            )
         limits = parent.limits
         if causal is not parent:
             limits = _min_limits(limits, causal.limits)
@@ -218,10 +239,12 @@ class _EngineBuiltins:
                     None
                     if limits.max_output_bytes == UNLIMITED
                     else limits.max_output_bytes
-                )
+                ),
+                buffer_output=buffer_output,
             ),
             limits=limits,
             granted=granted,
+            output_writer=output_writer,
         )
         causal.child_count += 1
         return handle
@@ -270,7 +293,11 @@ class _EngineBuiltins:
         return granted
 
     def _print(
-        self, context: VMContext, values: tuple[object, ...], end: object = "\n"
+        self,
+        context: VMContext,
+        values: tuple[object, ...],
+        end: object = "\n",
+        caller: VMContext | None = None,
     ) -> None:
         if type(end) is not str:
             raise SericiteError(
@@ -291,6 +318,8 @@ class _EngineBuiltins:
         line = renderer.text()
         meter.work(len(line) // 64)
         context.io.write_output(line)
+        if context.output_writer is not None:
+            self._invoke_output_writer(caller or context, context.output_writer, line)
 
     def _read_input(self, context: VMContext) -> str:
         value = context.io.read_input()
@@ -365,6 +394,13 @@ class _EngineBuiltins:
     def _str_builtin(self, context: VMContext, value: object) -> str:
         meter = self._meter(context)
         return _to_str(value, context.limits.max_string_bytes, meter=meter)
+
+    def _repr_builtin(self, context: VMContext, value: object) -> str:
+        renderer = _StringRenderer(
+            context.limits.max_string_bytes, meter=self._meter(context)
+        )
+        renderer.render(value, repr_strings=True)
+        return renderer.text(allocate=True)
 
     @staticmethod
     def _string_work(value: object) -> int:

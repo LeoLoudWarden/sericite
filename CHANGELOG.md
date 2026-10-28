@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- 新增 `repr(value)` 内建函数：字符串以带引号的单行转义形式显示，容器沿用递归安全渲染；输入渲染工作与结果字符串均纳入配额。root-agent 的实时输出和工具日志改用 `repr` 单行展示，不改变传给模型的原始工具结果。
+- 每层 VM 新增独立 `output_writer` 与 `buffer_output` 配置：子 VM 可经授予函数把输出沿父级链实时转发，回调保留定义侧环境并纳入因果计费；关闭缓冲后输出仍计量与转发，但不再保留历史 stdout。CLI root 默认不保留冗余缓冲，root-agent demo 第一层支持实时输出且保留 `exec` 工具结果。
 - 五项累计配额 `max_instructions`/`max_output_bytes`/`max_total_bytes`/`max_child_vms`/`max_total_vms` 支持在宿主与脚本侧用 `-1` 表示本层不设上限；有限祖先仍然优先，结构性配额保持有限，无限账户继续累计诊断账本。
 - 宿主与脚本 VM 句柄新增 `dispose()`：按子先父后显式释放终态 VM 上下文，保留释放前的快照与 `exec` 能力；释放不退还累计配额、不复用 `vm_id`，重复释放幂等，其他失效句柄操作以 `runtime_error` 失败。
 - 宿主侧驱动 VM 时，`snapshot()`/`step()`/`step_instruction()` 返回的快照新增宿主专属诊断字段 `vm_id`/`parent_id`/`depth`/`child_count`（字段含义见虚拟机参考第 4 节）。

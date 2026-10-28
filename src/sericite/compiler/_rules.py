@@ -10,6 +10,7 @@ RESERVED_NAMES = {
     "int",
     "float",
     "str",
+    "repr",
     "range",
     "read_file",
     "write_file",

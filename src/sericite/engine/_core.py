@@ -58,7 +58,10 @@ class _EngineCore:
         limits: SericiteLimits | None = None,
         functions: dict[str, Callable[..., object]] | None = None,
         output_writer: Callable[[str], object] | None = None,
+        buffer_output: bool = True,
     ) -> VMHandle:
+        if type(buffer_output) is not bool:
+            raise SericiteError("buffer_output must be a bool", kind="type_error")
         effective = limits or self._limits
         io = VirtualIO(
             inputs=inputs,
@@ -69,6 +72,7 @@ class _EngineCore:
                 else effective.max_output_bytes
             ),
             output_writer=output_writer,
+            buffer_output=buffer_output,
         )
         granted = self._validate_host_functions(functions)
         return self._create_vm(
@@ -105,6 +109,7 @@ class _EngineCore:
         io: VirtualIO,
         limits: SericiteLimits,
         granted: dict[str, object] | None = None,
+        output_writer: object = None,
     ) -> VMHandle:
         filename = f"<sericite:vm_{self._next_vm_id}>"
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
@@ -135,6 +140,7 @@ class _EngineCore:
             limits=limits,
             frames=[Frame(code=code)],
             granted=dict(granted) if granted else {},
+            output_writer=output_writer,
         )
         if not any(instr.stmt_start for instr in code.instrs):
             context.state = "done"
@@ -301,9 +307,35 @@ class _EngineCore:
         frame = context.frames[-1]
         return frame.code.instrs[frame.pc]
 
-    def _execute_one(self, context: VMContext) -> bool:
+    def _invoke_output_writer(
+        self, context: VMContext, function: object, value: str
+    ) -> None:
+        frame = context.frames[-1]
+        frame_pc = frame.pc
+        stack_depth = len(frame.stack)
+        frame_depth = len(context.frames)
+        try:
+            frame.stack.extend((function, value))
+            self._call(context, frame, 1, ())
+            while context.state == "ready" and len(context.frames) > frame_depth:
+                self._execute_one(context, exception_floor=frame_depth)
+            if context.state == "waiting_input":
+                raise SericiteError(
+                    "output writer cannot wait for input", kind="runtime_error"
+                )
+        finally:
+            if context.state == "waiting_input":
+                del context.frames[frame_depth:]
+                context.state = "ready"
+            frame.pc = frame_pc
+            del frame.stack[stack_depth:]
+
+    def _execute_one(
+        self, context: VMContext, *, exception_floor: int | None = None
+    ) -> bool:
         if context.state != "ready":
             return False
+        floor = exception_floor or 0
         frame = context.frames[-1]
         instr = frame.code.instrs[frame.pc]
         try:
@@ -313,6 +345,8 @@ class _EngineCore:
             context.state = "waiting_input"
             return False
         except OutputLimitExceeded:
+            if exception_floor is not None:
+                raise
             self._fail(
                 context,
                 SericiteError("output limit exceeded", kind="resource_exhausted"),
@@ -320,24 +354,31 @@ class _EngineCore:
             )
             return False
         except SericiteError as exc:
-            if self._handle_exception(context, exc):
+            if self._handle_exception(context, exc, floor=floor):
                 return True
+            if exception_floor is not None:
+                raise
             self._fail(context, exc, instr.line)
             return False
         except RecursionError:
-            self._fail(
-                context,
-                SericiteError("recursion limit exceeded", kind="resource_exhausted"),
-                instr.line,
-            )
+            error = SericiteError("recursion limit exceeded", kind="resource_exhausted")
+            if exception_floor is not None:
+                raise error from None
+            self._fail(context, error, instr.line)
             return False
         except OverflowError:
             error = SericiteError("numeric overflow", kind="conversion_error")
-            if self._handle_exception(context, error):
+            if self._handle_exception(context, error, floor=floor):
                 return True
+            if exception_floor is not None:
+                raise error
             self._fail(context, error, instr.line)
             return False
         except Exception:  # noqa: BLE001 — any host-internal failure becomes internal_error
+            if exception_floor is not None:
+                raise SericiteError(
+                    "internal runtime error", kind="internal_error"
+                ) from None
             self._fail(
                 context,
                 SericiteError("internal runtime error", kind="internal_error"),
@@ -352,14 +393,16 @@ class _EngineCore:
             "resource_exhausted" if error.kind == "resource_exhausted" else "error"
         )
 
-    def _handle_exception(self, context: VMContext, error: SericiteError) -> bool:
+    def _handle_exception(
+        self, context: VMContext, error: SericiteError, *, floor: int = 0
+    ) -> bool:
         if error.kind in _UNCATCHABLE_KINDS:
             return False
-        while context.frames:
+        while len(context.frames) > floor:
             frame = context.frames[-1]
             handler = self._find_handler(frame, error.kind)
             if handler is None:
-                if len(context.frames) == 1:
+                if len(context.frames) == floor + 1:
                     return False
                 context.frames.pop()
                 continue

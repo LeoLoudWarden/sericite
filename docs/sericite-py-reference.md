@@ -32,6 +32,7 @@ engine.create_root(
     limits=None,
     functions=None,
     output_writer=None,
+    buffer_output=True,
 )
 ```
 
@@ -40,7 +41,8 @@ engine.create_root(
 - `inputs`: an iterable of strings queued in order.
 - `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`.
 - `functions`: host capabilities granted to the script; see section 5.
-- `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Buffered stdout and `run()`'s return value are unchanged; output accounting and limits still apply first, and child VMs never inherit the callback.
+- `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
+- `buffer_output`: whether root stdout is retained in memory. The default `True` preserves `run()`/`exec()`/`stdout()` and snapshot behavior. With `False`, output is still metered and forwarded, but buffered stdout and these retrieval results are empty. This lets a long-running root avoid unbounded historical-output retention.
 
 ## 3. Quotas: SericiteLimits
 
