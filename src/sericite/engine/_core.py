@@ -212,13 +212,13 @@ class _EngineCore:
         return context.io.stdout()[before:]
 
     def _step(
-        self, handle: VMHandle, *, meter: Meter | None = None
+        self, handle: VMHandle, *, meter: Meter | None = None, host: bool = False
     ) -> dict[str, object]:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
         if context.state != "ready":
-            return self._snapshot(context, meter=meter)
+            return self._view(context, meter=meter, host=host)
         context.running = True
         try:
             start_depth = len(context.frames)
@@ -235,16 +235,16 @@ class _EngineCore:
                 context.last_line = start_line
         finally:
             context.running = False
-        return self._snapshot(context, meter=meter)
+        return self._view(context, meter=meter, host=host)
 
     def _step_instruction(
-        self, handle: VMHandle, *, meter: Meter | None = None
+        self, handle: VMHandle, *, meter: Meter | None = None, host: bool = False
     ) -> dict[str, object]:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
         if context.state != "ready":
-            return self._snapshot(context, meter=meter)
+            return self._view(context, meter=meter, host=host)
         context.running = True
         try:
             line = self._current_instr(context).line
@@ -252,6 +252,13 @@ class _EngineCore:
                 context.last_line = line
         finally:
             context.running = False
+        return self._view(context, meter=meter, host=host)
+
+    def _view(
+        self, context: VMContext, *, meter: Meter | None = None, host: bool = False
+    ) -> dict[str, object]:
+        if host:
+            return self._host_snapshot(context)
         return self._snapshot(context, meter=meter)
 
     def _current_instr(self, context: VMContext) -> isa.Instr:

@@ -164,6 +164,7 @@ class _EngineHostDebug:
     def _snapshot(
         self, context: VMContext, *, meter: Meter | None = None
     ) -> dict[str, object]:
+        """Script-safe snapshot: never exposes engine-local diagnostic fields."""
         next_line = None
         if context.state in {"ready", "waiting_input"} and context.frames:
             frame = context.frames[-1]
@@ -194,7 +195,6 @@ class _EngineHostDebug:
                 "column": context.error.column,
             }
         return {
-            "vm_id": context.vm_id,
             "state": context.state,
             "last_line": context.last_line,
             "next_line": next_line,
@@ -203,6 +203,23 @@ class _EngineHostDebug:
             "error": error,
             "instruction_count": context.instruction_count,
         }
+
+    def _host_snapshot(self, context: VMContext) -> dict[str, object]:
+        """Host-only diagnostic snapshot: a strict superset of the script-safe view.
+
+        Only callable from host-side driving code; scripts dispatch through
+        `_charged_vm_method`, which uses `_snapshot` and can never reach this.
+        """
+        snapshot = self._snapshot(context)
+        snapshot.update(
+            {
+                "vm_id": context.vm_id,
+                "parent_id": context.parent_id,
+                "depth": context.depth,
+                "child_count": context.child_count,
+            }
+        )
+        return snapshot
 
     def _safe_value(
         self,
