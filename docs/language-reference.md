@@ -10,6 +10,8 @@ print("hello", name)      # prints: hello world
 x = input()               # read one line (a string)
 ```
 
+When the CLI or a host creates a root, its module scope starts with an ordinary string-list variable named `argv`. The CLI uses it for the source entry and script arguments; its default is an empty list. It is not a built-in function, can be modified or rebound, and persists across `exec()` deliveries. Child VMs do not inherit it implicitly. See the [CLI reference](cli-reference.md) for command-line behavior and the [Sericite-PY reference](sericite-py-reference.md) for embedding configuration.
+
 ## 2. Types and operators
 
 Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user-defined `record`s (see section 7).

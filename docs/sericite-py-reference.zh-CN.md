@@ -33,6 +33,7 @@ engine.create_root(
     functions=None,
     output_writer=None,
     buffer_output=True,
+    argv=None,
 )
 ```
 
@@ -43,6 +44,7 @@ engine.create_root(
 - `functions`：授予脚本的宿主函数表，见第 5 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout。默认 `True`，保持 `run()`/`exec()`/`stdout()` 与快照行为；为 `False` 时输出仍计量并转发，但缓冲 stdout 与这些读取结果为空，可避免长期 root 无限保留历史输出。
+- `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；它跨 `exec()` 保留，不隐式进入子 VM。root 的授予函数不能使用同名 `argv`。
 
 ## 3. 配额：SericiteLimits
 

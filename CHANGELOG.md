@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- CLI 新增脚本参数 `argv`：文件、`-c` 与 stdin 入口后的参数原样传给 root 模块的字符串列表；`create_root(argv=...)` 支持嵌入侧初始化，值跨 `exec()` 保留且不隐式进入子 VM。
+- CLI 新增最小 REPL：无源码参数时启动，支持多行输入、单表达式 `repr` 回显、错误后继续和 EOF 退出；变量、函数、schema 与 VFS 在同一持久 root 中保留，兼容 include、capabilities 与初始 VFS。
 - 新增 `repr(value)` 内建函数：字符串以带引号的单行转义形式显示，容器沿用递归安全渲染；输入渲染工作与结果字符串均纳入配额。root-agent 的实时输出和工具日志改用 `repr` 单行展示，不改变传给模型的原始工具结果。
 - 每层 VM 新增独立 `output_writer` 与 `buffer_output` 配置：子 VM 可经授予函数把输出沿父级链实时转发，回调保留定义侧环境并纳入因果计费；关闭缓冲后输出仍计量与转发，但不再保留历史 stdout。CLI root 默认不保留冗余缓冲，root-agent demo 第一层支持实时输出且保留 `exec` 工具结果。
 - 五项累计配额 `max_instructions`/`max_output_bytes`/`max_total_bytes`/`max_child_vms`/`max_total_vms` 支持在宿主与脚本侧用 `-1` 表示本层不设上限；有限祖先仍然优先，结构性配额保持有限，无限账户继续累计诊断账本。

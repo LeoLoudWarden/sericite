@@ -33,6 +33,8 @@ As a CLI:
 sericite -c 'print("hello from sericite")'
 printf 'print("hello from sericite")\n' > hello.sericite
 sericite hello.sericite        # hello from sericite
+sericite                       # start the REPL; EOF exits
+sericite -c 'print(argv)' first second
 ```
 
 For source reuse and root-application capabilities:
