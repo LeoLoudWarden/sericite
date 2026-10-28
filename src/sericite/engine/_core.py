@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 
 from .. import isa
-from ..accounting import AccountRoute, AllocationPermit, Meter
+from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
 from ..compiler import compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError
@@ -63,7 +63,11 @@ class _EngineCore:
         io = VirtualIO(
             inputs=inputs,
             input_provider=input_provider,
-            max_output_bytes=effective.max_output_bytes,
+            max_output_bytes=(
+                None
+                if effective.max_output_bytes == UNLIMITED
+                else effective.max_output_bytes
+            ),
             output_writer=output_writer,
         )
         granted = self._validate_host_functions(functions)
@@ -107,7 +111,10 @@ class _EngineCore:
             raise SericiteError(
                 "source too large", kind="syntax_error", filename=filename
             )
-        if len(self._contexts) >= limits.max_total_vms:
+        if (
+            limits.max_total_vms != UNLIMITED
+            and self._next_vm_id >= limits.max_total_vms
+        ):
             raise SericiteError(
                 "total VM limit exceeded",
                 kind="resource_exhausted",
@@ -138,6 +145,8 @@ class _EngineCore:
         self._contexts[vm_id] = context
         self._account_routes[vm_id] = route
         self._meters[vm_id] = meter
+        if parent_id is not None:
+            self._contexts[parent_id].child_ids.add(vm_id)
         return VMHandle(self, vm_id)
 
     def _context(self, handle: VMHandle) -> VMContext:
@@ -145,7 +154,33 @@ class _EngineCore:
             raise SericiteError(
                 "VM handle belongs to another engine", kind="internal_error"
             )
-        return self._contexts[handle._vm_id]
+        context = self._contexts.get(handle._vm_id)
+        if context is None:
+            raise SericiteError("VM has been disposed", kind="runtime_error")
+        return context
+
+    def _dispose(self, handle: VMHandle) -> None:
+        if handle._engine is not self:
+            raise SericiteError(
+                "VM handle belongs to another engine", kind="internal_error"
+            )
+        context = self._contexts.get(handle._vm_id)
+        if context is None:
+            return
+        if context.state not in {"done", "error", "resource_exhausted", "terminated"}:
+            raise SericiteError(
+                "cannot dispose a VM that has not reached a terminal state",
+                kind="runtime_error",
+            )
+        if context.child_ids:
+            raise SericiteError(
+                "cannot dispose a VM with live child VMs", kind="runtime_error"
+            )
+        if context.parent_id is not None:
+            self._contexts[context.parent_id].child_ids.remove(context.vm_id)
+        del self._meters[context.vm_id]
+        del self._account_routes[context.vm_id]
+        del self._contexts[context.vm_id]
 
     def _meter(self, context: VMContext) -> Meter:
         if context.meter_stack:

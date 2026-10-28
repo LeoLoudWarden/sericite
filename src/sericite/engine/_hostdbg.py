@@ -24,6 +24,8 @@ class _EngineHostDebug:
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> int:
+        if attr == "dispose":
+            return 0
         fs = self._context(handle).fs
         if attr == "exec":
             source = args[0] if args else kwargs.get("source")
@@ -48,6 +50,7 @@ class _EngineHostDebug:
             "snapshot",
             "stdout",
             "terminate",
+            "dispose",
         }:
             return 0
         raise SericiteError(
@@ -62,6 +65,8 @@ class _EngineHostDebug:
         kwargs: dict[str, object],
     ) -> int | AllocationPermit:
         context = kwargs["_caller_context"]
+        if attr == "dispose":
+            return 0
         target = self._context(handle)
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs")
@@ -150,6 +155,8 @@ class _EngineHostDebug:
             result = None
         elif attr == "exec" and len(args) == 1 and not kwargs:
             result = self._exec_source(handle, args[0])
+        elif not args and not kwargs and attr == "dispose":
+            result = self._dispose(handle)
         elif not args and not kwargs and attr == "snapshot":
             result = self._snapshot(self._context(handle), meter=meter)
         elif not args and not kwargs and attr == "step":

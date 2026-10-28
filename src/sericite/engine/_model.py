@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .. import isa
-from ..accounting import AllocationPermit, Meter
+from ..accounting import UNLIMITED, AllocationPermit, Meter
 from ..compiler import VM_METHODS
 from ..errors import SericiteError
 from ..io import VirtualIO
@@ -32,6 +32,13 @@ _VM_OPTIONS = {
     "max_fs_files",
     "max_fs_file_bytes",
 }
+_CUMULATIVE_VM_OPTIONS = {
+    "max_instructions",
+    "max_output_bytes",
+    "max_child_vms",
+    "max_total_bytes",
+    "max_total_vms",
+}
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,20 @@ class SericiteLimits:
     max_vm_depth: int = 8
     max_fs_files: int = 1000
     max_fs_file_bytes: int = 1_048_576
+
+    def __post_init__(self) -> None:
+        for key in _VM_OPTIONS:
+            value = getattr(self, key)
+            unlimited = key in _CUMULATIVE_VM_OPTIONS and value == UNLIMITED
+            if type(value) is not int or (value < 0 and not unlimited):
+                requirement = (
+                    "a non-negative int or -1"
+                    if key in _CUMULATIVE_VM_OPTIONS
+                    else "a non-negative int"
+                )
+                raise SericiteError(
+                    f"limit {key} must be {requirement}", kind="type_error"
+                )
 
 
 _UNBOUND = object()
@@ -234,6 +255,7 @@ class VMContext:
     instruction_count: int = 0
     alloc_bytes: int = 0
     child_count: int = 0
+    child_ids: set[int] = field(default_factory=set)
     running: bool = False
     meter_stack: list[Meter] = field(default_factory=list)
 
@@ -289,6 +311,9 @@ class VMHandle:
         if context.state in {"ready", "waiting_input"}:
             context.state = "terminated"
 
+    def dispose(self) -> None:
+        self._engine._dispose(self)
+
     def read_file(self, path: object) -> str:
         return self._engine._context(self).fs.read_file(path)
 
@@ -302,7 +327,9 @@ class VMHandle:
         return self._engine._context(self).fs.path_exists(path)
 
     def __repr__(self) -> str:
-        context = self._engine._context(self)
+        context = self._engine._contexts.get(self._vm_id)
+        if context is None:
+            return "<VM state=disposed>"
         return f"<VM state={context.state}>"
 
 

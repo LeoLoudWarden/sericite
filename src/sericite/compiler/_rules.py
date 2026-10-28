@@ -111,6 +111,7 @@ VM_METHODS = {
     "snapshot",
     "stdout",
     "terminate",
+    "dispose",
     "read_file",
     "write_file",
     "list_dir",

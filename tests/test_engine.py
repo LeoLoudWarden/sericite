@@ -424,5 +424,229 @@ class ExecSourceTests(unittest.TestCase):
         self.assertGreater(after, before)
 
 
+CUMULATIVE_OPTIONS = {
+    "max_instructions",
+    "max_output_bytes",
+    "max_child_vms",
+    "max_total_bytes",
+    "max_total_vms",
+}
+STRUCTURAL_OPTIONS = {
+    "max_frames",
+    "max_list_size",
+    "max_dict_size",
+    "max_string_bytes",
+    "max_int_bits",
+    "max_vm_depth",
+    "max_fs_files",
+    "max_fs_file_bytes",
+}
+
+
+def unlimited_limits():
+    return SericiteLimits(**{name: -1 for name in CUMULATIVE_OPTIONS})
+
+
+class UnlimitedLimitTests(unittest.TestCase):
+    def test_host_limit_validation(self):
+        for name in CUMULATIVE_OPTIONS:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    getattr(SericiteLimits(**{name: -1}), name),
+                    -1,
+                )
+        for name in CUMULATIVE_OPTIONS | STRUCTURAL_OPTIONS:
+            for value in (-2, True, 1.5, "1"):
+                with self.subTest(name=name, value=value):
+                    with self.assertRaises(SericiteError) as ctx:
+                        SericiteLimits(**{name: value})
+                    self.assertEqual(ctx.exception.kind, "type_error")
+        for name in STRUCTURAL_OPTIONS:
+            with self.subTest(name=name, value=-1):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteLimits(**{name: -1})
+                self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_script_limit_validation(self):
+        engine = SericiteEngine(unlimited_limits())
+        options = ", ".join(f"{name}=-1" for name in sorted(CUMULATIVE_OPTIONS))
+        vm = engine.create_root(f'sub = VM("", {options})\nsub.dispose()')
+        self.assertEqual(vm.run(), "")
+        for name in STRUCTURAL_OPTIONS:
+            with self.subTest(name=name):
+                vm = SericiteEngine().create_root(f'sub = VM("", {name}=-1)')
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "type_error")
+        for value in ("-2", "True", "1.5"):
+            with self.subTest(value=value):
+                vm = SericiteEngine().create_root(
+                    f'sub = VM("", max_instructions={value})'
+                )
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_unlimited_limits_still_accumulate_ledgers(self):
+        engine = SericiteEngine(unlimited_limits())
+        vm = engine.create_root(
+            "values = range(2)\ni = 0\nwhile i < 20:\n    i += 1\nprint(i)"
+        )
+        self.assertEqual(vm.run(), "20\n")
+        self.assertGreater(vm.snapshot()["instruction_count"], 20)
+        self.assertGreater(engine._contexts[0].alloc_bytes, 0)
+        self.assertIsNone(engine._contexts[0].io.remaining_output_bytes)
+
+    def test_unlimited_child_cannot_bypass_finite_parent(self):
+        engine = SericiteEngine(SericiteLimits(max_instructions=100))
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    pass", max_instructions=-1)\nsub.run()'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_finite_child_still_bounded_under_unlimited_parent(self):
+        engine = SericiteEngine(unlimited_limits())
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    pass", max_instructions=50)\nsub.run()'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertLessEqual(engine._contexts[1].instruction_count, 51)
+
+    def test_granted_spawn_preserves_finite_caller_ceiling(self):
+        engine = SericiteEngine(unlimited_limits())
+        vm = engine.create_root(
+            "def spawn():\n"
+            "    return VM('', max_instructions=-1)\n"
+            "sub = VM('grandchild = spawn()', functions={'spawn': spawn}, "
+            "max_instructions=100)\n"
+            "sub.run()"
+        )
+        vm.run()
+        self.assertEqual(engine._contexts[2].limits.max_instructions, 100)
+
+    def test_unlimited_vm_creation_with_dispose(self):
+        engine = SericiteEngine(unlimited_limits())
+        vm = engine.create_root(
+            'for i in range(1001):\n    sub = VM("")\n    sub.dispose()'
+        )
+        vm.run()
+        self.assertEqual(vm.snapshot()["child_count"], 1001)
+        self.assertEqual(engine._next_vm_id, 1002)
+        self.assertEqual(set(engine._contexts), {0})
+
+
+class DisposeTests(unittest.TestCase):
+    def test_host_dispose_is_idempotent_and_invalidates_handle(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        vm.dispose()
+        vm.dispose()
+        self.assertEqual(repr(vm), "<VM state=disposed>")
+        self.assertEqual(engine._contexts, {})
+        calls = (
+            lambda: vm.run(),
+            lambda: vm.exec("pass"),
+            lambda: vm.snapshot(),
+            lambda: vm.stdout(),
+            lambda: vm.terminate(),
+            lambda: vm.read_file("/x"),
+        )
+        for call in calls:
+            with self.subTest(call=call):
+                with self.assertRaises(SericiteError) as ctx:
+                    call()
+                self.assertEqual(ctx.exception.kind, "runtime_error")
+
+    def test_script_dispose_is_idempotent_and_stale_methods_fail(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("x = 1")\n'
+            "sub.run()\n"
+            "sub.dispose()\n"
+            "sub.dispose()\n"
+            "print(sub)\n"
+            "try:\n"
+            "    sub.snapshot()\n"
+            "except runtime_error:\n"
+            '    print("stale rejected")'
+        )
+        self.assertEqual(
+            vm.run(),
+            "<VM state=disposed>\nstale rejected\n",
+        )
+        self.assertEqual(vm.snapshot()["child_count"], 1)
+        self.assertEqual(set(engine._contexts), {0})
+
+    def test_dispose_requires_terminal_state(self):
+        engine = SericiteEngine()
+        ready = engine.create_root("x = 1")
+        with self.assertRaises(SericiteError) as ctx:
+            ready.dispose()
+        self.assertEqual(ctx.exception.kind, "runtime_error")
+        waiting = engine.create_root("input()")
+        waiting.step()
+        self.assertEqual(waiting.snapshot()["state"], "waiting_input")
+        with self.assertRaises(SericiteError) as ctx:
+            waiting.dispose()
+        self.assertEqual(ctx.exception.kind, "runtime_error")
+        waiting.terminate()
+        waiting.dispose()
+
+        failed = engine.create_root("1 / 0")
+        with self.assertRaises(SericiteError):
+            failed.run()
+        self.assertEqual(failed.snapshot()["state"], "error")
+        failed.dispose()
+
+        exhausted = engine.create_root(
+            "while True:\n    pass",
+            limits=SericiteLimits(max_instructions=10),
+        )
+        with self.assertRaises(SericiteError):
+            exhausted.run()
+        self.assertEqual(exhausted.snapshot()["state"], "resource_exhausted")
+        exhausted.dispose()
+
+    def test_dispose_requires_child_first_order(self):
+        engine = SericiteEngine()
+        root = engine.create_root('sub = VM("inner = VM(\\"\\")")\nsub.run()')
+        root.run()
+        child = VMHandle(engine, 1)
+        grandchild = VMHandle(engine, 2)
+        for handle in (root, child):
+            with self.subTest(handle=handle):
+                with self.assertRaises(SericiteError) as ctx:
+                    handle.dispose()
+                self.assertEqual(ctx.exception.kind, "runtime_error")
+        grandchild.dispose()
+        child.dispose()
+        root.dispose()
+        self.assertEqual(engine._contexts, {})
+
+    def test_dispose_does_not_refund_cumulative_quotas_or_ids(self):
+        for name in ("max_child_vms", "max_total_vms"):
+            with self.subTest(name=name):
+                config = {key: -1 for key in CUMULATIVE_OPTIONS}
+                config[name] = 1 if name == "max_child_vms" else 2
+                engine = SericiteEngine(SericiteLimits(**config))
+                vm = engine.create_root('sub = VM("")\nsub.dispose()\nsub = VM("")')
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+                self.assertEqual(vm.snapshot()["child_count"], 1)
+
+        engine = SericiteEngine(unlimited_limits())
+        vm = engine.create_root('sub = VM("")\nsub.dispose()\nsub = VM("")')
+        vm.run()
+        self.assertEqual(engine._next_vm_id, 3)
+        self.assertEqual(set(engine._contexts), {0, 2})
+        self.assertGreater(engine._contexts[0].instruction_count, 0)
+        self.assertGreater(engine._contexts[0].alloc_bytes, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

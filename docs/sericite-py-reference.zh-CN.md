@@ -48,11 +48,15 @@ engine.create_root(
 
 引擎构造时设置默认配额；`create_root()` 再传 `limits` 时会替换该 root 的整套配置，而不是逐字段合并。
 
+对于可信、长期运行的 root，`max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 这五项累计配额可用 `-1` 表示本层不设上限；结构性配额必须保持有限。有限父级下的子 VM 即使请求 `-1`，也只能继承该有限上限，无法逃离祖先计费。无限账户仍持续累计诊断账本。完整收紧规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。
+
+无限配额是显式的信任决定：真实 CPU 与宿主内存仍然有限，无限 stdout 在经 `output_writer` 转发的同时也会继续缓冲。不要对不可信代码使用 `-1`。
+
 ## 4. 驱动 VM
 
-`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/文件操作等）与脚本内 VM 值的方法一一对应，但有一处刻意的不对称：宿主侧返回的快照带有额外的宿主专属诊断字段。状态与契约见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主侧多一条特权规则——宿主管理不计入脚本账：
+`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/文件操作/`dispose` 等）与脚本内 VM 值的方法一一对应，但有一处刻意的不对称：宿主侧返回的快照带有额外的宿主专属诊断字段。状态与契约见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主侧多一条特权规则——宿主管理不计入脚本账：
 
-- 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照，不计入脚本的内存账；
+- 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照、`dispose()`，不计入脚本的内存账；
 - 文件数、单文件字节、输出字节等资源自身限制仍然有效；
 - `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 

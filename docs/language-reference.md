@@ -275,7 +275,7 @@ VMs are mutually isolated workspaces: a VM cannot see your variables or touch yo
 sub = VM(code, max_instructions=10000, functions={"double": double})
 ```
 
-The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. The full contracts for VM states, driving methods, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
+The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. A terminal VM with no live children can be released with `sub.dispose()`. The five cumulative quota fields also accept `-1` for no local cap, subject to finite ancestor ceilings. The full contracts for VM states, driving and disposal, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
 
 ## 9. Explicitly not writable (rejected at compile time)
 

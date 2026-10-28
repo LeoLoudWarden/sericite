@@ -88,8 +88,9 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 ### 5.1 Basic rules
 
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
-- Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any ring fails.
-- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included.
+- The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap. When limits are combined, a finite value wins over `-1`; only two unlimited inputs produce an unlimited result. Structural fields always remain finite.
+- Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any finite ring fails. Unlimited accounts still accumulate their ledgers.
+- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included. Disposing a context does not refund it.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
 
 ### 5.2 Time costs: prepaid or incremental
@@ -111,7 +112,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 - An AccountRoute is constructed from caller, home, and target when a call begins; every instruction in that execution scope uses it.
 - Shared ancestors are charged once per causal charge, with no special cross-sibling delta mirroring.
 - VM-method execution is jointly constrained by target and caller; result ownership enters only the actual caller's route.
-- A child VM created through a granted function is an empty world attached causally under its initiator, with quotas equal to the elementwise minimum of home and caller.
+- A child VM created through a granted function is an empty world attached causally under its initiator, with quotas tightened elementwise across home and caller; finite values win over unlimited ones.
 
 ### 5.5 Checklist for new language features
 
@@ -164,7 +165,7 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 - When a `finally` copy raises again, the outer `finally` may execute one extra time.
 - After a nested `except` inside `except`, a bare `raise` may re-raise an object other than the outermost one.
 - `for` iterates lists as a live view and dicts as a key snapshot.
-- A VM's execution context is retained on the engine after reaching a terminal state (for debug snapshots); the engine-level `max_total_vms` caps the growth of their number, and terminal-state release is left to a future version.
+- A VM's execution context is retained after reaching a terminal state for debug snapshots and further `exec` deliveries. Explicit `dispose()` releases a terminal context child-first; it does not refund cumulative ledgers or reuse VM IDs.
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
 - Cross-VM calls charge shared ancestors once. VM-method execution is jointly constrained by target and caller, while result ownership enters only the actual caller.
 
