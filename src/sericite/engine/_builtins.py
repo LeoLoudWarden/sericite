@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import dataclasses
 
-from ..accounting import AllocationPermit
+from ..accounting import UNLIMITED, AllocationPermit
 from ..errors import SericiteError
 from ..io import VirtualIO
 from ._model import (
     _ANY,
+    _CUMULATIVE_VM_OPTIONS,
     _TAG_CONTRACTS,
     _VM_OPTIONS,
     SericiteFunction,
@@ -23,6 +24,7 @@ from ._values import (
     _check_grant_name,
     _min_limits,
     _StringRenderer,
+    _tighten_limit,
     _to_str,
     _type_name,
 )
@@ -186,23 +188,38 @@ class _EngineBuiltins:
             for key, value in config.items():
                 if key not in _VM_OPTIONS:
                     raise SericiteError(f"unknown VM option: {key}", kind="type_error")
-                if type(value) is not int or value < 0:
+                unlimited = key in _CUMULATIVE_VM_OPTIONS and value == UNLIMITED
+                if type(value) is not int or (value < 0 and not unlimited):
+                    requirement = (
+                        "a non-negative int or -1"
+                        if key in _CUMULATIVE_VM_OPTIONS
+                        else "a non-negative int"
+                    )
                     raise SericiteError(
-                        f"VM option {key} must be a non-negative int",
+                        f"VM option {key} must be {requirement}",
                         kind="type_error",
                     )
-                overrides[key] = min(getattr(limits, key), value)
+                overrides[key] = _tighten_limit(getattr(limits, key), value)
             limits = dataclasses.replace(limits, **overrides)
         depth = causal.depth + 1
         if depth > limits.max_vm_depth:
             raise SericiteError("VM depth limit exceeded", kind="resource_exhausted")
-        if causal.child_count >= causal.limits.max_child_vms:
+        if (
+            causal.limits.max_child_vms != UNLIMITED
+            and causal.child_count >= causal.limits.max_child_vms
+        ):
             raise SericiteError("child VM limit exceeded", kind="resource_exhausted")
         handle = self._create_vm(
             source=source,
             parent_id=causal.vm_id,
             depth=depth,
-            io=VirtualIO(max_output_bytes=limits.max_output_bytes),
+            io=VirtualIO(
+                max_output_bytes=(
+                    None
+                    if limits.max_output_bytes == UNLIMITED
+                    else limits.max_output_bytes
+                )
+            ),
             limits=limits,
             granted=granted,
         )

@@ -6,6 +6,8 @@ from typing import Protocol
 
 from .errors import SericiteError
 
+UNLIMITED = -1
+
 
 class Limits(Protocol):
     max_instructions: int
@@ -53,11 +55,17 @@ class AccountRoute:
         if work < 0 or allocation < 0:
             raise ValueError("charges must be non-negative")
         for account in self._accounts:
-            if account.instruction_count + work > account.limits.max_instructions:
+            if (
+                account.limits.max_instructions != UNLIMITED
+                and account.instruction_count + work > account.limits.max_instructions
+            ):
                 raise SericiteError(
                     "instruction limit exceeded", kind="resource_exhausted"
                 )
-            if account.alloc_bytes + allocation > account.limits.max_total_bytes:
+            if (
+                account.limits.max_total_bytes != UNLIMITED
+                and account.alloc_bytes + allocation > account.limits.max_total_bytes
+            ):
                 raise SericiteError(
                     "total memory limit exceeded", kind="resource_exhausted"
                 )
@@ -80,7 +88,10 @@ class Meter:
             self.route.charge(work=amount)
             return
         account = self.single_account
-        if account.instruction_count + amount > account.limits.max_instructions:
+        if (
+            account.limits.max_instructions != UNLIMITED
+            and account.instruction_count + amount > account.limits.max_instructions
+        ):
             raise SericiteError("instruction limit exceeded", kind="resource_exhausted")
         account.instruction_count += amount
 

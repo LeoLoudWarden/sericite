@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 
 from .. import isa
-from ..accounting import Meter
+from ..accounting import UNLIMITED, Meter
 from ..compiler import RESERVED_NAMES
 from ..errors import SericiteError
 from ..io import OutputLimitExceeded
@@ -188,9 +188,20 @@ def _is_number(value: object) -> bool:
     return type(value) in (int, float)
 
 
+def _tighten_limit(ceiling: int, requested: int) -> int:
+    if ceiling == UNLIMITED:
+        return requested
+    if requested == UNLIMITED:
+        return ceiling
+    return min(ceiling, requested)
+
+
 def _min_limits(a: SericiteLimits, b: SericiteLimits) -> SericiteLimits:
     return dataclasses.replace(
-        a, **{key: min(getattr(a, key), getattr(b, key)) for key in _VM_OPTIONS}
+        a,
+        **{
+            key: _tighten_limit(getattr(a, key), getattr(b, key)) for key in _VM_OPTIONS
+        },
     )
 
 

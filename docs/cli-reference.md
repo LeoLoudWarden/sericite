@@ -108,8 +108,9 @@ It returns a dict. Every key is optional; an empty dict is equivalent to no conf
 - Startup fails on unknown keys, a missing or non-callable `configure()`, a non-dict return, or invalid field types.
 - The engine still validates grant names in `functions`.
 - `files` uses the public VM handle and remains subject to file-count, per-file-byte, and other limits.
+- A trusted long-running root may set the five cumulative quota fields to `-1`; structural quotas remain finite. This delegates actual resource safety to the operator and must not be used for untrusted code.
 
-See the [Sericite-PY reference](sericite-py-reference.md) for the FFI rules and the [VM reference](vm-reference.md) §5 for quota fields; they are not duplicated here.
+See the [Sericite-PY reference](sericite-py-reference.md) for the FFI rules and the [VM reference](vm-reference.md) §5 for quota fields and unlimited-inheritance rules; they are not duplicated here.
 
 A capability file can use `__file__` to locate its resources. It is not a Sericite module, its directory need not be a Python package, and the CLI does not create a Sericite module search path.
 

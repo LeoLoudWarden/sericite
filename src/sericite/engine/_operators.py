@@ -229,10 +229,15 @@ class _EngineOperators:
                 kind="attribute_error",
             )
         if isinstance(value, VMHandle) and attr in VMHandle._METHODS:
+            home = (
+                self._contexts.get(value._vm_id, context)
+                if attr == "dispose"
+                else self._context(value)
+            )
             return _NativeFunction(
                 f"VM.{attr}",
                 lambda *a, **k: self._charged_vm_method(value, attr, a, k),
-                self._context(value),
+                home,
                 work=lambda *a, **k: self._vm_method_work(value, attr, a, k),
                 allocation=lambda *a, **k: self._vm_method_allocation(
                     value, attr, a, k

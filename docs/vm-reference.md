@@ -28,7 +28,7 @@ VM states are `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, a
 
 `terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op — terminal VMs such as `done`/`error` still accept `exec` deliveries.
 
-Terminal VM contexts remain available for debugging. The engine owns all contexts, and `max_total_vms` caps their cumulative number; the host should release the whole engine when its VM tree is no longer needed.
+Terminal VM contexts remain available for debugging and further `exec` deliveries until explicitly disposed. `dispose()` accepts only a terminal VM with no live children, so contexts are released child-first. It removes the VM's frames, IO/VFS, grants, and accounting routes; repeated disposal is a no-op, while any other method on a disposed handle fails with `runtime_error`. VM IDs are never reused, and disposal never refunds the parent's ledgers, `child_count`, `max_child_vms`, or the engine's cumulative `max_total_vms`.
 
 ## 4. Driving methods
 
@@ -42,6 +42,7 @@ Terminal VM contexts remain available for debugging. The engine owns all context
 | `snapshot() -> dict` | Return a safe snapshot without advancing execution |
 | `stdout() -> str` | Return current stdout |
 | `terminate()` | Terminate the VM; effective states and no-op semantics are in section 3 |
+| `dispose()` | Explicitly release a terminal VM with no live children; see section 3 |
 | `read_file(path) -> str` | Read a text file from this VM |
 | `write_file(path, text)` | Write a text file into this VM |
 | `list_dir(path) -> list[str]` | Return sorted direct children of a directory |
@@ -101,18 +102,22 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_instructions` | 1,000,000 | Instruction and discounted-work limit |
 | `max_output_bytes` | 1,048,576 | stdout bytes in UTF-8 |
 | `max_frames` | 100 | Call-frame limit |
-| `max_child_vms` | 100 | Direct children per VM |
+| `max_child_vms` | 100 | Cumulative direct children per VM |
 | `max_list_size` | 100,000 | Slots per list |
 | `max_dict_size` | 100,000 | Entries per dict |
 | `max_string_bytes` | 1,048,576 | Size per string |
 | `max_int_bits` | 4096 | Integer bit width |
 | `max_total_bytes` | 67,108,864 | Approximate memory high-water mark |
-| `max_total_vms` | 1000 | Cumulative VMs per engine, including terminal VMs |
+| `max_total_vms` | 1000 | Cumulative successful VMs per engine, including disposed VMs |
 | `max_vm_depth` | 8 | VM nesting depth |
 | `max_fs_files` | 1000 | Files per VM |
 | `max_fs_file_bytes` | 1,048,576 | UTF-8 bytes per file |
 
-When a script creates a child VM, `VM()` keyword arguments correspond one-to-one with this table and can only tighten it. Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
+The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap. All structural fields must be non-negative finite integers; other negative values and non-integer values are rejected for every field.
+
+When a script creates a child VM, `VM()` keyword arguments correspond one-to-one with this table and can only tighten it. A requested `-1` inherits the parent's effective value; a finite request under an unlimited parent applies that finite cap. Only two unlimited values combine into an unlimited result, so a finite ancestor always remains a hard ceiling. The same rule applies when home and caller limits are combined for granted functions.
+
+Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow, and `dispose()` does not refund them. Unlimited stdout also remains buffered even when forwarded live. Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
 
 ## 6. Granting functions
 

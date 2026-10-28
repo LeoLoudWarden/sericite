@@ -58,6 +58,33 @@ class AccountRouteTests(unittest.TestCase):
             [0, 0, 0],
         )
 
+    def test_unlimited_account_still_accumulates_ledgers(self) -> None:
+        self.root.max_instructions = -1
+        self.root.max_total_bytes = -1
+        route = self.route(self.root)
+        route.charge(work=5, allocation=7)
+        Meter(route).work(3)
+        self.assertEqual(self.root.instruction_count, 8)
+        self.assertEqual(self.root.alloc_bytes, 7)
+
+    def test_finite_account_blocks_unlimited_route_atomically(self) -> None:
+        self.root.max_instructions = -1
+        self.root.max_total_bytes = -1
+        self.home.max_instructions = -1
+        self.home.max_total_bytes = -1
+        self.caller.max_instructions = 4
+        with self.assertRaises(SericiteError) as ctx:
+            self.route(self.home, self.caller).charge(work=5, allocation=7)
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(
+            [account.instruction_count for account in self.accounts_list],
+            [0, 0, 0],
+        )
+        self.assertEqual(
+            [account.alloc_bytes for account in self.accounts_list],
+            [0, 0, 0],
+        )
+
 
 class AllocationPermitTests(unittest.TestCase):
     def test_permit_is_bound_and_one_shot(self) -> None:

@@ -173,6 +173,40 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("resource_exhausted", result.stderr)
 
+    def test_capabilities_support_long_running_root_limits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            capabilities = self.write(
+                directory,
+                "unlimited.py",
+                "from sericite import SericiteLimits\n"
+                "def configure():\n"
+                "    return {'limits': SericiteLimits(\n"
+                "        max_instructions=-1,\n"
+                "        max_output_bytes=-1,\n"
+                "        max_total_bytes=-1,\n"
+                "        max_child_vms=-1,\n"
+                "        max_total_vms=-1,\n"
+                "    )}\n",
+            )
+            result = self.run_cli(
+                "--capabilities",
+                capabilities,
+                "-c",
+                "i = 0\n"
+                "while i < 20:\n"
+                "    i += 1\n"
+                "print(i)\n"
+                'sub = VM("")\n'
+                'sub.exec("x = 41")\n'
+                'text = sub.exec("print(x + 1)")\n'
+                'print(text, end="")\n'
+                "sub.dispose()\n"
+                'print("done")',
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "20\n42\ndone\n")
+
     def test_invalid_capabilities(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
