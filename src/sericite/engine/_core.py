@@ -115,7 +115,6 @@ class _EngineCore:
             )
         code = compile_source(source, filename)
         vm_id = self._next_vm_id
-        self._next_vm_id += 1
         _stamp_origin(code, vm_id)
         context = VMContext(
             vm_id=vm_id,
@@ -132,11 +131,13 @@ class _EngineCore:
         )
         if not any(instr.stmt_start for instr in code.instrs):
             context.state = "done"
-        self._contexts[vm_id] = context
         route = AccountRoute(context, resolve=self._contexts.__getitem__)
+        meter = Meter(route)
+        meter.allocate(_const_bytes(code))
+        self._next_vm_id += 1
+        self._contexts[vm_id] = context
         self._account_routes[vm_id] = route
-        self._meters[vm_id] = Meter(route)
-        self._meter(context).allocate(_const_bytes(code))
+        self._meters[vm_id] = meter
         return VMHandle(self, vm_id)
 
     def _context(self, handle: VMHandle) -> VMContext:
