@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-29
+
 ### Added
 - CLI 新增脚本参数 `argv`：文件、`-c` 与 stdin 入口后的参数原样传给 root 模块的字符串列表；`create_root(argv=...)` 支持嵌入侧初始化，值跨 `exec()` 保留且不隐式进入子 VM。
 - CLI 新增最小 REPL：无源码参数时启动，支持多行输入、单表达式 `repr` 回显、错误后继续和 EOF 退出；变量、函数、schema 与 VFS 在同一持久 root 中保留，兼容 include、capabilities 与初始 VFS。

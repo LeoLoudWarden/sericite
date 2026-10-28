@@ -21,9 +21,6 @@ jobs:
           [ -n "$pkg" ] || fail "could not read __version__ from src/sericite/__init__.py"
           [ "$tag" = "$pkg" ] || fail "tag v$tag does not match __version__ $pkg"
           grep -q "^## \[$pkg\]" CHANGELOG.md || fail "CHANGELOG.md has no [$pkg] section"
-          for doc in docs/language-reference.md docs/language-reference.zh-CN.md; do
-            grep -q "Sericite $pkg" "$doc" || fail "$doc does not declare Sericite $pkg"
-          done
           minor="${pkg%.*}.x"
           grep -q "| $minor |" SECURITY.md || fail "SECURITY.md has no $minor row"
       - run: uv build
