@@ -54,7 +54,7 @@ With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root, runs the
 
 - `>>>` waits for a new entry and `...` waits for a multiline statement to finish; blank input is not executed.
 - Variables, functions, schemas, and the VFS persist across entries, each delivered through the root's `exec()`.
-- A single expression echoes its result with `repr`, including `None`; other statements produce only their own output.
+- A single expression echoes its result with `repr`; other statements produce only their own output.
 - A compilation or runtime error goes to stderr and the session continues. An include or capability startup failure still exits with status 1.
 - EOF exits normally with status 0. Script `input()` still reads host stdin; exhausted input is reported as `input_error`.
 

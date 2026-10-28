@@ -54,7 +54,7 @@ sericite --capabilities capabilities.py -c 'run()'
 
 - `>>>` 等待新输入，`...` 等待多行语句完成；空输入不执行。
 - 变量、函数、schema 和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
-- 单个表达式用 `repr` 回显结果，包括 `None`；其他语句只有自身产生的输出。
+- 单个表达式用 `repr` 回显结果；其他语句只有自身产生的输出。
 - 单次编译或运行错误写 stderr，随后可以继续输入；include 或能力配置的启动失败仍使进程以 1 退出。
 - EOF 正常退出，退出码为 0。脚本 `input()` 仍读取宿主 stdin；输入耗尽按 `input_error` 报告。
 
