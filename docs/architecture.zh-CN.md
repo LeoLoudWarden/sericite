@@ -79,7 +79,7 @@
 
 脚本可见的内建函数与容器方法以[语言参考](language-reference.zh-CN.md)第 6 节为准；VM 句柄方法与 VM 状态以[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节为准。引擎侧对这份接口只承担两条内部职责：这些名字的编译器白名单有唯一来源（不变量 11）；容器与字符串方法走封闭的原生分发，不暴露任意 Python 属性。方法调用的计费规则见第 5 节。
 
-错误 kind 由 `errors` 模块集中注册，可捕获性由编译器强制：未知过滤名字与不可捕获 kind 都在编译期拒绝为 `validation_error`。完整 kind 清单见[语言参考](language-reference.zh-CN.md)第 5 节。
+错误 kind 由 `errors` 模块集中注册，可捕获性由编译器强制：未知过滤名字与不可捕获 kind 都在编译期拒绝为 `syntax_error`。完整 kind 清单见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 ## 5. 资源配额
 

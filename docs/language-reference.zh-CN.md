@@ -153,11 +153,11 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `validation_error` 拒绝。不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `syntax_error` 拒绝。不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
 
 可捕获 kind 的完整列表：
 
-- 通用：`runtime_error`、`syntax_error`、`validation_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
+- 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
 
@@ -263,6 +263,10 @@ p: Point = Point(1, 2)
 sub = VM("print('hi')")          # 源码字符串
 out = sub.run()                  # 运行并取回它的全部输出（字符串）
 print(out)                       # 'hi\n'
+try:
+    sub = VM("import os")
+except syntax_error as e:
+    print("编译失败:", e)
 ```
 
 VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件。创建时可以收紧配额、授予函数：

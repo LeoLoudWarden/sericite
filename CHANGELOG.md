@@ -13,6 +13,7 @@
 ### Changed
 - 脚本内 `snapshot()`/`step()`/`step_instruction()` 返回的快照移除 `vm_id` 字段，脚本可见快照固定为安全视图字段集合（见虚拟机参考第 4 节）。
 - VM 句柄的显示文本由 `<VM id=N state=...>` 改为 `<VM state=...>`，不再暴露引擎全局 VM 计数。
+- **语义破坏变更**：源码解析、语言规则校验、编译护栏与源码大小预检统一抛出 `syntax_error`，移除 `validation_error` kind；root 创建、子 VM 与 `exec()` 投递遵守同一契约。原 `except validation_error` 需改为 `except syntax_error`，旧 kind 名现按未知 kind 拒绝。
 
 ### Fixed
 - 直接子 VM 计数与 `max_child_vms` 配额改为只统计创建成功的子 VM：源码超限、编译失败或总 VM 数超限导致的创建失败不再虚增 `child_count`、也不再消耗子 VM 配额（此前失败尝试会被计入，宿主诊断字段因此虚高）。

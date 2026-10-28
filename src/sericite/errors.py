@@ -4,8 +4,8 @@ UNCATCHABLE_ERROR_KINDS = frozenset(
     {"host_error", "internal_error", "resource_exhausted"}
 )
 # Kinds a script can catch at runtime with an `except <kind>` filter. `syntax_error`
-# and `validation_error` are included because nested-VM compilation raises them at
-# runtime (e.g. a child VM whose source fails to parse or validate).
+# is included because nested-VM compilation raises it at runtime when a child VM's
+# source is rejected.
 CATCHABLE_ERROR_KINDS = frozenset(
     {
         "arity_error",
@@ -24,7 +24,6 @@ CATCHABLE_ERROR_KINDS = frozenset(
         "runtime_error",
         "syntax_error",
         "type_error",
-        "validation_error",
         "zero_division",
     }
 )

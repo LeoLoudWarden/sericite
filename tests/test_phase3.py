@@ -50,7 +50,7 @@ class TryExceptTests(unittest.TestCase):
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("try:\n    pass\nexcept e:\n    pass\n")
         exc = ctx.exception
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
         self.assertIn("unknown error kind: 'e'", exc.message)
         self.assertIn("except <kind> as name", exc.message)
         self.assertIn("bare 'except:'", exc.message)
@@ -61,12 +61,12 @@ class TryExceptTests(unittest.TestCase):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("try:\n    pass\nexcept zero_divsion:\n    pass\n")
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
         self.assertIn("zero_divsion", ctx.exception.message)
 
     def test_all_catchable_except_kinds_are_accepted(self):
-        # syntax_error/validation_error stay accepted: nested-VM compilation raises
-        # them at runtime (e.g. a child VM whose source fails to parse/validate).
+        # syntax_error stays accepted: nested-VM compilation raises it at runtime
+        # when a child VM's source fails to parse or validate.
         kinds = (
             "arity_error",
             "attribute_error",
@@ -84,7 +84,6 @@ class TryExceptTests(unittest.TestCase):
             "runtime_error",
             "syntax_error",
             "type_error",
-            "validation_error",
             "zero_division",
         )
         for kind in kinds:
@@ -99,15 +98,15 @@ class TryExceptTests(unittest.TestCase):
                 engine = SericiteEngine()
                 with self.assertRaises(SericiteError) as ctx:
                     engine.create_root(f"try:\n    pass\nexcept {kind}:\n    pass\n")
-                self.assertEqual(ctx.exception.kind, "validation_error")
+                self.assertEqual(ctx.exception.kind, "syntax_error")
                 self.assertIn(kind, ctx.exception.message)
 
-    def test_child_vm_unknown_except_kind_is_validation_error(self):
+    def test_child_vm_unknown_except_kind_is_syntax_error(self):
         child = "try:\n    pass\nexcept unknown_kind:\n    pass\n"
         source = (
             "try:\n"
             f"    sub = VM({child!r})\n"
-            "except validation_error as e:\n"
+            "except syntax_error as e:\n"
             '    print("caught: " + e)\n'
         )
         self.assertIn("caught: unknown error kind: 'unknown_kind'", run(source))
