@@ -112,12 +112,12 @@ class SecurityQuotaTests(unittest.TestCase):
                     )
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
-    def test_deep_expression_is_validation_error(self):
+    def test_deep_expression_is_syntax_error(self):
         source = "x = " + "1+1" * 5000 + "\n"
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root(source)
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_cyclic_list_prints_safely(self):
         source = "l = [None]\nl[0] = l\nprint(l)\nprint(l == l)\n"
@@ -420,12 +420,12 @@ class SecurityQuotaTests(unittest.TestCase):
         snapshot = vm.snapshot()
         self.assertIn("<max depth>", str(snapshot["locals"]["x"]))
 
-    def test_parse_level_deep_chain_is_validation_error(self):
+    def test_parse_level_deep_chain_is_syntax_error(self):
         source = "x = " + "1+" * 50000 + "1\n"
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root(source)
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_total_memory_accounting(self):
         limits = SericiteLimits(max_total_bytes=200_000)
@@ -473,7 +473,7 @@ class SecurityQuotaTests(unittest.TestCase):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("x = 1\n" + "# pad\n" * 800_000)
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_alloc_charges_ancestors(self):
         child = 's = "a"\nfor i in range(16):\n    s = s + s\n'
@@ -541,7 +541,7 @@ class ForLoopTests(unittest.TestCase):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("for a, b in [1]:\n    pass\n")
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_while_else(self):
         source = 'i = 0\nwhile i < 2:\n    i = i + 1\nelse:\n    print("done")\n'
@@ -883,13 +883,13 @@ class ExternalAuditTests(unittest.TestCase):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("def print():\n    pass\n")
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_multibyte_source_measured_in_bytes(self):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("x = 1\n" + "# 汉\n" * 1_500_000)
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
 
 if __name__ == "__main__":

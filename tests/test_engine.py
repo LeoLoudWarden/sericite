@@ -357,6 +357,16 @@ class ExecSourceTests(unittest.TestCase):
         self.assertEqual(vm.snapshot()["state"], "done")
         self.assertEqual(vm.exec("print(x)"), "9\n")
 
+    def test_exec_validation_failure_is_syntax_error_and_leaves_vm_untouched(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("x = 9")
+        vm.run()
+        with self.assertRaises(SericiteError) as ctx:
+            vm.exec("x = __class__")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
+        self.assertEqual(vm.snapshot()["state"], "done")
+        self.assertEqual(vm.exec("print(x)"), "9\n")
+
     def test_exec_rejects_terminated_vm(self):
         engine = SericiteEngine()
         vm = engine.create_root("x = 1")

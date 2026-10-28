@@ -325,7 +325,7 @@ class _Compiler:
             if self._function_depth == 0:
                 raise SericiteError(
                     "return outside function",
-                    kind="validation_error",
+                    kind="syntax_error",
                     filename=self._filename,
                     line=line,
                 )
@@ -357,7 +357,7 @@ class _Compiler:
             return
         raise SericiteError(
             f"unsupported statement: {type(node).__name__}",
-            kind="validation_error",
+            kind="syntax_error",
             filename=self._filename,
             line=line,
         )
@@ -396,7 +396,7 @@ class _Compiler:
         if not node.handlers and not node.finalbody:
             raise SericiteError(
                 "try requires at least one except or finally clause",
-                kind="validation_error",
+                kind="syntax_error",
                 filename=self._filename,
                 line=line,
             )
@@ -576,7 +576,7 @@ class _Compiler:
             return
         raise SericiteError(
             f"unsupported expression: {type(node).__name__}",
-            kind="validation_error",
+            kind="syntax_error",
             filename=self._filename,
             line=line,
         )
@@ -584,7 +584,7 @@ class _Compiler:
     def _outside_loop(self, node: ast.stmt) -> None:
         raise SericiteError(
             f"{type(node).__name__.lower()} outside loop",
-            kind="validation_error",
+            kind="syntax_error",
             filename=self._filename,
             line=node.lineno,
         )

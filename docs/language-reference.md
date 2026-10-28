@@ -153,11 +153,11 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `validation_error`. The uncatchable kinds `resource_exhausted`, `internal_error`, and `host_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `syntax_error`. The uncatchable kinds `resource_exhausted`, `internal_error`, and `host_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
 
 The catchable kinds are:
 
-- General: `runtime_error`, `syntax_error`, `validation_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
+- General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
 
@@ -263,6 +263,10 @@ Sericite code can create new VMs, and the code inside a VM is also sericite:
 sub = VM("print('hi')")          # source code string
 out = sub.run()                  # run and get back all of its output (a string)
 print(out)                       # 'hi\n'
+try:
+    sub = VM("import os")
+except syntax_error as e:
+    print("compile failed:", e)
 ```
 
 VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions:

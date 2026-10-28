@@ -877,7 +877,7 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
     def test_failed_child_compilation_charges_work_before_exception(self):
         cases = (
             ("syntax_error", "x = (" * 1000),
-            ("validation_error", "x = __class__\n" * 1000),
+            ("syntax_error", "x = __class__\n" * 1000),
         )
         for kind, bad_source in cases:
             with self.subTest(kind=kind):

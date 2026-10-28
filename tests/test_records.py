@@ -454,7 +454,7 @@ class AnnotationTests(unittest.TestCase):
 
     def test_any_callable_rejected(self):
         exc = run_error("print(any(1))\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_nested_schema_contract(self):
         out = run(
@@ -795,7 +795,7 @@ class ClosureAndVMTests(unittest.TestCase):
         exc = run_error(
             "def stash(v):\n    return 5\ndef f(x: stash(print)):\n    return x\n"
         )
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_bool_list_dict_contracts(self):
         out = run(
@@ -822,9 +822,9 @@ class ClosureAndVMTests(unittest.TestCase):
     def test_contract_only_names_reserved(self):
         for source in ("bool = 5\n", "list = []\n", "dict = {}\n"):
             exc = run_error(source)
-            self.assertEqual(exc.kind, "validation_error", msg=source)
+            self.assertEqual(exc.kind, "syntax_error", msg=source)
         exc = run_error("print(list([1]))\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_field_named_after_builtin(self):
         out = run("class C:\n    int\n    print\nc = C(1, 2)\nprint(c.int, c.print)\n")
@@ -1198,39 +1198,39 @@ class QuotaTests(unittest.TestCase):
 class ValidationTests(unittest.TestCase):
     def test_class_defaults_rejected(self):
         exc = run_error("class P:\n    x = 1\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
         self.assertIn("defaults", exc.message)
         exc = run_error("class P:\n    x: int = 1\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_class_methods_rejected(self):
         exc = run_error("class P:\n    def m():\n        pass\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_class_bases_rejected(self):
         exc = run_error("class P(Base):\n    x\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_duplicate_field_rejected(self):
         exc = run_error("class P:\n    x\n    x: int\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
         self.assertIn("duplicate", exc.message)
 
     def test_bare_annotation_rejected(self):
         exc = run_error("x: int\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_dunder_field_rejected(self):
         exc = run_error("class P:\n    __x\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
     def test_builtin_redefine_rejected(self):
         exc = run_error("class len:\n    x\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
         exc = run_error("wrap = 1\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
         exc = run_error("any = 1\n")
-        self.assertEqual(exc.kind, "validation_error")
+        self.assertEqual(exc.kind, "syntax_error")
 
 
 class ReprTests(unittest.TestCase):

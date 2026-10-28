@@ -108,8 +108,8 @@ class AugmentedAssignmentTests(unittest.TestCase):
             ("x = True\nx += 1\n", "type_error"),
             ("x = 1\nx /= 0\n", "zero_division"),
             ('x = "abc"\nx[0] += "z"\n', "type_error"),
-            ("x = 1\nx **= 2\n", "validation_error"),
-            ("x = []\nx @= []\n", "validation_error"),
+            ("x = 1\nx **= 2\n", "syntax_error"),
+            ("x = []\nx @= []\n", "syntax_error"),
             ("[x, y] += [1, 2]\n", "syntax_error"),
         )
         for source, kind in cases:
@@ -266,13 +266,13 @@ class ControlFlowTests(unittest.TestCase):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("break\n")
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_return_outside_function_rejected(self):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root("return 1\n")
-        self.assertEqual(ctx.exception.kind, "validation_error")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_loop_stepping_is_per_statement(self):
         engine = SericiteEngine()
@@ -426,7 +426,7 @@ class SliceTests(unittest.TestCase):
                 engine = SericiteEngine()
                 with self.assertRaises(SericiteError) as ctx:
                     engine.create_root(f"values = [1, 2]\n{statement}\n")
-                self.assertEqual(ctx.exception.kind, "validation_error")
+                self.assertEqual(ctx.exception.kind, "syntax_error")
                 self.assertIn("slice assignment", ctx.exception.message)
 
     def test_slices_charge_result_allocation(self):

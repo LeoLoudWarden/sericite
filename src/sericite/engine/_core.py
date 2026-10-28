@@ -105,7 +105,7 @@ class _EngineCore:
         filename = f"<sericite:vm_{self._next_vm_id}>"
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
             raise SericiteError(
-                "source too large", kind="validation_error", filename=filename
+                "source too large", kind="syntax_error", filename=filename
             )
         if len(self._contexts) >= limits.max_total_vms:
             raise SericiteError(
@@ -196,7 +196,7 @@ class _EngineCore:
             )
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
             raise SericiteError(
-                "source too large", kind="validation_error", filename=context.filename
+                "source too large", kind="syntax_error", filename=context.filename
             )
         code = compile_source(source, context.filename)
         _stamp_origin(code, context.vm_id)

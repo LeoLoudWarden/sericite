@@ -79,7 +79,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 
 The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [VM reference](vm-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
-Error kinds are centrally registered in the `errors` module, and catchability is compiler-enforced: unknown filter names and uncatchable kinds are both rejected at compile time as `validation_error`. The full kind list is in the [language reference](language-reference.md) §5.
+Error kinds are centrally registered in the `errors` module, and catchability is compiler-enforced: unknown filter names and uncatchable kinds are both rejected at compile time as `syntax_error`. The full kind list is in the [language reference](language-reference.md) §5.
 
 ## 5. Resource quotas
 

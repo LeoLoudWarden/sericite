@@ -42,13 +42,13 @@ def compile_source(source: object, filename: str) -> isa.CodeUnit:
     except RecursionError:
         raise SericiteError(
             "source nesting too deep",
-            kind="validation_error",
+            kind="syntax_error",
             filename=filename,
         ) from None
     except MemoryError:
         raise SericiteError(
             "source too large to compile",
-            kind="validation_error",
+            kind="syntax_error",
             filename=filename,
         ) from None
     try:
@@ -63,13 +63,13 @@ def compile_source(source: object, filename: str) -> isa.CodeUnit:
     except RecursionError:
         raise SericiteError(
             "source nesting too deep",
-            kind="validation_error",
+            kind="syntax_error",
             filename=filename,
         ) from None
     except MemoryError:
         raise SericiteError(
             "source too large to compile",
-            kind="validation_error",
+            kind="syntax_error",
             filename=filename,
         ) from None
     return code

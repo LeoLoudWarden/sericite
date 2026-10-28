@@ -209,7 +209,7 @@ def _validate(tree: ast.Module, filename: str) -> None:
 def _reject(node: ast.AST, filename: str, message: str) -> None:
     raise SericiteError(
         message,
-        kind="validation_error",
+        kind="syntax_error",
         filename=filename,
         line=getattr(node, "lineno", None),
         column=(node.col_offset + 1 if hasattr(node, "col_offset") else None),
