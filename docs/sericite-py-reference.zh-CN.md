@@ -48,7 +48,7 @@ engine.create_root(
 
 ## 3. 配额：SericiteLimits
 
-`SericiteLimits` 的字段清单与默认值见[虚拟机参考](vm-reference.zh-CN.md)第 5 节；脚本内 `VM()` 的关键字参数与之一一对应。所有字段都有默认值；默认值面向开发调试，不是执行不可信代码时的安全建议。
+`SericiteLimits` 的字段清单与默认值见[虚拟机参考](vm-reference.zh-CN.md)第 5 节；脚本内 `VM()` 的配额关键字参数与之一一对应。所有字段都有默认值；默认值面向开发调试，不是执行不可信代码时的安全建议。
 
 引擎构造时设置默认配额；`create_root()` 再传 `limits` 时会替换该 root 的整套配置，而不是逐字段合并。
 
@@ -119,7 +119,7 @@ except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
 ```
 
-`resource_exhausted`、`internal_error` 与 `host_error` 只是不能被 **Sericite 脚本** 捕获；宿主可以且应该处理它们。语法、校验、运行时和 FFI 错误的 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节。
+`resource_exhausted`、`internal_error` 与 `host_error` 只是不能被 **Sericite 脚本** 捕获；宿主可以且应该处理它们。语法、运行时和 FFI 错误的 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 ## 7. 不可信代码的宿主检查清单
 

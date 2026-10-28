@@ -22,7 +22,7 @@ The engine has zero runtime dependencies; the script itself is stdlib-only.
 Numbers below are medians; absolute values vary with hardware and Python
 version, the order-of-magnitude comparison is the point.
 
-Latest recorded run (2026-10-23, Intel i3-9100, CPython 3.13/3.14, Linux x86_64):
+Recorded run (2026-10-23, Intel i3-9100, CPython 3.13/3.14, Linux x86_64):
 
     host_create        ~37 µs/VM
     host_create_run    ~42 µs/VM
@@ -32,6 +32,8 @@ Latest recorded run (2026-10-23, Intel i3-9100, CPython 3.13/3.14, Linux x86_64)
     ref_fork           ~1.9 ms
     ref_proc_true      ~0.55 ms
     ref_proc_python    ~12.9 ms
+
+For the current cross-benchmark table (2026-10-26), see docs/architecture.md §6.
 
 An independent reproduction on different hardware measured script_create
 ~0.11 ms and host_create_run ~0.33 ms — same order of magnitude.

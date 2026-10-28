@@ -44,7 +44,7 @@ sericite --include base.sericite app.sericite
 sericite --capabilities capabilities.py app.sericite
 ```
 
-Includes compose source in order in one root scope; capabilities are operator-trusted Python configuration limited to FFI, limits, and initial VFS files. See the [CLI reference](docs/cli-reference.md) for the contract and the [root-agent demo](demos/root-agent/README.md) for a complete application. Embed Python when an existing host needs to own VM lifecycles:
+Includes compose source in order in one root scope; capabilities are operator-trusted Python configuration limited to FFI, limits, and initial VFS files. See the [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) for the contract and the [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.md) for a complete application. Embed Python when an existing host needs to own VM lifecycles:
 
 ```python
 from sericite import SericiteEngine
@@ -104,7 +104,7 @@ Rationale: [design notes §3.4](https://github.com/LeoLoudWarden/sericite/blob/m
 | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
 | [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) | [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) |
 
-What each document covers and whom it serves is maintained in the [documentation index](docs/README.md). The build-journal and behind-the-scenes articles are Chinese-only (their index pages have English versions); full translations are not planned — they are frozen history.
+What each document covers and whom it serves is maintained in the [documentation index](https://github.com/LeoLoudWarden/sericite/blob/main/docs/README.md). The build-journal and behind-the-scenes articles are Chinese-only (their index pages have English versions); full translations are not planned — they are frozen history.
 
 ## How this project was built
 

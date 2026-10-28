@@ -21,7 +21,7 @@ sub = VM(code, max_instructions=10000)   # 资源配额，只能比当前环境�
 sub = VM(code, output_writer=forward, buffer_output=False)
 ```
 
-`output_writer` 与 `buffer_output` 配置该 VM 的输出，其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
+`output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
 
 root VM 不由脚本创建：直接运行程序时由 CLI 创建（见 [CLI 参考](cli-reference.zh-CN.md)）；嵌入 Python 时由 `SericiteEngine.create_root()` 创建（见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)）。
 
@@ -147,9 +147,9 @@ writer：
 
 累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示本层不设上限。
 
-结构性字段必须是非负有限整数。所有字段都拒绝负数和非整数值。
+结构性字段必须是非负有限整数；累计字段额外接受 `-1`。除此之外的负数和非整数值在所有字段上都会被拒绝。
 
-脚本内创建子 VM 时，`VM()` 的关键字参数与上表一一对应，只能收紧不能放宽。请求值与继承上限合并时：
+脚本内创建子 VM 时，`VM()` 的配额关键字参数与上表一一对应，只能收紧不能放宽。请求值与继承上限合并时：
 
 - 请求 `-1` 会继承父级有效值；
 - 无限父级下的有限请求采用该有限上限；
