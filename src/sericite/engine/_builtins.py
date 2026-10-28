@@ -198,8 +198,7 @@ class _EngineBuiltins:
             raise SericiteError("VM depth limit exceeded", kind="resource_exhausted")
         if causal.child_count >= causal.limits.max_child_vms:
             raise SericiteError("child VM limit exceeded", kind="resource_exhausted")
-        causal.child_count += 1
-        return self._create_vm(
+        handle = self._create_vm(
             source=source,
             parent_id=causal.vm_id,
             depth=depth,
@@ -207,6 +206,8 @@ class _EngineBuiltins:
             limits=limits,
             granted=granted,
         )
+        causal.child_count += 1
+        return handle
 
     def _validate_child_functions(
         self, parent: VMContext, functions: object

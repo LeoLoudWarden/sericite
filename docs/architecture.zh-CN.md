@@ -52,7 +52,10 @@
 4. 脚本能力通过受控原生函数和 VM 句柄方法提供，不能暴露任意 Python 属性。
 5. 执行必须经由内部指令流与统一调度循环；`run()`、`exec()`、`step()`、`step_instruction()` 共享同一条执行路径，不允许旁路执行语义。`run()` 不做逐语句快照，快照只在显式 `step()/snapshot()` 时生成。
 6. 新语法必须先过编译器白名单，再编译为指令；禁止为了省事引入 `exec`/`eval`。
-7. 错误和调试视图只能包含逻辑源码位置及安全值，不能默认透传宿主 traceback 或真实路径；脚本无法感知自己的 VM 嵌套深度。宿主 `RecursionError` 转换为 `resource_exhausted`，`OverflowError` 转换为 `conversion_error`，原生宿主异常不得直接进入脚本。
+7.
+  - a. 错误和调试视图只能包含逻辑源码位置及安全值，不能默认透传宿主 traceback 或真实路径；脚本无法感知自己的 VM 嵌套深度。
+  - b. 宿主 `RecursionError` 转换为 `resource_exhausted`，`OverflowError` 转换为 `conversion_error`，原生宿主异常不得直接进入脚本。
+  - c. `SericiteError.filename` 内嵌引擎级 `vm_id`，仅宿主可见。面向脚本的错误面 `except kind as e` 的绑定值、快照 `error` 视图、消息文本中不得包含泄漏通道。
 8. 新增能力时同步考虑隔离、资源记账、生命周期和调试语义，不只做语法可运行。所有动态消耗必须进入统一 Meter 与 AccountRoute；子 VM 的消耗必须计入祖先。
 9. Sericite 值语义由引擎助手函数定义，不直接继承 Python 运算符的隐式行为（如 bool 不参与算术）。
 10. `resource_exhausted` 与 `internal_error` 不可被脚本 try/except 捕获——配额不能被脚本吞掉。

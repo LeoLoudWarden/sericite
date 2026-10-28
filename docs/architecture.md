@@ -52,7 +52,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 4. Script capabilities are provided through controlled native functions and VM handle methods; arbitrary Python attributes must not be exposed.
 5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `exec()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics. `run()` takes no per-statement snapshots; snapshots are produced only by explicit `step()/snapshot()` calls.
 6. New syntax must first pass the compiler whitelist and then be compiled to instructions; introducing `exec`/`eval` for convenience is forbidden.
-7. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
+7.
+  - a. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth.
+  - b. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
+  - c. `SericiteError.filename` embeds the engine-local vm_id and is host-only. Script-facing error surfaces — the value bound by `except kind as e`, the snapshot `error` view, and message text — must contain no leak channel.
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10. `resource_exhausted` and `internal_error` must not be catchable by script `try/except` — quotas must not be swallowed by scripts.
