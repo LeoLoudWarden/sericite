@@ -2,7 +2,7 @@
 
 [English](sericite-py-reference.md)
 
-本文面向**在 Python 中使用 `sericite` 库的宿主程序**：创建引擎与 root VM、配置配额、授予 FFI、处理错误。Sericite-PY 是 Sericite 语言的 Python 参考实现——语言本身不依赖 Python。写 Sericite 脚本见[语言参考](language-reference.zh-CN.md)；VM 的状态、驱动方法与 exec 投递契约见[虚拟机参考](vm-reference.zh-CN.md)；直接运行脚本见 [CLI 参考](cli-reference.zh-CN.md)。引擎内部的成本契约见[架构说明](architecture.zh-CN.md)。
+本文面向**在 Python 中使用 `sericite` 库的宿主程序**：创建引擎与 root VM、配置配额、授予 FFI、处理错误。Sericite-PY 是 Sericite 语言的 Python 参考实现——语言本身不依赖 Python。
 
 ## 1. 快速上手
 
@@ -44,7 +44,7 @@ engine.create_root(
 - `functions`：授予脚本的宿主函数表，见第 5 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout。默认 `True`，保持 `run()`/`exec()`/`stdout()` 与快照行为；为 `False` 时输出仍计量并转发，但缓冲 stdout 与这些读取结果为空，可避免长期 root 无限保留历史输出。
-- `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；它跨 `exec()` 保留，不隐式进入子 VM。root 的授予函数不能使用同名 `argv`。
+- `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
 
 ## 3. 配额：SericiteLimits
 

@@ -1,6 +1,6 @@
 # Sericite 语言参考
 
-Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.8.0的语言行为，面向正在编写 **Sericite 脚本** 的读者；直接运行脚本及使用 CLI include 见 [CLI 参考](cli-reference.zh-CN.md)；驱动与调试 VM（单步、exec 投递、快照、状态、配额）见[虚拟机参考](vm-reference.zh-CN.md)；在 Python 中嵌入引擎见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
+Sericite 是一门脚本语言，语法是 Python 的子集——写起来就是 Python，但**不是所有 Python 写法都合法**，而且部分语义有自己的规矩。本文自完备：读完即可开写。本文描述 Sericite 0.8.0的语言行为，面向正在编写 **Sericite 脚本** 的读者。
 
 ## 1. 基本样子
 
@@ -9,8 +9,6 @@ name = "world"            # 赋值
 print("hello", name)      # 输出：hello world
 x = input()               # 读入一行（字符串）
 ```
-
-CLI 或宿主创建 root 时，模块作用域会预置普通字符串列表 `argv`；CLI 用它传递源码入口与脚本参数，缺省为空列表。它不是内建函数，可以修改或重绑定，并跨 `exec()` 保留；子 VM 不隐式继承。具体命令行契约见 [CLI 参考](cli-reference.zh-CN.md)，嵌入配置见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
 ## 2. 类型与运算
 
@@ -163,7 +161,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
 
-异常可跨函数传播。`resource_exhausted`（配额耗尽）、`internal_error`（引擎内部错误）与 `host_error`（宿主回调在 FFI 异常契约之外失败）是已定义的 kind，但不可捕获。
+异常可跨函数传播。`resource_exhausted`（配额耗尽）、`internal_error`（意外的运行时失败）与 `host_error`（此脚本语言安全模型之外的、无法保证可恢复性的错误）是已定义的 kind，但不可捕获。
 
 ## 6. 内建函数
 
@@ -255,7 +253,7 @@ p: Point = Point(1, 2)
 
 宽度检查放行带额外字段的值时，属性报错仍保留接收方写下的注解标签。例如 `p: Point = Coord(1, 2)` 后的 `p.z` 可显示为 `record Point {x: int, y: int} has no field 'z'`——`Point` 只是诊断标签，不表示值的 schema 被改写。
 
-跨 VM 与跨 FFI 边界的只有结构。record 与 schema 不能跨宿主 FFI 边界（授予宿主的函数收到 record 会报 `ffi_error`，先 `unwrap`）；经授予函数在父子 VM 之间按引用传递，契约检查跨 VM 依然成立，但子 VM 中的报错只使用授予名（`functions={"f": ...}` 里的 `f`）与结构描述，定义方的函数名和类型标签不会出现。
+跨 VM 与跨 FFI 边界的只有结构。record 与 schema 不能跨 FFI 边界（把 record 传过去会报 `ffi_error`，先 `unwrap`）；经授予函数在父子 VM 之间按引用传递，契约检查跨 VM 依然成立，但子 VM 中的报错只使用授予名（`functions={"f": ...}` 里的 `f`）与结构描述，定义方的函数名和类型标签不会出现。
 
 ## 8. 创建虚拟机（VM）
 
@@ -281,9 +279,12 @@ sub = VM(code, max_instructions=10000, functions={"double": double})
 
 ## 9. 明确不能写（编译期直接拒绝）
 
-`import`、`del`、`*args/**kwargs`、链式比较、切片赋值、元组、f-string、双下划线名称、class 字段默认值/方法/继承、语句级裸注解赋值（`x: T` 不赋值；class 体字段声明 `y: int` 是唯一例外）。内建名（`print`/`len`/`wrap` 等）与契约名（`any/bool/list/dict`）不可重新绑定，契约名只能出现在注解位。
-
-CLI 的 `--include` 不属于语言语法：它只是在编译前按序组合同一 root 的源码，不提供模块、命名空间或 `import` 语义；详见 [CLI 参考](cli-reference.zh-CN.md)。
+- `import` 与 `del`
+- `*args`/`**kwargs`、链式比较与切片赋值
+- 元组、f-string 与双下划线名称
+- class 字段默认值、方法与继承
+- 语句级裸注解赋值（`x: T` 不赋值）——class 体字段声明 `y: int` 是唯一例外
+- 重绑定内建名（`print`/`len`/`wrap` 等）或契约名（`any`/`bool`/`list`/`dict`）——契约名只能出现在注解位
 
 ## 10. 一个完整例子
 
@@ -449,7 +450,7 @@ checker = VM(checker_code, max_instructions=1000)
 sub_out = checker.run(["7", "8"])
 print("sub vm says: " + sub_out)     # sum from sub: 15
 
-# 授予宿主函数给它用（按引用保留定义方环境）
+# 授予一个函数给它用（按引用保留定义方环境）
 def times_ten(x):
     return x * 10
 worker = VM("""

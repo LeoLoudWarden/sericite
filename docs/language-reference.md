@@ -1,6 +1,6 @@
 # Sericite Language Reference
 
-Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.8.0 for authors of **Sericite scripts**. See the [CLI reference](cli-reference.md) to run scripts and use CLI includes, the [VM reference](vm-reference.md) to drive and debug VMs (stepping, exec delivery, snapshots, states, quotas), or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
+Sericite is a scripting language whose syntax is a subset of Python — it reads like Python, but **not every Python construct is legal**, and some semantics have their own rules. This document is self-contained: read it and you can start writing. It describes the language behavior of Sericite 0.8.0 for authors of **Sericite scripts**.
 
 ## 1. What it looks like
 
@@ -9,8 +9,6 @@ name = "world"            # assignment
 print("hello", name)      # prints: hello world
 x = input()               # read one line (a string)
 ```
-
-When the CLI or a host creates a root, its module scope starts with an ordinary string-list variable named `argv`. The CLI uses it for the source entry and script arguments; its default is an empty list. It is not a built-in function, can be modified or rebound, and persists across `exec()` deliveries. Child VMs do not inherit it implicitly. See the [CLI reference](cli-reference.md) for command-line behavior and the [Sericite-PY reference](sericite-py-reference.md) for embedding configuration.
 
 ## 2. Types and operators
 
@@ -163,7 +161,7 @@ The catchable kinds are:
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
 
-Exceptions propagate across functions. `resource_exhausted` (quota exhaustion), `internal_error` (engine bug), and `host_error` (a host callback failed outside the FFI exception contract) are defined kinds but are not catchable.
+Exceptions propagate across functions. `resource_exhausted` (quota exhaustion), `internal_error` (an unexpected runtime failure), and `host_error` (a failure outside this language's security model whose recoverability cannot be guaranteed) are defined kinds but are not catchable.
 
 ## 6. Built-in functions
 
@@ -255,7 +253,7 @@ Names in error messages are **compile-time, scope-local labels**, used only as d
 
 When width checking accepts a value with extra fields, attribute errors still retain the annotation label written by the receiver. For example, after `p: Point = Coord(1, 2)`, `p.z` can report `record Point {x: int, y: int} has no field 'z'` — `Point` is only a diagnostic label and does not mean the value's schema was rewritten.
 
-Only structure crosses the VM and FFI boundaries. Records and schemas cannot cross the host FFI boundary (a host function receiving a record raises `ffi_error` — `unwrap` first). They pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs — but errors reported inside the child VM use only the granted name (the key in `functions={"f": ...}`) with structural descriptions; the definition-side function name and type labels never appear.
+Only structure crosses the VM and FFI boundaries. Records and schemas cannot cross the FFI boundary (a record passed across it raises `ffi_error` — `unwrap` first). They pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs — but errors reported inside the child VM use only the granted name (the key in `functions={"f": ...}`) with structural descriptions; the definition-side function name and type labels never appear.
 
 ## 8. Creating VMs
 
@@ -281,9 +279,12 @@ The same VM can be driven repeatedly: feed input, preset and retrieve files, sin
 
 ## 9. Explicitly not writable (rejected at compile time)
 
-`import`, `del`, `*args/**kwargs`, chained comparisons, slice assignment, tuples, f-strings, dunder names, class field defaults/methods/inheritance, annotated assignments without a value at statement level (`x: T` — class-body field declarations like `y: int` are the exception). Builtin names (`print`/`len`/`wrap` etc.) and contract names (`any/bool/list/dict`) cannot be rebound; contract names may only appear in annotation positions.
-
-CLI `--include` is not language syntax: it only composes root source in order before compilation and provides no module, namespace, or `import` semantics. See the [CLI reference](cli-reference.md).
+- `import` and `del`
+- `*args`/`**kwargs`, chained comparisons, and slice assignment
+- tuples, f-strings, and dunder names
+- class field defaults, methods, and inheritance
+- annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
+- rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`) — contract names may only appear in annotation positions
 
 ## 10. A complete example
 
@@ -449,7 +450,7 @@ checker = VM(checker_code, max_instructions=1000)
 sub_out = checker.run(["7", "8"])
 print("sub vm says: " + sub_out)     # sum from sub: 15
 
-# Grant it a host function (kept by reference to its defining environment)
+# Grant it a function (kept by reference to its defining environment)
 def times_ten(x):
     return x * 10
 worker = VM("""

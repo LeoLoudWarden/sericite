@@ -2,7 +2,7 @@
 
 [中文](sericite-py-reference.zh-CN.md)
 
-This document is for **Python hosts using the `sericite` library**: creating engines and root VMs, configuring quotas, granting FFI capabilities, and handling errors. Sericite-PY is the Python reference implementation of the Sericite language — the language itself does not depend on Python. To write Sericite scripts see the [language reference](language-reference.md); for VM states, driving methods, and the exec delivery contract see the [VM reference](vm-reference.md); to run scripts directly see the [CLI reference](cli-reference.md). Internal cost contracts are covered by the [architecture notes](architecture.md).
+This document is for **Python hosts using the `sericite` library**: creating engines and root VMs, configuring quotas, granting FFI capabilities, and handling errors. Sericite-PY is the Python reference implementation of the Sericite language — the language itself does not depend on Python.
 
 ## 1. Quick start
 
@@ -44,7 +44,7 @@ engine.create_root(
 - `functions`: host capabilities granted to the script; see section 5.
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
 - `buffer_output`: whether root stdout is retained in memory. The default `True` preserves `run()`/`exec()`/`stdout()` and snapshot behavior. With `False`, output is still metered and forwarded, but buffered stdout and these retrieval results are empty. This lets a long-running root avoid unbounded historical-output retention.
-- `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. It persists across `exec()` deliveries and is not implicitly injected into child VMs. A root capability cannot use the conflicting grant name `argv`.
+- `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
 
 ## 3. Quotas: SericiteLimits
 

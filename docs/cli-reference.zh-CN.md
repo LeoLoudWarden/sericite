@@ -2,7 +2,7 @@
 
 [English](cli-reference.md)
 
-本文面向直接运行 Sericite 程序的操作者，描述 `sericite` 命令行与 `python -m sericite` 的共同行为。脚本语法见[语言参考](language-reference.zh-CN.md)；VM 驱动与调试见[虚拟机参考](vm-reference.zh-CN.md)；在 Python 中嵌入引擎见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
+本文面向直接运行 Sericite 程序的操作者，描述 `sericite` 命令行与 `python -m sericite` 的共同行为。
 
 ## 1. 使用形态
 
@@ -62,7 +62,14 @@ sericite --capabilities capabilities.py -c 'run()'
 
 ### 脚本 argv
 
-root 的模块作用域启动时带有普通列表变量 `argv`，元素均为字符串：文件模式为 `[SOURCE_FILE, *ARG]`，`-c` 模式为 `["-c", *ARG]`，stdin 源码模式为 `["-", *ARG]`，REPL 初始为 `[]`。它可以像其他模块变量一样读取、修改或重绑定，并跨 `exec()` 保留；子 VM 不会隐式得到它。
+root 模块启动时带有一个字符串列表变量 `argv`：
+
+- 文件模式为 `[SOURCE_FILE, *ARG]`；
+- `-c` 模式为 `["-c", *ARG]`；
+- stdin 源码模式为 `["-", *ARG]`；
+- REPL 初始为 `[]`。
+
+它是普通模块变量：可以读取、修改或重绑定，并跨 `exec()` 保留；子 VM 不隐式继承。嵌入侧可用 `create_root(argv=...)` 初始化，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节。
 
 ## 3. include：同一 root 的源码组合
 
@@ -157,7 +164,7 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 - 文件、`-c` 和 REPL 中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 后仍请求输入会以 `input_error` 报告。
 - `sericite -` 会消费全部 stdin 作为源码，因此同一 stdin 不能再提供运行输入。
 - root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
-- 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续，启动错误仍然退出。
+- 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续。
 
 | 退出码 | 含义 |
 |---:|---|
