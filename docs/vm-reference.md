@@ -28,7 +28,15 @@ VM states are `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, a
 
 `terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op — terminal VMs such as `done`/`error` still accept `exec` deliveries.
 
-Terminal VM contexts remain available for debugging and further `exec` deliveries until explicitly disposed. `dispose()` accepts only a terminal VM with no live children, so contexts are released child-first. It removes the VM's frames, IO/VFS, grants, and accounting routes; repeated disposal is a no-op, while any other method on a disposed handle fails with `runtime_error`. VM IDs are never reused, and disposal never refunds the parent's ledgers, `child_count`, `max_child_vms`, or the engine's cumulative `max_total_vms`.
+Terminal VM contexts remain available for debugging and further `exec` deliveries until explicitly disposed.
+
+`dispose()` releases a terminal VM with no live children, so contexts are released child-first. It:
+
+- removes the VM's frames, IO/VFS, grants, and accounting routes;
+- is idempotent — repeated disposal is a no-op;
+- invalidates the handle — any other method on a disposed handle fails with `runtime_error`.
+
+Disposal does not refund quotas: VM IDs are never reused, and the parent's ledgers, `child_count`, `max_child_vms`, and the engine's cumulative `max_total_vms` are unchanged.
 
 ## 4. Driving methods
 
@@ -113,11 +121,21 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_fs_files` | 1000 | Files per VM |
 | `max_fs_file_bytes` | 1,048,576 | UTF-8 bytes per file |
 
-The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap. All structural fields must be non-negative finite integers; other negative values and non-integer values are rejected for every field.
+The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap.
 
-When a script creates a child VM, `VM()` keyword arguments correspond one-to-one with this table and can only tighten it. A requested `-1` inherits the parent's effective value; a finite request under an unlimited parent applies that finite cap. Only two unlimited values combine into an unlimited result, so a finite ancestor always remains a hard ceiling. The same rule applies when home and caller limits are combined for granted functions.
+All structural fields must be non-negative finite integers. Negative and non-integer values are rejected for every field.
 
-Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow, and `dispose()` does not refund them. Unlimited stdout also remains buffered even when forwarded live. Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
+When a script creates a child VM, `VM()` keyword arguments correspond one-to-one with this table and can only tighten it. Combining a request with the inherited ceiling:
+
+- a requested `-1` inherits the parent's effective value;
+- a finite request under an unlimited parent applies that finite cap;
+- only two unlimited values combine into an unlimited result, so a finite ancestor always remains a hard ceiling.
+
+The same rule applies when home and caller limits are combined for granted functions.
+
+Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow, and stdout remains buffered even when forwarded live.
+
+Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
 
 ## 6. Granting functions
 

@@ -9,7 +9,7 @@
 
 Syntax borrows a subset of Python, but Sericite source is compiled into Sericite's own instruction stream and executed by the Sericite engine — never through `exec`/`eval`. Every VM starts with zero capabilities: its own virtual IO, its own in-memory filesystem, and the ability to create child VMs. Everything else (network, host data, whatever you choose) is granted explicitly, layer by layer, through FFI.
 
-[中文文档与项目说明](https://github.com/LeoLoudWarden/sericite/blob/main/README.zh-CN.md)
+[中文文档](https://github.com/LeoLoudWarden/sericite/blob/main/README.zh-CN.md)
 
 ## Status
 
@@ -89,18 +89,18 @@ Rationale: [design notes §3.4](https://github.com/LeoLoudWarden/sericite/blob/m
 
 ## Documentation
 
-| Document | 中文 |
+| English | 中文 |
 |---|---|
-| [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) | [design.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) |
-| [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) | [prior-art.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) |
-| [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) | [cli-reference.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) |
-| [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) | [language-reference.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) |
-| [VM reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) | [vm-reference.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) |
-| [Sericite-PY reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) | [sericite-py-reference.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) |
-| [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) | [architecture.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) |
-| [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) | [security.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) |
-| [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | [stages/README.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
-| [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) | [behind-the-scenes/README.zh-CN.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) |
+| [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) | [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) |
+| [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) | [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) |
+| [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) | [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) |
+| [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) | [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) |
+| [VM reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) | [虚拟机参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) |
+| [Sericite-PY reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) | [Sericite-PY 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) |
+| [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) | [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) |
+| [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) | [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) |
+| [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) |
+| [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) | [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) |
 
 What each document covers and whom it serves is maintained in the [documentation index](docs/README.md). The build-journal and behind-the-scenes articles are Chinese-only (their index pages have English versions); full translations are not planned — they are frozen history.
 

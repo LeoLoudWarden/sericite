@@ -28,7 +28,15 @@ VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhau
 
 `terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作——`done`/`error` 等终态 VM 仍可被 `exec` 投递。
 
-VM 终态后，引擎仍保留上下文供调试和后续 `exec` 投递，直到显式 `dispose()`。只有已终态且没有存活后代的 VM 可以释放，因此必须按子先父后的顺序操作。释放会删除该 VM 的帧、IO/VFS、授予环境与计费路由；重复释放是空操作，已释放句柄上的其他方法则以 `runtime_error` 失败。`vm_id` 永不复用，释放也不会退还父级账本、`child_count`、`max_child_vms` 或引擎累计的 `max_total_vms`。
+VM 终态后，引擎仍保留上下文供调试和后续 `exec` 投递，直到显式 `dispose()`。
+
+`dispose()` 只能释放已终态且没有存活后代的 VM，因此必须按子先父后的顺序操作。它会：
+
+- 删除该 VM 的帧、IO/VFS、授予环境与计费路由；
+- 幂等——重复释放是空操作；
+- 使句柄失效——已释放句柄上的其他方法以 `runtime_error` 失败。
+
+释放不退还配额：`vm_id` 永不复用，父级账本、`child_count`、`max_child_vms` 与引擎累计的 `max_total_vms` 均不变。
 
 ## 4. 驱动方法
 
@@ -113,11 +121,21 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 | `max_fs_files` | 1000 | 单 VM 文件数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 单文件 UTF-8 字节上限 |
 
-累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示本层不设上限。结构性字段必须是非负有限整数；所有字段都拒绝其他负数和非整数值。
+累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示本层不设上限。
 
-脚本内创建子 VM 时，`VM()` 的关键字参数与上表一一对应，只能收紧不能放宽。请求 `-1` 会继承父级有效值；无限父级下的有限请求采用该有限上限。只有两侧都无限才得到无限，因此有限祖先始终是硬上限。授予函数合并 home 与 caller 配额时也遵守同一规则。
+结构性字段必须是非负有限整数。所有字段都拒绝负数和非整数值。
 
-无限只跳过上限检查，不跳过记账：诊断账本继续增长，`dispose()` 也不会退还账本。无限 stdout 即使实时转发也仍会持续缓冲。指令、内存和子 VM 消耗按因果路由计入相关祖先。计费模型见[架构说明](architecture.zh-CN.md)第 5 节；Python 宿主经 `SericiteLimits` 为 root 配置同一组字段，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 3 节。
+脚本内创建子 VM 时，`VM()` 的关键字参数与上表一一对应，只能收紧不能放宽。请求值与继承上限合并时：
+
+- 请求 `-1` 会继承父级有效值；
+- 无限父级下的有限请求采用该有限上限；
+- 只有两侧都无限才得到无限，因此有限祖先始终是硬上限。
+
+授予函数合并 home 与 caller 配额时也遵守同一规则。
+
+无限只跳过上限检查，不跳过记账：诊断账本继续增长，stdout 即使实时转发也仍会持续缓冲。
+
+指令、内存和子 VM 消耗按因果路由计入相关祖先。计费模型见[架构说明](architecture.zh-CN.md)第 5 节；Python 宿主经 `SericiteLimits` 为 root 配置同一组字段，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 3 节。
 
 ## 6. 授予函数
 

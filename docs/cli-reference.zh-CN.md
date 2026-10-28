@@ -108,7 +108,7 @@ def configure():
 - 未知键、缺少可调用的 `configure()`、返回非 dict 或字段类型错误都会使启动失败。
 - `functions` 的授予名仍由引擎校验。
 - `files` 通过公开 VM 句柄写入，仍受文件数、单文件字节等限制。
-- 可信的长期 root 可以把五项累计配额设为 `-1`；结构性配额仍保持有限。这意味着操作者自行承担实际资源安全，不得用于不可信代码。
+- 可信的长期 root 可以把五项累计配额设为 `-1`；结构性配额仍保持有限。资源安全含义见[安全模型](security.zh-CN.md)第 3 节。
 
 FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，配额字段与无限配额的继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节，不在此复制。
 

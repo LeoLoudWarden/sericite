@@ -89,18 +89,18 @@ print(vm.run(), end="")    # 42
 
 ## 文档
 
-| 文档 | English |
+| 中文 | English |
 |---|---|
-| [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | [design.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) |
-| [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | [prior-art.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) |
-| [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) | [cli-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) |
-| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | [language-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) |
-| [虚拟机参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) | [vm-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) |
-| [Sericite-PY 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) | [sericite-py-reference.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) |
-| [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | [architecture.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) |
-| [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | [security.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) |
-| [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [stages/README.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |
-| [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | [behind-the-scenes/README.md](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) |
+| [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) |
+| [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) |
+| [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) | [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) |
+| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) |
+| [虚拟机参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) | [VM reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) |
+| [Sericite-PY 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) | [Sericite-PY reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) |
+| [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) |
+| [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) |
+| [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |
+| [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) |
 
 每篇文档的定位与读者指引集中在[文档索引](docs/README.zh-CN.md)维护。构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
 
