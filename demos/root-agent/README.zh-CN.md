@@ -67,7 +67,14 @@ LOG_LLM_FULL_JSON = False
 
 网络重试也会记录。把 `LOG_LLM_FULL_JSON` 改为 `True` 可额外输出完整请求/响应 JSON。日志立即 flush，且不会记录 Authorization 头或 API key。
 
-完整 JSON 会包含提示词、模型生成的代码和工具结果，分享前需检查内容；需要分开保存时可使用 `2>llm.log`。root 的 `print()` 也会由 CLI 实时转发到 stdout，因此应用进度和宿主网络日志都不再需要等程序结束。
+完整 JSON 会包含提示词、模型生成的代码和工具结果，分享前需检查内容；需要分开保存时可使用 `2>llm.log`。
+
+执行进度也可实时看到：
+
+- root 的 `print()` 会由 CLI 实时转发到 stdout。
+- 第一层 VM 通过 `output_writer` 把自己的输出经 root 转发，模型生成的进度在执行期间即可见。
+- 实时输出、工具参数和工具结果都用 `repr` 展示，多行文本会被压缩到单个日志行，且不改变传回模型的原始工具结果。
+- 第一层 stdout 仍保留缓冲，因为 `sub.exec()` 还要把同一段文本作为 `sericite_exec` 的工具结果返回。
 
 ## 文件与职责
 

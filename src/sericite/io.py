@@ -20,6 +20,7 @@ class VirtualIO:
         input_provider: Callable[[], str | None] | None = None,
         max_output_bytes: int | None = None,
         output_writer: Callable[[str], object] | None = None,
+        buffer_output: bool = True,
     ) -> None:
         self._inputs: deque[str] = deque()
         self._output = StringIO()
@@ -27,6 +28,7 @@ class VirtualIO:
         self._max_output_bytes = max_output_bytes
         self._input_provider = input_provider
         self._output_writer = output_writer
+        self._buffer_output = buffer_output
         if inputs is not None:
             self.feed_batch_trusted(inputs)
 
@@ -100,7 +102,8 @@ class VirtualIO:
             if self._output_size + size > self._max_output_bytes:
                 raise OutputLimitExceeded
             self._output_size += size
-        self._output.write(value)
+        if self._buffer_output:
+            self._output.write(value)
         if self._output_writer is not None:
             self._output_writer(value)
 

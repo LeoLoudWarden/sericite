@@ -14,11 +14,14 @@ A VM is not single-use: the same VM can be fed input, have files preset and retr
 
 ## 2. Creating VMs
 
-Inside a script, create a child VM with `VM(code, **limits)`:
+Inside a script, create a child VM with `VM(code, **options)`:
 
 ```python
 sub = VM(code, max_instructions=10000)   # quotas can only be tightened
+sub = VM(code, output_writer=forward, buffer_output=False)
 ```
+
+`output_writer` and `buffer_output` configure this VM's output; the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
 
 Root VMs are not created by scripts: the CLI creates one when running a program directly (see the [CLI reference](cli-reference.md)); in Python embedding, `SericiteEngine.create_root()` creates it (see the [Sericite-PY reference](sericite-py-reference.md)).
 
@@ -65,6 +68,27 @@ print(sub.read_file("/result.txt"))      # retrieve the file it wrote
 ```
 
 Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught (see the [language reference](language-reference.md) §5 for error kinds).
+
+### Output forwarding and buffering
+
+Every VM has independent `output_writer` and `buffer_output` settings. A child writer is explicitly configured by its parent and is never inherited implicitly:
+
+```python
+def forward(text):
+    print(text, end="")
+
+sub = VM('print("live")', output_writer=forward)
+```
+
+The writer:
+
+- receives one string for each `print()` chunk, after output accounting and buffering;
+- follows granted-function semantics: execution uses the actual caller's frame stack and quotas, while module variables, closures, grants, and IO remain those of the definition side;
+- forwards through the parent's configured output chain when it calls the parent's `print()`;
+- ignores its return value; errors propagate at the triggering `print()` under the usual rules;
+- must finish synchronously — attempting to suspend it on `input()` raises `runtime_error` at that `print()`.
+
+`buffer_output=True` is the default and preserves complete stdout for `run()`/`exec()`/`stdout()` and snapshots. With `buffer_output=False`, output is still metered and forwarded but not retained: those buffered-output views are empty. Output and writer settings persist across `exec` deliveries.
 
 ### exec: delivering new source into an existing VM
 
@@ -133,7 +157,7 @@ When a script creates a child VM, `VM()` keyword arguments correspond one-to-one
 
 The same rule applies when home and caller limits are combined for granted functions.
 
-Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow, and stdout remains buffered even when forwarded live.
+Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow. Stdout is buffered by default even when forwarded live; configure `buffer_output=False` when historical-output retention is not needed.
 
 Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
 
@@ -156,4 +180,4 @@ A granted sericite function:
 - is jointly constrained — world services and target execution — by causal routes spanning home/target and caller, with shared ancestors charged once;
 - passes result ownership to the actual caller.
 
-Granting or re-granting a function grants the world reachable through it: grant only functions whose reachable state the child VM may observe or modify. VM handles themselves cannot cross FFI into the host. The mechanism and its design invariants are in the [architecture notes](architecture.md), invariant 13 and section 5.4; granting Python functions to a root from the host (FFI) is covered by the [Sericite-PY reference](sericite-py-reference.md) §5.
+Granting or re-granting a function grants the world reachable through it — including captured VM handles, which carry their `terminate()`/`dispose()` authority. Grant only functions whose reachable state the child VM may observe or modify. VM handles themselves cannot cross FFI into the host. The mechanism and its design invariants are in the [architecture notes](architecture.md), invariant 13 and section 5.4; granting Python functions to a root from the host (FFI) is covered by the [Sericite-PY reference](sericite-py-reference.md) §5.

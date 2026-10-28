@@ -249,6 +249,7 @@ class VMContext:
     limits: SericiteLimits
     frames: list[Frame] = field(default_factory=list)
     granted: dict[str, object] = field(default_factory=dict)
+    output_writer: object = None
     state: str = "ready"
     last_line: int | None = None
     error: SericiteError | None = None

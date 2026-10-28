@@ -518,6 +518,50 @@ class BuiltinTests(unittest.TestCase):
             "42\n3\n0.5\n12\nNone\n",
         )
 
+    def test_repr_strings_and_containers(self):
+        text = 'first\nsecond\t\\"你好'
+        self.assertEqual(run(f"print(repr({text!r}))"), f"{text!r}\n")
+        self.assertEqual(
+            run(f"print(repr([{text!r}, 1, True, None]))"),
+            f"[{text!r}, 1, True, None]\n",
+        )
+        self.assertEqual(run("print(repr(42))\nprint(repr(None))"), "42\nNone\n")
+
+    def test_repr_respects_result_size_limit(self):
+        engine = SericiteEngine(SericiteLimits(max_string_bytes=3))
+        vm = engine.create_root('result = repr("\\n")')
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_repr_charges_scaled_work_and_result_allocation(self):
+        counts = {}
+        for size in (10, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            text = "\n" * size
+            vm = engine.create_root(
+                f"value = {text!r}\ncheckpoint()\nresult = repr(value)\ncheckpoint()",
+                functions={
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    )
+                },
+            )
+            vm.run()
+            result = engine._contexts[0].frames[0].locals["result"]
+            work = checkpoints[1][0] - checkpoints[0][0]
+            allocation = checkpoints[1][1] - checkpoints[0][1]
+            counts[size] = work
+            self.assertGreaterEqual(work, size // 64)
+            self.assertEqual(allocation, len(result) * 4 + 8)
+        self.assertGreater(counts[1000], counts[10])
+
     def test_conversion_error(self):
         with self.assertRaises(SericiteError) as ctx:
             run('print(int("abc"))\n')

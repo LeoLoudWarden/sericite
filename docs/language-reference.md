@@ -166,7 +166,7 @@ Exceptions propagate across functions. `resource_exhausted` (quota exhaustion), 
 ## 6. Built-in functions
 
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
-- `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `range(...)` (returns a list).
+- `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
 - Files (text only): `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
@@ -275,7 +275,7 @@ VMs are mutually isolated workspaces: a VM cannot see your variables or touch yo
 sub = VM(code, max_instructions=10000, functions={"double": double})
 ```
 
-The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. A terminal VM can be released with `sub.dispose()`, and the five cumulative quota fields accept `-1` for no local cap. The full contracts for VM states, driving and disposal, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
+The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. A terminal VM can be released with `sub.dispose()`. At creation, `output_writer` can forward output through a parent function and `buffer_output` controls whether stdout is retained. The five cumulative quota fields also accept `-1` for no local cap. The full contracts for VM states, output, driving and disposal, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
 
 ## 9. Explicitly not writable (rejected at compile time)
 

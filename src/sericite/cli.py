@@ -189,6 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             limits=config.get("limits"),
             functions=config.get("functions"),
             output_writer=_write_stdout,
+            buffer_output=False,
         )
         for path, text in (config.get("files") or {}).items():
             root.write_file(path, text)

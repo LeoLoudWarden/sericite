@@ -166,7 +166,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 ## 6. 内建函数
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
-- `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`range(...)`（返回 list）。
+- `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
 - 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
@@ -275,7 +275,7 @@ VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文�
 sub = VM(code, max_instructions=10000, functions={"double": double})
 ```
 
-同一台 VM 可以反复驱动：喂输入、预置和读取文件、逐语句或逐指令单步、查看快照、用 `sub.exec(code)` 投递新源码、随时终止。已终态的 VM 可用 `sub.dispose()` 释放，五项累计配额也接受 `-1` 表示本层不设上限。VM 状态、驱动与释放、exec 投递、配额字段与授予语义的完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
+同一台 VM 可以反复驱动：喂输入、预置和读取文件、逐语句或逐指令单步、查看快照、用 `sub.exec(code)` 投递新源码、随时终止。已终态的 VM 可用 `sub.dispose()` 释放。创建时可用 `output_writer` 经父级函数转发输出，用 `buffer_output` 控制是否保留 stdout。五项累计配额也接受 `-1` 表示本层不设上限。VM 状态、输出、驱动与释放、exec 投递、配额字段与授予语义的完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
 
 ## 9. 明确不能写（编译期直接拒绝）
 

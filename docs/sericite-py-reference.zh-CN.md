@@ -32,6 +32,7 @@ engine.create_root(
     limits=None,
     functions=None,
     output_writer=None,
+    buffer_output=True,
 )
 ```
 
@@ -40,7 +41,8 @@ engine.create_root(
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
 - `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。
 - `functions`：授予脚本的宿主函数表，见第 5 节。
-- `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。累计 stdout 与 `run()` 返回值不变；输出计量和上限仍先生效，子 VM 不继承该回调。
+- `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
+- `buffer_output`：是否在内存中保留 root stdout。默认 `True`，保持 `run()`/`exec()`/`stdout()` 与快照行为；为 `False` 时输出仍计量并转发，但缓冲 stdout 与这些读取结果为空，可避免长期 root 无限保留历史输出。
 
 ## 3. 配额：SericiteLimits
 

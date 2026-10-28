@@ -57,6 +57,7 @@ class RootAgentDemoTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("[外层VM实时] '", result.stdout)
         self.assertIn("外层练习: fib", result.stdout)
         self.assertIn("内层练习: 写读文件", result.stdout)
         self.assertIn("来自最内层 VM 的笔记", result.stdout)
@@ -64,7 +65,7 @@ class RootAgentDemoTests(unittest.TestCase):
         self.assertIn("外层收尾：练习完成，内层会话也跑完了。", result.stdout)
         self.assertNotIn("prompt_outer.txt", result.stdout)
         self.assertNotIn("/control", result.stdout)
-        self.assertEqual(result.stdout.count("(sericite execution failed)"), 1)
+        self.assertEqual(result.stdout.count("(syntax_error:"), 1)
         self.assertEqual(self.mock.Handler.outer_turn, 5)
         self.assertEqual(self.mock.Handler.inner_turn, 2)
         self.assertIn("[llm_chat] call #1 request: model=mock", result.stderr)

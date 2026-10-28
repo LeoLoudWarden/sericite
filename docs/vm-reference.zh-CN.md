@@ -14,11 +14,14 @@ VM 不是一次性的：同一台 VM 可以喂输入、预置和读取文件、�
 
 ## 2. 创建 VM
 
-脚本内用 `VM(code, **limits)` 创建子 VM：
+脚本内用 `VM(code, **options)` 创建子 VM：
 
 ```python
 sub = VM(code, max_instructions=10000)   # 资源配额，只能比当前环境更严
+sub = VM(code, output_writer=forward, buffer_output=False)
 ```
+
+`output_writer` 与 `buffer_output` 配置该 VM 的输出，其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
 
 root VM 不由脚本创建：直接运行程序时由 CLI 创建（见 [CLI 参考](cli-reference.zh-CN.md)）；嵌入 Python 时由 `SericiteEngine.create_root()` 创建（见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)）。
 
@@ -65,6 +68,27 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 ```
 
 输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获（错误 kind 见[语言参考](language-reference.zh-CN.md)第 5 节）。
+
+### 输出转发与缓冲
+
+每台 VM 都有独立的 `output_writer` 与 `buffer_output` 配置。子级 writer 由父级显式配置，不会隐式继承：
+
+```python
+def forward(text):
+    print(text, end="")
+
+sub = VM('print("live")', output_writer=forward)
+```
+
+writer：
+
+- 在每次 `print()` 完成输出计量和缓冲后接收一个字符串；
+- 遵循授予函数语义：在实际 caller 的帧栈上执行并受其与祖先的配额约束，同时保留定义侧的模块变量、闭包、授予环境和 IO；
+- 调用父级 `print()` 时，输出因此继续沿父级配置链转发；
+- 返回值被忽略，异常按普通规则在触发它的 `print()` 处传播；
+- 必须同步完成——若试图通过 `input()` 暂停，会在该 `print()` 处抛出 `runtime_error`。
+
+默认 `buffer_output=True`，为 `run()`/`exec()`/`stdout()` 和快照保留完整 stdout。设为 `False` 后，输出仍计量并转发，但不再保留，上述缓冲输出视图为空。输出与 writer 配置跨 `exec` 投递保留。
 
 ### exec：向既有 VM 投递新源码
 
@@ -133,7 +157,7 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 授予函数合并 home 与 caller 配额时也遵守同一规则。
 
-无限只跳过上限检查，不跳过记账：诊断账本继续增长，stdout 即使实时转发也仍会持续缓冲。
+无限只跳过上限检查，不跳过记账：诊断账本继续增长。stdout 默认即使实时转发也持续缓冲；不需要保留历史输出时可配置 `buffer_output=False`。
 
 指令、内存和子 VM 消耗按因果路由计入相关祖先。计费模型见[架构说明](architecture.zh-CN.md)第 5 节；Python 宿主经 `SericiteLimits` 为 root 配置同一组字段，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 3 节。
 
@@ -156,4 +180,4 @@ sub.run()                        # 输出 42
 - 世界服务和目标执行由 home/target 与 caller 的联合因果路由约束，共享祖先只计一次；
 - 返回值的所有权进入实际调用方。
 
-授予或转授函数就是授予它可达的世界：只应授予允许子 VM 读取或修改其可达状态的函数。VM 句柄本身不能通过 FFI 传给宿主。机制细节与设计不变量见[架构说明](architecture.zh-CN.md)不变量 13 与第 5.4 节；宿主向 root 授予 Python 函数（FFI）见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5 节。
+授予或转授函数就是授予它可达的世界——包括捕获的 VM 句柄，接收方因此获得对它的 `terminate()`/`dispose()` 权限。只应授予允许子 VM 读取或修改其可达状态的函数。VM 句柄本身不能通过 FFI 传给宿主。机制细节与设计不变量见[架构说明](architecture.zh-CN.md)不变量 13 与第 5.4 节；宿主向 root 授予 Python 函数（FFI）见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5 节。
