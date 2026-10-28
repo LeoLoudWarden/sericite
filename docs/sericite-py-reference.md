@@ -33,6 +33,7 @@ engine.create_root(
     functions=None,
     output_writer=None,
     buffer_output=True,
+    argv=None,
 )
 ```
 
@@ -43,6 +44,7 @@ engine.create_root(
 - `functions`: host capabilities granted to the script; see section 5.
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
 - `buffer_output`: whether root stdout is retained in memory. The default `True` preserves `run()`/`exec()`/`stdout()` and snapshot behavior. With `False`, output is still metered and forwarded, but buffered stdout and these retrieval results are empty. This lets a long-running root avoid unbounded historical-output retention.
+- `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. It persists across `exec()` deliveries and is not implicitly injected into child VMs. A root capability cannot use the conflicting grant name `argv`.
 
 ## 3. Quotas: SericiteLimits
 

@@ -33,6 +33,8 @@ pip install sericite
 sericite -c 'print("hello from sericite")'
 printf 'print("hello from sericite")\n' > hello.sericite
 sericite hello.sericite        # hello from sericite
+sericite                       # 进入 REPL，EOF 退出
+sericite -c 'print(argv)' first second
 ```
 
 代码复用与 root 应用能力配置：

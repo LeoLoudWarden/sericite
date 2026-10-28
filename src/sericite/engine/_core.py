@@ -59,9 +59,23 @@ class _EngineCore:
         functions: dict[str, Callable[..., object]] | None = None,
         output_writer: Callable[[str], object] | None = None,
         buffer_output: bool = True,
+        argv: Iterable[str] | None = None,
     ) -> VMHandle:
         if type(buffer_output) is not bool:
             raise SericiteError("buffer_output must be a bool", kind="type_error")
+        if argv is None:
+            root_argv = []
+        else:
+            if isinstance(argv, str):
+                raise SericiteError("root argv must contain strings", kind="type_error")
+            try:
+                root_argv = list(argv)
+            except TypeError:
+                raise SericiteError(
+                    "root argv must be an iterable of strings", kind="type_error"
+                ) from None
+            if any(not isinstance(value, str) for value in root_argv):
+                raise SericiteError("root argv must contain strings", kind="type_error")
         effective = limits or self._limits
         io = VirtualIO(
             inputs=inputs,
@@ -74,6 +88,11 @@ class _EngineCore:
             output_writer=output_writer,
             buffer_output=buffer_output,
         )
+        if functions is not None and "argv" in functions:
+            raise SericiteError(
+                "granted function name 'argv' conflicts with a root initial value",
+                kind="type_error",
+            )
         granted = self._validate_host_functions(functions)
         return self._create_vm(
             source=source,
@@ -82,6 +101,7 @@ class _EngineCore:
             io=io,
             limits=effective,
             granted=granted,
+            initial_locals={"argv": root_argv},
         )
 
     def _validate_host_functions(
@@ -110,6 +130,7 @@ class _EngineCore:
         limits: SericiteLimits,
         granted: dict[str, object] | None = None,
         output_writer: object = None,
+        initial_locals: dict[str, object] | None = None,
     ) -> VMHandle:
         filename = f"<sericite:vm_{self._next_vm_id}>"
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
@@ -138,7 +159,7 @@ class _EngineCore:
                 max_file_bytes=limits.max_fs_file_bytes,
             ),
             limits=limits,
-            frames=[Frame(code=code)],
+            frames=[Frame(code=code, locals=dict(initial_locals or {}))],
             granted=dict(granted) if granted else {},
             output_writer=output_writer,
         )

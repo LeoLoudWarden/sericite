@@ -4,15 +4,17 @@
 
 This document is for operators running Sericite programs directly. It describes the shared behavior of `sericite` and `python -m sericite`. See the [language reference](language-reference.md) for script semantics, the [VM reference](vm-reference.md) for VM driving and debugging, or the [Sericite-PY reference](sericite-py-reference.md) to embed the engine in Python.
 
-## 1. Three ways to run
+## 1. Ways to run
 
 ```bash
+sericite
 sericite app.sericite
 sericite --capabilities capabilities.py app.sericite
 ```
 
+- **REPL**: start an interactive session on a persistent root when no source entry is given.
 - **Plain CLI**: run a Sericite program using only built-in capabilities.
-- **CLI + capabilities**: a Python file supplies trusted FFI, limits, and initial VFS files while the application itself runs in the root Sericite VM.
+- **CLI + capabilities**: a Python file supplies trusted FFI, limits, and initial VFS files while the application itself runs in the root Sericite VM; this also works with the REPL.
 - **Python embedding**: an existing host uses `SericiteEngine` directly without the CLI; see the [Sericite-PY reference](sericite-py-reference.md).
 
 `sericite` is the installed command; use `uv run sericite` in a source checkout. `python -m sericite` uses the same entry point.
@@ -21,36 +23,54 @@ sericite --capabilities capabilities.py app.sericite
 
 ```text
 sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
-         (SOURCE_FILE | -c SOURCE)
+         [(SOURCE_FILE | -c SOURCE) [ARG ...]]
 ```
 
 | Option | Meaning |
 |---|---|
 | `-h`, `--help` | Show help and exit |
 | `--version` | Show the runtime version |
-| `SOURCE_FILE` | Read and run a UTF-8 source file; `-` reads all source from stdin |
+| `SOURCE_FILE` | Read and run a UTF-8 source file; `-` reads all source from stdin; omit it for the REPL |
 | `-c SOURCE`, `--command SOURCE` | Execute a source string directly |
+| `ARG ...` | Arguments passed to the script without CLI interpretation |
 | `--capabilities FILE` | Call `configure()` in a trusted Python file to configure the root VM |
-| `--include FILE` | Prepend a source file; repeat in the desired order |
+| `--include FILE` | Prepend a source file before the main source or REPL; repeat in the desired order |
 
-`SOURCE_FILE` and `-c` are mutually exclusive, and one is required. Paths resolve against the current working directory; use `--` before a filename beginning with a dash. `.sericite` is a convention, not an enforced suffix.
+`SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag`. Use `--` before the entry to end CLI options explicitly or to pass a filename beginning with a dash. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
 
 ```bash
 sericite -c 'print("hello")'
+sericite -c 'print(argv)' first --flag
 printf 'print("hello")\n' | sericite -
-sericite --include base.sericite --include util.sericite app.sericite
+sericite --include base.sericite --include util.sericite app.sericite first
 sericite --capabilities capabilities.py -c 'run()'
 ```
 
-There is currently no REPL, script argv, or individual command-line flag for each limit. `python -m sericite` accepts the same options.
+There is currently no individual command-line flag for each limit. `python -m sericite` accepts the same options.
+
+### REPL
+
+With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root, runs the includes, and enters an interactive loop:
+
+- `>>>` waits for a new entry and `...` waits for a multiline statement to finish; blank input is not executed.
+- Variables, functions, schemas, and the VFS persist across entries, each delivered through the root's `exec()`.
+- A single expression echoes its result with `repr`, including `None`; other statements produce only their own output.
+- A compilation or runtime error goes to stderr and the session continues. An include or capability startup failure still exits with status 1.
+- EOF exits normally with status 0. Script `input()` still reads host stdin; exhausted input is reported as `input_error`.
+
+History, completion, advanced line editing, and debugging commands are not included.
+
+### Script argv
+
+The root module starts with an ordinary list variable named `argv`, containing only strings: `[SOURCE_FILE, *ARG]` in file mode, `["-c", *ARG]` in command mode, `["-", *ARG]` for stdin source, and initially `[]` in the REPL. It can be read, modified, or rebound like any other module variable and persists across `exec()` deliveries. Child VMs do not inherit it implicitly.
 
 ## 3. Includes: source composition in one root
 
 `--include` is a CLI code-reuse facility, not Sericite `import` — a future module system is a separate design, with no promise of include-compatible semantics:
 
-1. Read every include in option order, followed by the main file, command, or stdin source.
+1. One-shot mode reads every include in option order, followed by the main file, command, or stdin source. The REPL startup unit contains only includes.
 2. Combine all text into **one compilation unit**, running in one root VM and one module-global scope.
-3. Functions, variables, and side effects are shared in order; the main source can call included functions directly.
+3. Functions, variables, and side effects are shared in order; the main source or later REPL entries can use included names directly.
 4. There is no deduplication, cache, namespace, or child VM. Repeating an include repeats its execution.
 5. Execution starts only after the combined source compiles. If any part fails compilation, no part has run.
 6. The combined source remains subject to the engine's 4MB limit.
@@ -134,15 +154,15 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 
 ## 5. Input, output, and exit codes
 
-- In file and `-c` modes, script `input()` reads host stdin line by line. Requesting more input after EOF fails with `input_error`.
+- In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. Requesting more input after EOF is reported as `input_error`.
 - `sericite -` consumes all stdin as source, so that stdin cannot also supply runtime input.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
-- Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr.
+- Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error but still exits on startup errors.
 
 | Exit code | Meaning |
 |---:|---|
-| 0 | Root completed normally |
-| 1 | File/configuration loading or validation failed, compilation/runtime failed, or input was exhausted (`input_error`) |
+| 0 | Root completed normally, or the REPL ended with EOF |
+| 1 | File/configuration loading or validation failed, one-shot execution or REPL startup failed, or one-shot input was exhausted (`input_error`) |
 | 2 | Command-line usage error |
 
 Process-level events such as `KeyboardInterrupt` and `SystemExit` are not swallowed as ordinary script or configuration errors.

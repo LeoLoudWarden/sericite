@@ -10,6 +10,8 @@ print("hello", name)      # 输出：hello world
 x = input()               # 读入一行（字符串）
 ```
 
+CLI 或宿主创建 root 时，模块作用域会预置普通字符串列表 `argv`；CLI 用它传递源码入口与脚本参数，缺省为空列表。它不是内建函数，可以修改或重绑定，并跨 `exec()` 保留；子 VM 不隐式继承。具体命令行契约见 [CLI 参考](cli-reference.zh-CN.md)，嵌入配置见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
+
 ## 2. 类型与运算
 
 内建类型：`int`、`float`、`str`、`bool`、`None`、`list`、`dict`，以及自定义的 `record`（见第 7 节）。

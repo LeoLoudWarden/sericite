@@ -4,15 +4,17 @@
 
 本文面向直接运行 Sericite 程序的操作者，描述 `sericite` 命令行与 `python -m sericite` 的共同行为。脚本语法见[语言参考](language-reference.zh-CN.md)；VM 驱动与调试见[虚拟机参考](vm-reference.zh-CN.md)；在 Python 中嵌入引擎见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
-## 1. 三种使用形态
+## 1. 使用形态
 
 ```bash
+sericite
 sericite app.sericite
 sericite --capabilities capabilities.py app.sericite
 ```
 
+- **REPL**：不带源码参数启动持久 root 上的交互会话。
 - **纯 CLI**：运行只使用内建能力的 Sericite 程序。
-- **CLI + 能力配置**：Python 文件只提供可信 FFI、配额和初始 VFS，应用主体仍运行在 root Sericite VM 中。
+- **CLI + 能力配置**：Python 文件只提供可信 FFI、配额和初始 VFS，应用主体仍运行在 root Sericite VM 中；同样适用于 REPL。
 - **Python 嵌入**：既有宿主系统直接使用 `SericiteEngine` API；这不经过 CLI，详见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
 `sericite` 是已安装的命令；在源码开发环境中也可写成 `uv run sericite`。`python -m sericite` 使用同一入口。
@@ -21,36 +23,54 @@ sericite --capabilities capabilities.py app.sericite
 
 ```text
 sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
-         (SOURCE_FILE | -c SOURCE)
+         [(SOURCE_FILE | -c SOURCE) [ARG ...]]
 ```
 
 | 参数 | 含义 |
 |---|---|
 | `-h`, `--help` | 显示帮助并退出 |
 | `--version` | 显示运行时版本 |
-| `SOURCE_FILE` | 读取并运行 UTF-8 源文件；`-` 表示从 stdin 读取完整源码 |
+| `SOURCE_FILE` | 读取并运行 UTF-8 源文件；`-` 表示从 stdin 读取完整源码；省略时进入 REPL |
 | `-c SOURCE`, `--command SOURCE` | 直接执行命令行中的源码字符串 |
+| `ARG ...` | 传给脚本的参数，不由 CLI 解释 |
 | `--capabilities FILE` | 从可信 Python 文件调用 `configure()`，配置 root VM |
-| `--include FILE` | 在主源码前组合一个文件；可重复，顺序即命令行顺序 |
+| `--include FILE` | 在主源码或 REPL 前组合一个文件；可重复，顺序即命令行顺序 |
 
-`SOURCE_FILE` 与 `-c` 互斥且必须提供一个。文件路径按当前工作目录解析；以横线开头的文件名可放在 `--` 后。`.sericite` 是约定后缀，不做强制校验。
+`SOURCE_FILE` 与 `-c` 互斥；两者都省略时进入 REPL。CLI 选项放在源码入口之前，入口之后的内容全部属于脚本，包括 `--flag` 这类横线参数。可在入口前用 `--` 显式结束 CLI 选项，以横线开头的文件名也由此传入。文件路径按当前工作目录解析；`.sericite` 是约定后缀，不做强制校验。
 
 ```bash
 sericite -c 'print("hello")'
+sericite -c 'print(argv)' first --flag
 printf 'print("hello")\n' | sericite -
-sericite --include base.sericite --include util.sericite app.sericite
+sericite --include base.sericite --include util.sericite app.sericite first
 sericite --capabilities capabilities.py -c 'run()'
 ```
 
-当前不支持 REPL、脚本 argv 或独立的逐字段配额参数。`python -m sericite` 的参数与上述一致。
+当前不支持独立的逐字段配额参数。`python -m sericite` 的参数与上述一致。
+
+### REPL
+
+不带 `SOURCE_FILE` 或 `-c` 时，CLI 创建一台持久 root，执行 include 后进入交互循环：
+
+- `>>>` 等待新输入，`...` 等待多行语句完成；空输入不执行。
+- 变量、函数、schema 和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
+- 单个表达式用 `repr` 回显结果，包括 `None`；其他语句只有自身产生的输出。
+- 单次编译或运行错误写 stderr，随后可以继续输入；include 或能力配置的启动失败仍使进程以 1 退出。
+- EOF 正常退出，退出码为 0。脚本 `input()` 仍读取宿主 stdin；输入耗尽按 `input_error` 报告。
+
+暂不提供历史记录、自动补全、复杂行编辑或调试命令。
+
+### 脚本 argv
+
+root 的模块作用域启动时带有普通列表变量 `argv`，元素均为字符串：文件模式为 `[SOURCE_FILE, *ARG]`，`-c` 模式为 `["-c", *ARG]`，stdin 源码模式为 `["-", *ARG]`，REPL 初始为 `[]`。它可以像其他模块变量一样读取、修改或重绑定，并跨 `exec()` 保留；子 VM 不会隐式得到它。
 
 ## 3. include：同一 root 的源码组合
 
 `--include` 是 CLI 的代码复用入口，不是 Sericite 的 `import`——真正的模块系统需要另行设计，不承诺与 include 有相同语义：
 
-1. 按参数顺序读取所有 include，最后接主文件、命令字符串或 stdin 源码。
+1. 一次性模式按参数顺序读取所有 include，最后接主文件、命令字符串或 stdin 源码；REPL 的启动单元只包含 include。
 2. 所有文本组合成**一个编译单元**，在同一个 root VM、同一个模块全局作用域中运行。
-3. 函数、变量和副作用按顺序共享；主源码可以直接调用 include 定义的函数。
+3. 函数、变量和副作用按顺序共享；主源码或后续 REPL 输入可以直接使用 include 定义的名字。
 4. 不去重、不缓存、不创建命名空间或子 VM；重复 include 会重复执行。
 5. 整体编译成功后才执行。任一文件编译失败时，所有文件都没有运行副作用。
 6. 合并后的源码仍受引擎的 4MB 上限约束。
@@ -134,15 +154,15 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 
 ## 5. 输入、输出与退出码
 
-- 文件和 `-c` 模式中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 后仍请求输入会以 `input_error` 失败。
+- 文件、`-c` 和 REPL 中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 后仍请求输入会以 `input_error` 报告。
 - `sericite -` 会消费全部 stdin 作为源码，因此同一 stdin 不能再提供运行输入。
 - root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
-- 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。
+- 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续，启动错误仍然退出。
 
 | 退出码 | 含义 |
 |---:|---|
-| 0 | root 正常完成 |
-| 1 | 文件/配置读取或校验失败、编译/运行错误、输入耗尽（`input_error`） |
+| 0 | root 正常完成，或 REPL 以 EOF 结束 |
+| 1 | 文件/配置读取或校验失败、一次性执行或 REPL 启动错误、一次性执行的输入耗尽（`input_error`） |
 | 2 | 命令行用法错误 |
 
 `KeyboardInterrupt`、`SystemExit` 等进程级事件不当作普通脚本或配置错误吞掉。

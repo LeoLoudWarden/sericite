@@ -62,11 +62,113 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, f"sericite {__version__}\n")
 
-    def test_arguments_are_required_and_mutually_exclusive(self):
-        result = self.run_cli()
+    def test_script_argv_for_file_command_and_stdin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self.write(Path(tmp), "args.sericite", "print(argv)\n")
+            result = self.run_cli(script, "first", "", "--flag", "世界")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                result.stdout,
+                f"['{script}', 'first', '', '--flag', '世界']\n",
+            )
+
+        result = self.run_cli("-c", "print(argv)", "first", "--flag", "世界")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-c', 'first', '--flag', '世界']\n")
+
+        result = self.run_cli("-", "argument", stdin="print(argv)\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-', 'argument']\n")
+
+        result = self.run_cli("-c", "print(argv)", "--", "--include", "literal")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-c', '--include', 'literal']\n")
+
+        result = self.run_cli("-c", "print(argv)", "--version", "--include")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-c', '--version', '--include']\n")
+
+        result = self.run_cli("--unknown")
         self.assertEqual(result.returncode, 2)
-        result = self.run_cli("-c", "pass", "examples/root.sericite")
-        self.assertEqual(result.returncode, 2)
+
+    def test_repl_echoes_expressions_and_preserves_state(self):
+        result = self.run_cli(stdin='x = 40\nx + 2\n"hello"\n["x", 1]\nNone\nargv\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(
+            result.stdout,
+            ">>> >>> 42\n>>> 'hello'\n>>> ['x', 1]\n>>> None\n>>> []\n>>> ",
+        )
+
+    def test_repl_script_input_shares_stdin_with_the_session(self):
+        result = self.run_cli(stdin="name = input()\nworld\nname\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(result.stdout, ">>> >>> 'world'\n>>> ")
+
+    def test_repl_supports_multiline_definitions_schemas_and_vfs(self):
+        result = self.run_cli(
+            stdin=(
+                "def inc(value):\n"
+                "    return value + 1\n"
+                "\n"
+                "class Point:\n"
+                "    x: int\n"
+                "\n"
+                "p = Point(4)\n"
+                "p.x = inc(p.x)\n"
+                'write_file("/value.txt", str(p.x))\n'
+                'read_file("/value.txt")\n'
+            )
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("... ", result.stdout)
+        self.assertTrue(result.stdout.endswith("'5'\n>>> "))
+
+    def test_repl_recovers_from_compile_and_runtime_errors(self):
+        result = self.run_cli(stdin="x = 9\ndef broken(:\nx\n(\n1 / 0\n)\nx\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, ">>> >>> >>> 9\n>>> ... ... >>> 9\n>>> ")
+        self.assertIn("syntax_error", result.stderr)
+        self.assertIn("<stdin>:2: zero_division", result.stderr)
+
+    def test_repl_uses_include_capabilities_files_and_empty_argv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            include = self.write(directory, "base.sericite", "x = 41\n")
+            capabilities = self.write(
+                directory,
+                "caps.py",
+                "def configure():\n"
+                "    return {\n"
+                "        'functions': {'double': lambda x: x * 2},\n"
+                "        'files': {'/message.txt': 'from vfs'},\n"
+                "    }\n",
+            )
+            result = self.run_cli(
+                "--include",
+                include,
+                "--capabilities",
+                capabilities,
+                stdin=('print(double(x + 1))\nread_file("/message.txt")\nargv\n'),
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(
+            result.stdout,
+            ">>> 84\nNone\n>>> 'from vfs'\n>>> []\n>>> ",
+        )
+
+    def test_repl_include_startup_failure_is_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            invalid = self.write(
+                Path(tmp), "invalid.sericite", "if True print('bad')\n"
+            )
+            result = self.run_cli("--include", invalid)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("syntax_error", result.stderr)
 
     def test_command_and_stdin_source(self):
         result = self.run_cli(

@@ -36,12 +36,12 @@ class RootVMTests(unittest.TestCase):
 
         snap = vm.step()
         self.assertEqual(snap["state"], "ready")
-        self.assertEqual(snap["locals"], {"a": "2"})
+        self.assertEqual(snap["locals"], {"argv": [], "a": "2"})
         self.assertEqual(snap["last_line"], 1)
         self.assertEqual(snap["next_line"], 2)
 
         snap = vm.step()
-        self.assertEqual(snap["locals"], {"a": "2", "b": "3"})
+        self.assertEqual(snap["locals"], {"argv": [], "a": "2", "b": "3"})
 
         snap = vm.step()
         self.assertEqual(snap["locals"]["c"], "23")
@@ -59,12 +59,12 @@ class RootVMTests(unittest.TestCase):
 
         snap = vm.step()
         self.assertEqual(snap["state"], "waiting_input")
-        self.assertEqual(snap["locals"], {})
+        self.assertEqual(snap["locals"], {"argv": []})
 
         vm.feed_input("2")
         snap = vm.step()
         self.assertEqual(snap["state"], "ready")
-        self.assertEqual(snap["locals"], {"a": "2"})
+        self.assertEqual(snap["locals"], {"argv": [], "a": "2"})
 
         vm.feed_input("3")
         output = vm.run()
@@ -75,6 +75,42 @@ class RootVMTests(unittest.TestCase):
         vm = engine.create_root("")
         self.assertEqual(vm.snapshot()["state"], "done")
         self.assertEqual(vm.run(), "")
+
+    def test_root_argv_defaults_to_empty_list(self):
+        vm = SericiteEngine().create_root("print(argv)")
+        self.assertEqual(vm.run(), "[]\n")
+
+    def test_root_argv_is_copied_and_persists_across_exec(self):
+        host_argv = ["app.sericite", "first"]
+        vm = SericiteEngine().create_root("", argv=host_argv)
+        host_argv.append("host-only")
+        self.assertEqual(vm.exec("argv.append('second')"), "")
+        self.assertEqual(
+            vm.exec("print(argv)"), "['app.sericite', 'first', 'second']\n"
+        )
+
+    def test_root_argv_is_not_inherited_by_child_vms(self):
+        vm = SericiteEngine().create_root(
+            "sub = VM('print(argv)')\n"
+            "try:\n"
+            "    sub.run()\n"
+            "except name_error:\n"
+            "    print('isolated')",
+            argv=["root-only"],
+        )
+        self.assertEqual(vm.run(), "isolated\n")
+
+    def test_root_argv_rejects_non_string_values(self):
+        engine = SericiteEngine()
+        for value in ("app", 42, ["app", 1]):
+            with self.subTest(value=value), self.assertRaises(SericiteError) as ctx:
+                engine.create_root("", argv=value)
+            self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_root_argv_cannot_be_shadowed_by_a_host_function(self):
+        with self.assertRaises(SericiteError) as ctx:
+            SericiteEngine().create_root("", functions={"argv": list})
+        self.assertEqual(ctx.exception.kind, "type_error")
 
 
 class SubVMTests(unittest.TestCase):

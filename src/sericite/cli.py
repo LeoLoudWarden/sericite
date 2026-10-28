@@ -1,4 +1,6 @@
 import argparse
+import ast
+import codeop
 import runpy
 import sys
 from collections.abc import Sequence
@@ -6,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import __version__
-from .engine import SericiteEngine, SericiteError, SericiteLimits
+from .engine import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
 class _CliError(Exception):
@@ -31,7 +33,7 @@ class _CombinedSource:
         self.text = "\n".join(text for _, text in parts)
 
     def location(self, line: int | None) -> tuple[str, int | None]:
-        if line is None:
+        if line is None or not self._parts:
             return "<sericite>", None
         part = self._parts[-1]
         for candidate in self._parts:
@@ -65,14 +67,19 @@ def _read_file(path: str, role: str) -> str:
         ) from exc
 
 
-def _load_source(args: argparse.Namespace) -> _CombinedSource:
+def _load_source(
+    args: argparse.Namespace, source_name: str | None, *, interactive: bool
+) -> _CombinedSource:
     parts = [(path, _read_file(path, "include")) for path in args.include]
-    if args.command is not None:
+    if interactive:
+        pass
+    elif args.command is not None:
         parts.append(("<command>", args.command))
-    elif args.source == "-":
+    elif source_name == "-":
         parts.append(("<stdin>", sys.stdin.read()))
     else:
-        parts.append((args.source, _read_file(args.source, "source")))
+        assert source_name is not None
+        parts.append((source_name, _read_file(source_name, "source")))
     return _CombinedSource(parts)
 
 
@@ -121,10 +128,15 @@ def _load_capabilities(path: str) -> dict:
     return config
 
 
-def _format_error(error: SericiteError, source: _CombinedSource) -> str:
+def _format_error(
+    error: SericiteError, source: _CombinedSource, *, line_offset: int = 0
+) -> str:
     if error.filename not in (None, "<sericite>", "<sericite:vm_0>"):
         return str(error)
-    filename, line = source.location(error.line)
+    error_line = error.line
+    if error_line is not None:
+        error_line = max(1, error_line - line_offset)
+    filename, line = source.location(error_line)
     return str(
         SericiteError(
             error.message,
@@ -142,8 +154,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Sericite language runtime (Sericite-PY reference implementation)",
         epilog=(
             "examples:\n"
-            "  sericite app.sericite\n"
-            "  sericite -c 'print(\"hello\")'\n"
+            "  sericite\n"
+            "  sericite app.sericite first second\n"
+            "  sericite -c 'print(argv)' first second\n"
             "  sericite --capabilities caps.py app.sericite\n"
             "  sericite --include base.sericite app.sericite"
         ),
@@ -152,9 +165,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    entry = parser.add_mutually_exclusive_group(required=True)
-    entry.add_argument("source", nargs="?", help="Sericite source file, or - for stdin")
-    entry.add_argument(
+    parser.add_argument(
         "-c", "--command", help="execute SOURCE as a Sericite command", metavar="SOURCE"
     )
     parser.add_argument(
@@ -169,13 +180,139 @@ def _parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="prepend source in the same root scope; repeat in desired order",
     )
+    parser.add_argument(
+        "items",
+        nargs=argparse.REMAINDER,
+        metavar="SOURCE_FILE [ARG ...]",
+        help="source file and script arguments; omit SOURCE_FILE for the REPL",
+    )
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+def _report_input_required(
+    root: VMHandle, source: _CombinedSource, *, line_offset: int = 0
+) -> None:
+    snapshot = root.snapshot()
+    if snapshot["state"] != "waiting_input":
+        return
+    error = SericiteError(
+        "input required",
+        kind="input_error",
+        filename="<sericite:vm_0>",
+        line=snapshot["next_line"],
+    )
+    print(_format_error(error, source, line_offset=line_offset), file=sys.stderr)
+
+
+def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
     try:
-        source = _load_source(args)
+        root.run()
+    except SericiteError as exc:
+        print(_format_error(exc, source), file=sys.stderr)
+        return False
+    if root.snapshot()["state"] == "waiting_input":
+        _report_input_required(root, source)
+        return False
+    return True
+
+
+def _expression_delivery(source: str) -> tuple[str, int]:
+    tree = ast.parse(source, filename="<stdin>")
+    if len(tree.body) == 1 and isinstance(tree.body[0], ast.Expr):
+        return f"print(repr(\n{source}\n))", 1
+    return source, 0
+
+
+def _repl(root: VMHandle) -> int:
+    pending = ""
+    while True:
+        _write_stdout("... " if pending else ">>> ")
+        line = sys.stdin.readline()
+        if not line:
+            return 0
+        if not pending and not line.strip():
+            continue
+        pending += line
+        try:
+            complete = codeop.compile_command(pending, filename="<stdin>")
+        except SyntaxError as exc:
+            error = SericiteError(
+                exc.msg or "invalid syntax",
+                kind="syntax_error",
+                filename="<stdin>",
+                line=exc.lineno,
+                column=exc.offset,
+            )
+            print(error, file=sys.stderr)
+            pending = ""
+            continue
+        if complete is None:
+            continue
+
+        source_text, pending = pending, ""
+        if not source_text.strip():
+            continue
+        delivery, line_offset = _expression_delivery(source_text)
+        source = _CombinedSource([("<stdin>", source_text)])
+        try:
+            root.exec(delivery)
+        except SericiteError as exc:
+            print(_format_error(exc, source, line_offset=line_offset), file=sys.stderr)
+            continue
+        _report_input_required(root, source, line_offset=line_offset)
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    values = list(sys.argv[1:] if argv is None else argv)
+    cli_args: list[str] = []
+    index = 0
+    while index < len(values):
+        value = values[index]
+        if value == "--":
+            items = values[index + 1 :]
+            break
+        if value in {"-c", "--command"}:
+            cli_args.extend(values[index : index + 2])
+            items = values[index + 2 :]
+            break
+        if value.startswith("--command=") or (
+            value.startswith("-c") and not value.startswith("--") and len(value) > 2
+        ):
+            cli_args.append(value)
+            items = values[index + 1 :]
+            break
+        if value in {"--include", "--capabilities"}:
+            cli_args.extend(values[index : index + 2])
+            index += 2
+            continue
+        if value == "-" or not value.startswith("-"):
+            items = values[index:]
+            break
+        cli_args.append(value)
+        index += 1
+    else:
+        items = []
+    args = _parser().parse_args(cli_args)
+    args.items = items
+    return args
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    items = args.items[1:] if args.items[:1] == ["--"] else args.items
+    interactive = args.command is None and not items
+    if args.command is not None:
+        source_name = None
+        script_argv = ["-c", *items]
+    elif interactive:
+        source_name = None
+        script_argv = []
+    else:
+        source_name = items[0]
+        script_argv = items
+
+    try:
+        source = _load_source(args, source_name, interactive=interactive)
         config = _load_capabilities(args.capabilities) if args.capabilities else {}
     except _CliError as exc:
         print(f"sericite: {exc}", file=sys.stderr)
@@ -190,6 +327,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             functions=config.get("functions"),
             output_writer=_write_stdout,
             buffer_output=False,
+            argv=script_argv,
         )
         for path, text in (config.get("files") or {}).items():
             root.write_file(path, text)
@@ -197,20 +335,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(_format_error(exc, source), file=sys.stderr)
         return 1
 
-    try:
-        root.run()
-    except SericiteError as exc:
-        print(_format_error(exc, source), file=sys.stderr)
+    if not _run_root(root, source):
         return 1
-
-    snapshot = root.snapshot()
-    if snapshot["state"] == "waiting_input":
-        error = SericiteError(
-            "input required",
-            kind="input_error",
-            filename="<sericite:vm_0>",
-            line=snapshot["next_line"],
-        )
-        print(_format_error(error, source), file=sys.stderr)
-        return 1
+    if interactive:
+        return _repl(root)
     return 0
