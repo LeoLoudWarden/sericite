@@ -219,22 +219,30 @@ def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
 def _expression_delivery(source: str) -> tuple[str, int]:
     tree = ast.parse(source, filename="<stdin>")
     if len(tree.body) == 1 and isinstance(tree.body[0], ast.Expr):
-        return f"print(repr(\n{source}\n))", 1
+        # Bind the value once (avoiding a second evaluation), then echo its repr
+        # only when it is not None — matching Python's REPL displayhook, which
+        # suppresses None. `_` also serves as the last-expression result, as in
+        # Python's REPL.
+        return (
+            f"_ = (\n{source}\n)\nif _ != None:\n    print(repr(_))",
+            1,
+        )
     return source, 0
 
 
 def _repl(root: VMHandle) -> int:
-    pending = ""
+    buffer: list[str] = []
     while True:
-        _write_stdout("... " if pending else ">>> ")
+        _write_stdout("... " if buffer else ">>> ")
         line = sys.stdin.readline()
         if not line:
             return 0
-        if not pending and not line.strip():
+        if not buffer and not line.strip():
             continue
-        pending += line
+        buffer.append(line.rstrip("\n"))
+        source_text = "\n".join(buffer)
         try:
-            complete = codeop.compile_command(pending, filename="<stdin>")
+            complete = codeop.compile_command(source_text, filename="<stdin>")
         except SyntaxError as exc:
             error = SericiteError(
                 exc.msg or "invalid syntax",
@@ -244,12 +252,12 @@ def _repl(root: VMHandle) -> int:
                 column=exc.offset,
             )
             print(error, file=sys.stderr)
-            pending = ""
+            buffer.clear()
             continue
         if complete is None:
             continue
 
-        source_text, pending = pending, ""
+        buffer.clear()
         if not source_text.strip():
             continue
         delivery, line_offset = _expression_delivery(source_text)

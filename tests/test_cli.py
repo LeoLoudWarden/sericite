@@ -97,8 +97,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertEqual(
             result.stdout,
-            ">>> >>> 42\n>>> 'hello'\n>>> ['x', 1]\n>>> None\n>>> []\n>>> ",
+            ">>> >>> 42\n>>> 'hello'\n>>> ['x', 1]\n>>> >>> []\n>>> ",
         )
+
+    def test_repl_does_not_echo_none_from_print(self):
+        result = self.run_cli(stdin="x = 1\nprint(x)\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(result.stdout, ">>> >>> 1\n>>> ")
 
     def test_repl_script_input_shares_stdin_with_the_session(self):
         result = self.run_cli(stdin="name = input()\nworld\nname\n")
@@ -125,6 +131,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertIn("... ", result.stdout)
         self.assertTrue(result.stdout.endswith("'5'\n>>> "))
+
+    def test_repl_multiline_function_body_executes_as_one_unit(self):
+        result = self.run_cli(
+            stdin=("def g(n):\n    a = n + 1\n    return a * 2\n\ng(3)\n")
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertNotIn("unexpected indent", result.stdout)
+        self.assertEqual(result.stdout, ">>> ... ... ... >>> 8\n>>> ")
 
     def test_repl_recovers_from_compile_and_runtime_errors(self):
         result = self.run_cli(stdin="x = 9\ndef broken(:\nx\n(\n1 / 0\n)\nx\n")
@@ -157,7 +172,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertEqual(
             result.stdout,
-            ">>> 84\nNone\n>>> 'from vfs'\n>>> []\n>>> ",
+            ">>> 84\n>>> 'from vfs'\n>>> []\n>>> ",
         )
 
     def test_repl_include_startup_failure_is_fatal(self):

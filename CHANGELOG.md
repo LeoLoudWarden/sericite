@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-29
+
+### Changed
+- REPL 单表达式回显不再输出值为 `None` 的结果（对齐 Python REPL 的 `sys.displayhook` 习惯）；回显改为先绑定到 `_` 再按需输出，`_` 成为最近一次表达式的值。注：Python 的 `sys.displayhook` 在结果为 `None` 时不更新 `_`，本实现仍会绑定 `_`。
+
+### Fixed
+- 修复 REPL 对多行缩进块（def/if/while/for/class/try）在首行结束即被当作完整语句执行的问题：输入缓存改为按行去除行尾换行后重组，缩进块在空行或去缩进前保持 `...` 续行提示。
+
 ## [0.9.0] - 2026-10-29
 
 ### Added
