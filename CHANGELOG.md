@@ -8,10 +8,10 @@
 ## [Unreleased]
 
 ### Added
-- 宿主侧驱动 VM 时，`snapshot()`/`step()`/`step_instruction()` 返回的快照新增宿主专属诊断字段：`vm_id`（引擎内编号）、`parent_id`（父 VM 编号，根为 `None`）、`depth`（嵌套深度，根为 0）、`child_count`（累计创建的直接子 VM 数）。这些字段只在宿主侧可见，脚本永远无法通过同名方法获得。
+- 宿主侧驱动 VM 时，`snapshot()`/`step()`/`step_instruction()` 返回的快照新增宿主专属诊断字段 `vm_id`/`parent_id`/`depth`/`child_count`（字段含义见虚拟机参考第 4 节）。
 
 ### Changed
-- 脚本内 `snapshot()`/`step()`/`step_instruction()` 返回的快照移除 `vm_id` 字段；脚本可见快照的字段集合固定为 `state`/`last_line`/`next_line`/`locals`/`stdout`/`error`/`instruction_count`，宿主诊断视图是其严格超集。
+- 脚本内 `snapshot()`/`step()`/`step_instruction()` 返回的快照移除 `vm_id` 字段，脚本可见快照固定为安全视图字段集合（见虚拟机参考第 4 节）。
 - VM 句柄的显示文本由 `<VM id=N state=...>` 改为 `<VM state=...>`，不再暴露引擎全局 VM 计数。
 
 ### Security
