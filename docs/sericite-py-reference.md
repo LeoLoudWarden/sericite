@@ -50,7 +50,7 @@ The engine constructor supplies the default quotas. Passing `limits` to `create_
 
 ## 4. Driving VMs
 
-The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/file operations, …) correspond one-to-one with the methods of VM values inside scripts, with one deliberate asymmetry: snapshots returned on the host side carry additional host-only diagnostic fields (`vm_id`/`parent_id`/`depth`/`child_count`, see the [VM reference](vm-reference.md) §4). States and contracts are in the [VM reference](vm-reference.md) §§3–4. The host side adds exactly one privilege — host management is not script accounting:
+The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/file operations, …) correspond one-to-one with the methods of VM values inside scripts, with one deliberate asymmetry: host-side snapshots carry additional host-only diagnostic fields. States and contracts are in the [VM reference](vm-reference.md) §§3–4. The host side adds exactly one privilege — host management is not script accounting:
 
 - Direct `feed_input()`, `write_file()`, file reads, stdout access, and snapshots do not enter the script's memory ledger;
 - Resource-specific limits such as file count, file bytes, and output bytes still apply;

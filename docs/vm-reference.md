@@ -4,7 +4,7 @@
 
 This document is for **anyone who creates and drives VMs**: creating child VMs inside a Sericite script, or driving any VM through the host API. The contracts for VM states, driving methods, exec delivery, quotas, and function granting live here. For script syntax see the [language reference](language-reference.md); for the Python library API (engine, FFI, host-side error handling) see the [Sericite-PY reference](sericite-py-reference.md).
 
-A VM value inside a script and a host-side `VMHandle` expose the same set of driving methods, and driving semantics are identical. Examples below use `sub.`; on the host side, substitute your own handle variable. One deliberate asymmetry: snapshots returned to the host carry additional host-only diagnostic fields that a script's own calls can never see (§4).
+A VM value inside a script and a host-side `VMHandle` expose the same set of driving methods, and driving semantics are identical. Examples below use `sub.`; on the host side, substitute your own handle variable. One deliberate asymmetry: snapshots returned to the host carry additional host-only diagnostic fields (§4).
 
 ## 1. What a VM is
 
@@ -81,7 +81,16 @@ A snapshot returned by `step()`, `step_instruction()`, or `snapshot()` contains 
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose live child handles or host objects.
 
-When one of these methods is called from the host (on a `VMHandle`), the returned dict is a strict superset carrying host-only diagnostic fields: `vm_id` (engine-local identifier), `parent_id` (engine-local identifier of the parent VM, `None` for a root), `depth` (nesting depth; a root is 0), and `child_count` (cumulative count of direct children created). A script's own calls always return the safe view above and can never see these fields.
+When one of these methods is called from the host (on a `VMHandle`), the returned dict is a strict superset of the script-safe view above, adding host-only diagnostic fields:
+
+| Field | Meaning |
+|---|---|
+| `vm_id` | Engine-local identifier |
+| `parent_id` | Engine-local identifier of the parent VM; `None` for a root |
+| `depth` | Nesting depth; a root is 0 |
+| `child_count` | Cumulative count of direct children created |
+
+A script's own calls always return the safe view above and can never see these fields.
 
 ## 5. Quotas
 
