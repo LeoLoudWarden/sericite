@@ -325,8 +325,8 @@ class _EngineCore:
                 )
         finally:
             if context.state == "waiting_input":
-                del context.frames[frame_depth:]
                 context.state = "ready"
+            del context.frames[frame_depth:]
             frame.pc = frame_pc
             del frame.stack[stack_depth:]
 
@@ -337,6 +337,7 @@ class _EngineCore:
             return False
         floor = exception_floor or 0
         frame = context.frames[-1]
+        self._sync_active_errors(frame)
         instr = frame.code.instrs[frame.pc]
         try:
             self._meter(context).work(1)
@@ -393,6 +394,14 @@ class _EngineCore:
             "resource_exhausted" if error.kind == "resource_exhausted" else "error"
         )
 
+    @staticmethod
+    def _sync_active_errors(frame: Frame) -> None:
+        while frame.active_errors:
+            handler, _ = frame.active_errors[-1]
+            if handler.target <= frame.pc < handler.body_end:
+                break
+            frame.active_errors.pop()
+
     def _handle_exception(
         self, context: VMContext, error: SericiteError, *, floor: int = 0
     ) -> bool:
@@ -407,12 +416,13 @@ class _EngineCore:
                 context.frames.pop()
                 continue
             del frame.stack[handler.stack_depth :]
-            frame.active_error = error
+            frame.pc = handler.target
+            self._sync_active_errors(frame)
+            frame.active_errors.append((handler, error))
             if handler.error_name is not None:
                 self._store_local(frame, handler.error_name, error)
             if handler.bind is not None:
                 self._store_local(frame, handler.bind, error.message)
-            frame.pc = handler.target
             return True
         return False
 
@@ -421,6 +431,8 @@ class _EngineCore:
         pc = frame.pc
         for handler in frame.code.handlers:
             if not (handler.start <= pc < handler.end):
+                continue
+            if any(start <= pc < end for start, end in handler.exit_ranges):
                 continue
             if handler.kinds is not None and kind not in handler.kinds:
                 continue
@@ -631,11 +643,11 @@ class _EngineCore:
             if isinstance(arg, tuple):
                 raise frame.locals[arg[1]]
             if arg is None:
-                if frame.active_error is None:
+                if not frame.active_errors:
                     raise SericiteError(
                         "raise without an active error", kind="raise_error"
                     )
-                raise frame.active_error
+                raise frame.active_errors[-1][1]
             message = stack.pop()
             if type(message) is not str:
                 raise SericiteError("raise expects a string message", kind="type_error")

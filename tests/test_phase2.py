@@ -534,6 +534,20 @@ class BuiltinTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
+    def test_repr_limit_includes_quotes_and_escapes(self):
+        engine = SericiteEngine(SericiteLimits(max_string_bytes=10))
+        vm = engine.create_root('result = repr("abcdefgh")')
+        vm.run()
+        self.assertEqual(vm.snapshot()["locals"]["result"], "'abcdefgh'")
+
+        vm = engine.create_root('result = repr("abcdefghij")')
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_repr_shared_containers_use_safe_placeholders(self):
+        self.assertEqual(run("x = [1]\nprint(repr([x, x]))"), "[[1], [...]]\n")
+
     def test_repr_charges_scaled_work_and_result_allocation(self):
         counts = {}
         for size in (10, 1000):

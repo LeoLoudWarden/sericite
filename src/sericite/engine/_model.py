@@ -92,7 +92,7 @@ class Frame:
     closure: dict[str, _Cell] = field(default_factory=dict)
     module_locals: dict[str, object] | None = None
     granted: dict[str, object] | None = None
-    active_error: SericiteError | None = None
+    active_errors: list[tuple[isa.Handler, SericiteError]] = field(default_factory=list)
     return_contract: object = None
     return_label: str | None = None
     display_name: str | None = None
