@@ -1,6 +1,6 @@
 import unittest
 
-from sericite import SericiteEngine, SericiteError, VMHandle
+from sericite import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 ADD_PROGRAM = """\
 a = input()
@@ -187,6 +187,56 @@ class SnapshotViewTests(unittest.TestCase):
         self.assertEqual(lines[0], "<VM state=ready>")
         self.assertNotIn("vm_id", output)
         self.assertEqual(repr(VMHandle(engine, 1)), "<VM state=ready>")
+
+    def test_child_count_counts_created_children_not_attempts(self):
+        engine = SericiteEngine()
+        source = (
+            "i = 0\n"
+            "while i < 5:\n"
+            "    try:\n"
+            '        VM("def broken(:")\n'
+            "    except syntax_error:\n"
+            "        pass\n"
+            "    i += 1\n"
+            'sub = VM("x = 1")\n'
+        )
+        vm = engine.create_root(source)
+        vm.run()
+        self.assertEqual(vm.snapshot()["child_count"], 1)
+        self.assertEqual(len(engine._contexts), 2)
+
+    def test_failed_child_creation_does_not_consume_child_quota(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            "try:\n"
+            '    VM("def broken(:")\n'
+            "except syntax_error:\n"
+            "    pass\n"
+            'sub = VM("print(1)")\n'
+            "print(sub.run())\n",
+            limits=SericiteLimits(max_child_vms=1),
+        )
+        self.assertEqual(vm.run(), "1\n\n")
+
+    def test_error_views_never_expose_engine_filename(self):
+        engine = SericiteEngine()
+        source = (
+            "try:\n"
+            '    VM("def broken(:")\n'
+            "except syntax_error as e:\n"
+            '    print("compile:", e)\n'
+            'sub = VM("raise \\"boom\\"")\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except raise_error as e:\n"
+            '    print("runtime:", e)\n'
+        )
+        output = engine.create_root(source).run()
+        self.assertEqual(output, "compile: invalid syntax\nruntime: boom\n")
+        self.assertNotIn("sericite", output)
+        error = VMHandle(engine, 1).snapshot()["error"]
+        self.assertEqual(set(error.keys()), {"kind", "message", "line", "column"})
+        self.assertNotIn("sericite", error["message"])
 
 
 class ValidationTests(unittest.TestCase):
