@@ -48,7 +48,7 @@ engine.create_root(
 
 ## 3. Quotas: SericiteLimits
 
-The `SericiteLimits` field list and defaults are in the [VM reference](vm-reference.md) §5; the `VM()` keyword arguments inside scripts correspond to them one-to-one. Every field has a default; defaults target development and debugging, not safe execution of untrusted code.
+The `SericiteLimits` field list and defaults are in the [VM reference](vm-reference.md) §5; the `VM()` quota keyword arguments inside scripts correspond to them one-to-one. Every field has a default; defaults target development and debugging, not safe execution of untrusted code.
 
 The engine constructor supplies the default quotas. Passing `limits` to `create_root()` replaces the whole configuration for that root rather than merging individual fields.
 
@@ -119,7 +119,7 @@ except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
 ```
 
-`resource_exhausted`, `internal_error`, and `host_error` are uncatchable only by **Sericite scripts**; hosts can and should handle them. The registry of syntax, validation, runtime, and FFI error kinds is in the [language reference](language-reference.md) §5.
+`resource_exhausted`, `internal_error`, and `host_error` are uncatchable only by **Sericite scripts**; hosts can and should handle them. The registry of syntax, runtime, and FFI error kinds is in the [language reference](language-reference.md) §5.
 
 ## 7. Host checklist for untrusted code
 

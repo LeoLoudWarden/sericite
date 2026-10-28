@@ -13,10 +13,12 @@ Usage:
 The engine has zero runtime dependencies; the script itself is stdlib-only.
 Numbers are medians; absolute values vary with hardware and Python version.
 
-Latest recorded run (2026-10-23, Intel i3-9100, CPython 3.13.13, Linux x86_64;
+Recorded run (2026-10-23, Intel i3-9100, CPython 3.13.13, Linux x86_64;
 20,000 loop iterations = 180,008 instructions, 9 timed samples):
 
     run                ~0.65 µs/instruction
+
+For the current cross-benchmark table (2026-10-26), see docs/architecture.md §6.
 """
 
 from __future__ import annotations

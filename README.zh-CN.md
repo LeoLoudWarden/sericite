@@ -44,7 +44,7 @@ sericite --include base.sericite app.sericite
 sericite --capabilities capabilities.py app.sericite
 ```
 
-include 在同一 root 作用域中按序组合源码；capabilities 是操作者显式信任、只负责 FFI/配额/初始 VFS 的 Python 配置。完整契约见 [CLI 参考](docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
+include 在同一 root 作用域中按序组合源码；capabilities 是操作者显式信任、只负责 FFI/配额/初始 VFS 的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
 
 ```python
 from sericite import SericiteEngine
@@ -104,7 +104,7 @@ print(vm.run(), end="")    # 42
 | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |
 | [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) |
 
-每篇文档的定位与读者指引集中在[文档索引](docs/README.zh-CN.md)维护。构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
+每篇文档的定位与读者指引集中在[文档索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/README.zh-CN.md)维护。构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
 
 ## 这个项目是怎么写出来的
 

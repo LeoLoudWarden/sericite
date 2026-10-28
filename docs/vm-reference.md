@@ -21,7 +21,7 @@ sub = VM(code, max_instructions=10000)   # quotas can only be tightened
 sub = VM(code, output_writer=forward, buffer_output=False)
 ```
 
-`output_writer` and `buffer_output` configure this VM's output; the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
+`output_writer` and `buffer_output` configure this VM's output; `functions` grants functions (section 6); the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
 
 Root VMs are not created by scripts: the CLI creates one when running a program directly (see the [CLI reference](cli-reference.md)); in Python embedding, `SericiteEngine.create_root()` creates it (see the [Sericite-PY reference](sericite-py-reference.md)).
 
@@ -147,9 +147,9 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 
 The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap.
 
-All structural fields must be non-negative finite integers. Negative and non-integer values are rejected for every field.
+All structural fields must be non-negative finite integers. Cumulative fields additionally accept `-1`; any other negative value, and any non-integer value, is rejected for every field.
 
-When a script creates a child VM, `VM()` keyword arguments correspond one-to-one with this table and can only tighten it. Combining a request with the inherited ceiling:
+When a script creates a child VM, the `VM()` quota keyword arguments correspond one-to-one with this table and can only tighten it. Combining a request with the inherited ceiling:
 
 - a requested `-1` inherits the parent's effective value;
 - a finite request under an unlimited parent applies that finite cap;

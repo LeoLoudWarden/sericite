@@ -23,12 +23,11 @@ lint 与格式检查由 CI 强制执行（ruff，配置见 `pyproject.toml`）�
 ## 发版
 
 1. 更新 `src/sericite/__init__.py` 的 `__version__`。
-2. 更新 `docs/language-reference.md` 与 `docs/language-reference.zh-CN.md` 开头声明的版本。
-3. 在 `CHANGELOG.md` 的 `[Unreleased]` 下新增 `## [X.Y.Z] - YYYY-MM-DD` 节。
-4. 新 minor 版本在 `SECURITY.md` 的支持版本表加一行（patch 版本不动）。
-5. 打 tag 并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`。
+2. 在 `CHANGELOG.md` 的 `[Unreleased]` 下新增 `## [X.Y.Z] - YYYY-MM-DD` 节。
+3. 新 minor 版本在 `SECURITY.md` 的支持版本表加一行（patch 版本不动）。
+4. 打 tag 并推送：`git tag vX.Y.Z && git push origin vX.Y.Z`。
 
-`release.yml` 会先校验 tag 与 `__version__`、CHANGELOG 节、语言参考声明的版本、`SECURITY.md` 的 minor 行是否一致；任一项不符则构建失败，不会发布。
+`release.yml` 会先校验 tag 与 `__version__`、CHANGELOG 节、`SECURITY.md` 的 minor 行是否一致；任一项不符则构建失败，不会发布。
 
 ## 设计纪律
 
