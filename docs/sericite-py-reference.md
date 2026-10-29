@@ -43,7 +43,7 @@ engine.create_root(
 - `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`.
 - `functions`: host capabilities granted to the script; see section 5.
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
-- `buffer_output`: whether root stdout is retained in memory. The default `True` preserves `run()`/`exec()`/`stdout()` and snapshot behavior. With `False`, output is still metered and forwarded, but buffered stdout and these retrieval results are empty. This lets a long-running root avoid unbounded historical-output retention.
+- `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
 - `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
 
 ## 3. Quotas: SericiteLimits
@@ -52,7 +52,7 @@ The `SericiteLimits` field list and defaults are in the [VM reference](vm-refere
 
 The engine constructor supplies the default quotas. Passing `limits` to `create_root()` replaces the whole configuration for that root rather than merging individual fields.
 
-For a trusted, long-running root, the five cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap; structural limits must remain finite. Combining and inheritance rules are in the [VM reference](vm-reference.md) §5.
+For a trusted, long-running root, the five cumulative fields accept `-1` for no local cap (which fields, and the combining/inheritance rules, are in the [VM reference](vm-reference.md) §5); structural limits must remain finite.
 
 `-1` is an explicit trust decision: use it only for code you control. For what unlimited quotas do and do not mean for resource safety, see the [security model](security.md) §3.
 

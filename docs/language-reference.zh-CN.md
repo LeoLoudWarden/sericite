@@ -157,11 +157,22 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件可以是一个可捕获 kind、一个非空的 kind 括号组，或表示全部可捕获 kind 的 `...`；它们都是静态过滤语法，不是变量求值或通用元组。未知名字（包括拼写错误）、空组和组内的不可捕获 kind 会在编译期以 `syntax_error` 拒绝。`resource_exhausted`、`internal_error` 与 `host_error` 连裸 `except:` 和 `except ...` 也无法捕获。
+`except` 的过滤条件是静态语法，不是变量求值或通用元组，共有三种形式：
 
-`as e` 绑定一个固定含两个字符串字段的 record：`e.kind` 是实际发生的错误类型，`e.message` 是可读错误文本。裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
+- 单个可捕获 kind：`except kind`；
+- 非空的 kind 括号组：`except (kind1, kind2)`；
+- `...`，表示全部可捕获 kind：`except ...`。
 
-可捕获 kind 的完整列表：
+编译期以 `syntax_error` 拒绝：未知名字（含拼写错误）、空组、组内出现不可捕获 kind。
+
+`as e` 绑定一个固定含两个字符串字段的 record：
+
+- `e.kind`：实际发生的错误类型；
+- `e.message`：可读错误文本。
+
+裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
+
+注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。

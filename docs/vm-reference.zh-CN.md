@@ -157,7 +157,7 @@ writer：
 
 授予函数合并 home 与 caller 配额时也遵守同一规则。
 
-无限只跳过上限检查，不跳过记账：诊断账本继续增长。stdout 默认即使实时转发也持续缓冲；不需要保留历史输出时可配置 `buffer_output=False`。
+无限只跳过上限检查，不跳过记账：诊断账本继续增长。
 
 指令、内存和子 VM 消耗按因果路由计入相关祖先。计费模型见[架构说明](architecture.zh-CN.md)第 5 节；Python 宿主经 `SericiteLimits` 为 root 配置同一组字段，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 3 节。
 
