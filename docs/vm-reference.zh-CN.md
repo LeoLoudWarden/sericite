@@ -116,10 +116,12 @@ writer：
 | `last_line` / `next_line` | 最近及下一条逻辑源码行 |
 | `locals` | 用户可见局部值的安全副本 |
 | `stdout` | 当前输出 |
-| `error` | `kind`、`message`、`line`、`column`，无错误时为 `None` |
+| `error` | `kind`、`message`、`line`、`column`、`frames`，无错误时为 `None` |
 | `instruction_count` | 当前指令与工作量账 |
 
 复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 句柄或宿主对象。
+
+`error.frames` 是该 VM 的调用栈，按最外层到错误点排列；每项含 `function`（字符串）与 `line`（整数或 `None`），`line` 为 `None` 表示该帧定义在别的 VM（脱敏）。
 
 在宿主侧（`VMHandle` 上）调用这些方法时，返回的字典是上述安全视图的严格超集，额外带有宿主专属诊断字段：
 

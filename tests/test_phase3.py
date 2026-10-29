@@ -1,6 +1,6 @@
 import unittest
 
-from sericite import SericiteEngine, SericiteError, SericiteLimits
+from sericite import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
 def run(source, inputs=None, limits=None):
@@ -65,9 +65,58 @@ class TryExceptTests(unittest.TestCase):
         )
         self.assertEqual(
             run(source),
-            "{'kind': 'zero_division', 'message': 'division by zero'}\n"
+            "{'kind': 'zero_division', 'message': 'division by zero', "
+            "'frames': [record(function='<module>', line=2)]}\n"
             "conversion_error cannot convert to int: 'bad'\n",
         )
+
+    def test_error_frames_capture_nested_calls(self):
+        source = (
+            "def inner():\n"
+            "    return missing + 1\n\n"
+            "def outer():\n"
+            "    return inner()\n\n"
+            "try:\n"
+            "    outer()\n"
+            "except name_error as e:\n"
+            "    for frame in e.frames:\n"
+            "        print(frame.function, frame.line)\n"
+        )
+        self.assertEqual(run(source), "<module> 8\nouter 5\ninner 2\n")
+
+    def test_bare_raise_preserves_frames_despite_record_mutation(self):
+        source = (
+            "def f():\n"
+            '    raise "boom"\n\n'
+            "try:\n"
+            "    try:\n"
+            "        f()\n"
+            "    except raise_error as e:\n"
+            '        e.kind = "changed"\n'
+            "        e.frames[0].line = 999\n"
+            "        raise\n"
+            "except raise_error as e:\n"
+            "    print(e.kind)\n"
+            "    for frame in e.frames:\n"
+            "        print(frame.function, frame.line)\n"
+        )
+        self.assertEqual(run(source), "raise_error\n<module> 6\nf 2\n")
+
+    def test_new_error_in_finally_captures_new_frames(self):
+        source = (
+            "def f():\n"
+            "    try:\n"
+            '        raise "original"\n'
+            "    finally:\n"
+            "        missing\n\n"
+            "try:\n"
+            "    f()\n"
+            "except name_error as e:\n"
+            "    print(e.kind)\n"
+            "    for frame in e.frames:\n"
+            "        print(frame.function, frame.line)\n"
+        )
+        self.assertEqual(run(source), "name_error\n<module> 8\nf 5\n")
 
     def test_invalid_kind_groups_rejected_at_compile_time(self):
         filters = (
@@ -279,6 +328,7 @@ class TryExceptTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
+        self.assertEqual(vm.snapshot()["error"]["frames"], [])
 
     def test_child_vm_error_caught_by_parent(self):
         source = (
@@ -289,6 +339,30 @@ class TryExceptTests(unittest.TestCase):
             '    print("parent caught: " + e.message)\n'
         )
         self.assertIn("parent caught:", run(source))
+
+    def test_cross_vm_frames_are_isolated_per_context(self):
+        engine = SericiteEngine()
+        root = engine.create_root(
+            "def parent_call(sub):\n"
+            "    return sub.run()\n"
+            'sub = VM("def child_call():\\n    return missing\\nchild_call()")\n'
+            "try:\n"
+            "    parent_call(sub)\n"
+            "except name_error as e:\n"
+            "    for frame in e.frames:\n"
+            '        print("parent", frame.function, frame.line)\n'
+        )
+        output = root.run()
+        self.assertEqual(output, "parent <module> 5\nparent parent_call 2\n")
+        self.assertNotIn("child_call", output)
+        self.assertNotIn("sericite:vm", output)
+        self.assertEqual(
+            VMHandle(engine, 1).snapshot()["error"]["frames"],
+            [
+                {"function": "<module>", "line": 3},
+                {"function": "child_call", "line": 2},
+            ],
+        )
 
     def test_finally_runs_on_both_paths(self):
         source = (

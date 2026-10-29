@@ -998,7 +998,7 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
                     ).run()
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
                 attacker = engine._contexts[2]
-                self.assertEqual(attacker.alloc_bytes, baseline_allocation)
+                self.assertEqual(attacker.alloc_bytes, baseline_allocation + 64)
                 self.assertEqual(attacker.state, "resource_exhausted")
 
     def test_input_required_still_pauses_and_resumes_caller(self):

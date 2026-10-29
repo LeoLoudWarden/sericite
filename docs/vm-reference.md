@@ -116,10 +116,12 @@ A snapshot returned by `step()`, `step_instruction()`, or `snapshot()` contains 
 | `last_line` / `next_line` | Previous and next logical source lines |
 | `locals` | Safe copies of user-visible local values |
 | `stdout` | Current output |
-| `error` | `kind`, `message`, `line`, and `column`, or `None` |
+| `error` | `kind`, `message`, `line`, `column`, and `frames`, or `None` |
 | `instruction_count` | Current instruction/work ledger |
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose live child handles or host objects.
+
+`error.frames` is that VM's call stack, ordered from the outermost call to the error site. Each entry has `function` (string) and `line` (integer or `None`); `line` is `None` for a frame defined in another VM (redacted).
 
 When one of these methods is called from the host (on a `VMHandle`), the returned dict is a strict superset of the script-safe view above, adding host-only diagnostic fields:
 

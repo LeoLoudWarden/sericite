@@ -56,6 +56,9 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. Error and debug views may only contain logical source locations and safe values; host tracebacks and real paths must not leak by default; a script cannot tell its own nesting depth.
   - b. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
   - c. `SericiteError.filename` embeds the engine-local vm_id and is host-only. Script-facing error surfaces — the value bound by `except kind as e`, the snapshot `error` view, and message text — must contain no leak channel.
+  - d. Capture call frames before exception unwinding and store them per VM. Same-VM rethrows preserve the original trace; cross-VM propagation neither joins nor overwrites another layer's trace.
+  - e. Frame names follow invariant 16's sanitization; lines from code defined in another VM are redacted to `None`, and the single-point `error.line` uses the same sanitized error-site frame. A corrupted caller `pc` degrades to an unknown line rather than raising a diagnostic-side exception.
+  - f. Trace capture, snapshot formatting, and script record materialization are metered. An ordinary error that exhausts quotas during diagnostic construction may become the current VM's `resource_exhausted`. Preserve an original `resource_exhausted`, `internal_error`, or `host_error` and degrade to an empty trace instead of recursively replacing it.
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10.

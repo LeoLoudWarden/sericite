@@ -1,7 +1,7 @@
 import unittest
 import unittest.mock
 
-from sericite import SericiteEngine, SericiteError, SericiteLimits
+from sericite import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
 def run(source, inputs=None, limits=None, functions=None):
@@ -716,6 +716,75 @@ class ClosureAndVMTests(unittest.TestCase):
         self.assertIn("record {password: str} has no field 'nosuch'", out)
         self.assertNotIn("Secret", out)
         self.assertNotIn("helper", out)
+
+    def test_trace_frames_hide_foreign_helper_names(self):
+        source = (
+            "class Secret:\n"
+            "    password: str\n"
+            "def helper(r: Secret):\n"
+            "    return r.nosuch\n"
+            "def leak(r):\n"
+            "    return helper(r)\n"
+            'sub = VM("""\n'
+            "class C:\n"
+            "    password: str\n"
+            "try:\n"
+            "    leak(C('x'))\n"
+            "except attribute_error as e:\n"
+            "    for frame in e.frames:\n"
+            "        print(frame.function, frame.line)\n"
+            '""", functions={\'leak\': leak})\n'
+            "print(sub.run())\n"
+        )
+        out = run(source)
+        self.assertEqual(out, "<module> 5\nleak None\nfunction None\n\n")
+        self.assertNotIn("Secret", out)
+        self.assertNotIn("helper", out)
+
+    def test_foreign_error_point_line_is_also_redacted(self):
+        source = (
+            "class Secret:\n"
+            "    password: str\n"
+            "def helper(r: Secret):\n"
+            "    return r.nosuch\n"
+            "def leak(r):\n"
+            "    return helper(r)\n"
+            'sub = VM("""\n'
+            "class C:\n"
+            "    password: str\n"
+            "leak(C('x'))\n"
+            '""", functions={\'leak\': leak})\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except attribute_error:\n"
+            "    snapshot = sub.snapshot()\n"
+            '    print(snapshot["error"]["line"])\n'
+            '    for frame in snapshot["error"]["frames"]:\n'
+            '        print(frame["function"], frame["line"])\n'
+        )
+        out = run(source)
+        self.assertEqual(out, "None\n<module> 4\nleak None\nfunction None\n")
+        self.assertNotIn("Secret", out)
+        self.assertNotIn("helper", out)
+
+    def test_redacted_error_point_is_not_overwritten_by_ancestor(self):
+        engine = SericiteEngine()
+        root = engine.create_root(
+            "def helper():\n"
+            "    return missing\n\n"
+            "def leak():\n"
+            "    return helper()\n\n"
+            'sub = VM("leak()", functions={"leak": leak})\n'
+            "print(sub.run())\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            root.run()
+        self.assertEqual(ctx.exception.filename, "<sericite:vm_1>")
+        self.assertIsNone(ctx.exception.line)
+        self.assertIsNone(VMHandle(engine, 1).snapshot()["error"]["line"])
+        root_error = root.snapshot()["error"]
+        self.assertIsNone(root_error["line"])
+        self.assertEqual(root_error["frames"][-1], {"function": "<module>", "line": 8})
 
     def test_nested_helper_param_contract_erased_in_child_vm(self):
         source = (

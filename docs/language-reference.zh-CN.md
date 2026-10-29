@@ -165,12 +165,17 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 编译期以 `syntax_error` 拒绝：未知名字（含拼写错误）、空组、组内出现不可捕获 kind。
 
-`as e` 绑定一个固定含两个字符串字段的 record：
+`as e` 绑定一个固定含三个字段的 record：
 
-- `e.kind`：实际发生的错误类型；
-- `e.message`：可读错误文本。
+- `e.kind`：字符串，实际发生的错误类型；
+- `e.message`：字符串，可读错误文本；
+- `e.frames`：调用栈 list，每项是固定含 `function`（字符串）与 `line`（整数或 `None`）的 record，按最外层调用到实际错误点排列，最后一帧是错误点。`line` 为 `None` 表示该帧定义在别的 VM（脱敏）。
 
 裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
+
+裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；handler 或 `finally` 中新产生的错误使用新调用栈。修改 `e` 或其帧 record 不影响内部错误。
+
+调用栈按执行环境隔离：你只能看到自己环境内的帧。
 
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 

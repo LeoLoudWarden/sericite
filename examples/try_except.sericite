@@ -8,8 +8,10 @@ def f():
 
 try:
     f()
-except name_error:
+except name_error as e:
     print("caught across frames")
+    for frame in e.frames:
+        print(frame.function, frame.line)
 
 try:
     read_file("/missing.txt")

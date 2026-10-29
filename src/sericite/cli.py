@@ -131,21 +131,37 @@ def _load_capabilities(path: str) -> dict:
 def _format_error(
     error: SericiteError, source: _CombinedSource, *, line_offset: int = 0
 ) -> str:
-    if error.filename not in (None, "<sericite>", "<sericite:vm_0>"):
-        return str(error)
-    error_line = error.line
-    if error_line is not None:
-        error_line = max(1, error_line - line_offset)
-    filename, line = source.location(error_line)
-    return str(
-        SericiteError(
-            error.message,
-            kind=error.kind,
-            filename=filename,
-            line=line,
-            column=error.column,
+    root_source = error.filename in (None, "<sericite>", "<sericite:vm_0>")
+    if root_source:
+        error_line = error.line
+        if error_line is not None:
+            error_line = max(1, error_line - line_offset)
+        filename, line = source.location(error_line)
+        text = str(
+            SericiteError(
+                error.message,
+                kind=error.kind,
+                filename=filename,
+                line=line,
+                column=error.column,
+            )
         )
-    )
+    else:
+        text = str(error)
+    if not error.frames:
+        return text
+    lines = [text, "Traceback (most recent call last):"]
+    for frame in error.frames:
+        if root_source:
+            frame_line = (
+                None if frame.line is None else max(1, frame.line - line_offset)
+            )
+            filename, line = source.location(frame_line)
+        else:
+            filename, line = error.filename, frame.line
+        shown_line = "?" if line is None else line
+        lines.append(f'  File "{filename}", line {shown_line}, in {frame.function}')
+    return "\n".join(lines)
 
 
 def _parser() -> argparse.ArgumentParser:

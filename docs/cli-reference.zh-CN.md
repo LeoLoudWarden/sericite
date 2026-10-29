@@ -102,6 +102,8 @@ sericite --include math_utils.sericite -c 'print(double(21))'
 - 命令字符串显示为 `<command>`，stdin 源码显示为 `<stdin>`；
 - 嵌套 VM 的错误仍使用 `<sericite:vm_N>`。
 
+运行期错误在单行错误摘要后追加 `Traceback (most recent call last):` 和逐帧函数名、文件名与行号；每个 root 帧分别按上述来源规则映射。其他 VM 的定义侧帧不披露行号，显示为 `line ?`。尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
+
 ## 4. capabilities：可信 Python 启动配置
 
 ### 4.1 配置入口

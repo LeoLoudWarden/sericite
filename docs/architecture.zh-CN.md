@@ -56,6 +56,9 @@
   - a. 错误和调试视图只能包含逻辑源码位置及安全值，不能默认透传宿主 traceback 或真实路径；脚本无法感知自己的 VM 嵌套深度。
   - b. 宿主 `RecursionError` 转换为 `resource_exhausted`，`OverflowError` 转换为 `conversion_error`，原生宿主异常不得直接进入脚本。
   - c. `SericiteError.filename` 内嵌引擎级 `vm_id`，仅宿主可见。面向脚本的错误面 `except kind as e` 的绑定值、快照 `error` 视图、消息文本中不得包含泄漏通道。
+  - d. 调用栈在异常展开前捕获，并按 VM 分别保存；同 VM 重抛保留原栈，跨 VM 不拼接或覆盖另一层现场。
+  - e. 帧名遵守不变量 16 的净化规则；其他 VM 定义侧代码的行号脱敏为 `None`，单点 `error.line` 取脱敏后的错误点帧。损坏的调用方 `pc` 以未知行号降级，不得抛出诊断侧异常。
+  - f. 调用栈捕获、快照与脚本 record 物化均纳入计量。普通错误在诊断构造中耗尽配额时可转为当前 VM 的 `resource_exhausted`；原错误已是 `resource_exhausted`、`internal_error` 或 `host_error` 时保留原错误并以空调用栈降级，不得递归替换。
 8. 新增能力时同步考虑隔离、资源记账、生命周期和调试语义，不只做语法可运行。所有动态消耗必须进入统一 Meter 与 AccountRoute；子 VM 的消耗必须计入祖先。
 9. Sericite 值语义由引擎助手函数定义，不直接继承 Python 运算符的隐式行为（如 bool 不参与算术）。
 10.

@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SericiteFrame:
+    function: str
+    line: int | None
+
+
 UNCATCHABLE_ERROR_KINDS = frozenset({"host_error", "internal_error"})
 # Kinds a script can catch at runtime with an `except <kind>` filter. `syntax_error`
 # is included because nested-VM compilation raises it at runtime when a child VM's
@@ -49,13 +58,31 @@ class SericiteError(Exception):
         self.filename = filename
         self.line = line
         self.column = column
+        self._line_bound = line is not None
         self._resource_vm_id: int | None = None
+        self._traces: dict[int, tuple[SericiteFrame, ...]] = {}
+        self._trace_vm_id: int | None = None
+
+    @property
+    def frames(self) -> tuple[SericiteFrame, ...]:
+        if self._trace_vm_id is None:
+            return ()
+        return self._traces[self._trace_vm_id]
+
+    def _trace_for(self, vm_id: int) -> tuple[SericiteFrame, ...]:
+        return self._traces.get(vm_id, ())
+
+    def _set_trace(self, vm_id: int, frames: tuple[SericiteFrame, ...]) -> None:
+        self._traces[vm_id] = frames
+        if self._trace_vm_id is None:
+            self._trace_vm_id = vm_id
 
     def bind(self, filename: str, line: int | None) -> SericiteError:
         if self.filename is None:
             self.filename = filename
-        if self.line is None:
+        if not self._line_bound:
             self.line = line
+            self._line_bound = True
         return self
 
     def __str__(self) -> str:

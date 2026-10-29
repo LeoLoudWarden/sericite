@@ -8,7 +8,7 @@
 - `_hostdbg`: VM-handle method charging and debug snapshots
 """
 
-from ..errors import SericiteError
+from ..errors import SericiteError, SericiteFrame
 from ._builtins import _EngineBuiltins
 from ._core import _EngineCore
 from ._hostdbg import _EngineHostDebug
@@ -29,6 +29,7 @@ __all__ = [
     "Frame",
     "SericiteEngine",
     "SericiteError",
+    "SericiteFrame",
     "SericiteFunction",
     "SericiteLimits",
     "SericiteRecord",
