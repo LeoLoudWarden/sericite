@@ -177,8 +177,19 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
+- 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
-异常可跨函数传播。`resource_exhausted`（配额耗尽）、`internal_error`（意外的运行时失败）与 `host_error`（此脚本语言安全模型之外的、无法保证可恢复性的错误）是已定义的 kind，但不可捕获。
+```python
+try:
+    sub = VM("while True: pass", max_instructions=100)  # 在 VM() 里隔离死循环，配额设小
+    sub.run()                                           # 循环耗尽配额 → resource_exhausted
+except resource_exhausted as e:
+    print("caught:", e.message)      # 可以被捕获
+
+# 直接写在当前脚本里的死循环（不经 VM() 隔离）不可捕获。
+```
+
+`internal_error`（意外的运行时失败）与 `host_error`（此脚本语言安全模型之外的、无法保证可恢复性的错误）始终不可捕获。
 
 ## 6. 内建函数
 
@@ -280,19 +291,24 @@ p: Point = Point(1, 2)
 sub = VM("print('hi')")          # 源码字符串
 out = sub.run()                  # 运行并取回它的全部输出（字符串）
 print(out)                       # 'hi\n'
-try:
-    sub = VM("import os")
-except syntax_error as e:
-    print("编译失败:", e.message)
+sub.dispose()                    # 用完释放
 ```
 
-VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件。创建时可以收紧配额、授予函数：
+VM 是相互隔离的工作空间： 看不到你的变量，碰不到你的文件。 创建时可以收紧配额、授予函数。
+
+同一台 VM 可以反复驱动：`exec()` 投递新源码、喂输入、单步、快照等；完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
 
 ```python
-sub = VM(code, max_instructions=10000, functions={"double": double})
+sub = VM("", max_instructions=10000, functions={"double": double})
+try:
+    sub.exec(code)
+except syntax_error as e:
+    print("编译失败:", e.message)
+except ... as e:
+    print("运行失败:", e.message)
+finally:
+    sub.dispose()
 ```
-
-同一台 VM 可以反复驱动：喂输入、预置和读取文件、逐语句或逐指令单步、查看快照、用 `sub.exec(code)` 投递新源码、随时终止。已终态的 VM 可用 `sub.dispose()` 释放。创建时可用 `output_writer` 经父级函数转发输出，用 `buffer_output` 控制是否保留 stdout。五项累计配额也接受 `-1` 表示本层不设上限。VM 状态、输出、驱动与释放、exec 投递、配额字段与授予语义的完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
 
 ## 9. 明确不能写（编译期直接拒绝）
 
@@ -475,6 +491,25 @@ n = int(input())
 print(times_ten(n))
 """, functions={"times_ten": times_ten})
 print("worker says: " + worker.run(["6"]))   # 60
+
+# 子 VM 有独立的文件系统：预置文件给它、运行后取回它写的文件
+proc = VM("""
+text = read_file("/input.txt")
+write_file("/output.txt", text + "!")
+""")
+proc.write_file("/input.txt", "hello")      # 运行前预置文件
+proc.run()
+print(proc.read_file("/output.txt"))         # hello!
+
+# 单步执行（逐语句/逐指令）并查看快照
+dbg = VM("x = 1\ny = x + 1\nprint(y)")
+s = dbg.step()                                # 执行一条语句，返回快照
+print(s["state"], s["last_line"])             # ready 1
+s = dbg.step_instruction()                    # 逐指令执行
+print(s["last_line"])                         # 2
+print(dbg.snapshot()["state"])                # ready（快照不推进执行）
+dbg.run()
+print(dbg.snapshot()["state"])                # done
 
 # 收尾：汇总并打印最终结果
 grand = total_value(inv)

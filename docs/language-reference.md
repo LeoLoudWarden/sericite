@@ -177,8 +177,19 @@ Note: bare `except:` and `except ...` only handle **catchable** errors. The catc
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
+- Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
-Exceptions propagate across functions. `resource_exhausted` (quota exhaustion), `internal_error` (an unexpected runtime failure), and `host_error` (a failure outside this language's security model whose recoverability cannot be guaranteed) are defined kinds but are not catchable.
+```python
+try:
+    sub = VM("while True: pass", max_instructions=100)  # isolate an infinite loop behind VM(), with a small quota
+    sub.run()                                           # the loop exhausts its quota → resource_exhausted
+except resource_exhausted as e:
+    print("caught:", e.message)      # this can be caught
+
+# An infinite loop written directly in the current script (not behind VM()) is not catchable.
+```
+
+`internal_error` (an unexpected runtime failure) and `host_error` (a failure outside this language's security model whose recoverability cannot be guaranteed) are always uncatchable.
 
 ## 6. Built-in functions
 
@@ -280,19 +291,24 @@ Sericite code can create new VMs, and the code inside a VM is also sericite:
 sub = VM("print('hi')")          # source code string
 out = sub.run()                  # run and get back all of its output (a string)
 print(out)                       # 'hi\n'
-try:
-    sub = VM("import os")
-except syntax_error as e:
-    print("compile failed:", e.message)
+sub.dispose()                    # release when done
 ```
 
-VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions:
+VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions.
+
+The same VM can be driven repeatedly: `exec()` to deliver new source, feed input, single-step, snapshots, and more; the full contract is in the [VM reference](vm-reference.md).
 
 ```python
-sub = VM(code, max_instructions=10000, functions={"double": double})
+sub = VM("", max_instructions=10000, functions={"double": double})
+try:
+    sub.exec(code)
+except syntax_error as e:
+    print("compile failed:", e.message)
+except ... as e:
+    print("execute failed:", e.message)
+finally:
+    sub.dispose()
 ```
-
-The same VM can be driven repeatedly: feed input, preset and retrieve files, single-step by statement or instruction, take snapshots, deliver new source with `sub.exec(code)`, or terminate it at any time. A terminal VM can be released with `sub.dispose()`. At creation, `output_writer` can forward output through a parent function and `buffer_output` controls whether stdout is retained. The five cumulative quota fields also accept `-1` for no local cap. The full contracts for VM states, output, driving and disposal, exec delivery, quota fields, and grant semantics are in the [VM reference](vm-reference.md).
 
 ## 9. Explicitly not writable (rejected at compile time)
 
@@ -475,6 +491,25 @@ n = int(input())
 print(times_ten(n))
 """, functions={"times_ten": times_ten})
 print("worker says: " + worker.run(["6"]))   # 60
+
+# A sub-VM has its own filesystem: preset a file, then retrieve the file it wrote
+proc = VM("""
+text = read_file("/input.txt")
+write_file("/output.txt", text + "!")
+""")
+proc.write_file("/input.txt", "hello")      # preset a file before running
+proc.run()
+print(proc.read_file("/output.txt"))         # hello!
+
+# Single-step (by statement or instruction) and inspect snapshots
+dbg = VM("x = 1\ny = x + 1\nprint(y)")
+s = dbg.step()                                # run one statement and return a snapshot
+print(s["state"], s["last_line"])             # ready 1
+s = dbg.step_instruction()                    # run one instruction
+print(s["last_line"])                         # 2
+print(dbg.snapshot()["state"])                # ready (snapshot does not advance)
+dbg.run()
+print(dbg.snapshot()["state"])                # done
 
 # Wrap up: aggregate and print the final results
 grand = total_value(inv)

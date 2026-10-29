@@ -67,7 +67,14 @@ out = sub.run()
 print(sub.read_file("/result.txt"))       # 取回它写的文件
 ```
 
-输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获（错误 kind 见[语言参考](language-reference.zh-CN.md)第 5 节）。
+输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；但父 VM 自身的配额错误仍不可捕获（完整规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
+
+终态 VM 的句柄操作按是否驱动 target 分两类计费：
+
+- 只读操作（`snapshot`、VFS 读取等）只计入调用方，不再被 target 已耗尽的账号阻断；
+- 写入或驱动操作（`write_file`、`feed_input`、带输入的 `run`、`exec` 等）仍由 target 与 caller 联合计量，可能被已耗尽的 target 拒绝。
+
+推荐工作流仍是运行前预置文件与输入、运行后读取结果。
 
 ### 输出转发与缓冲
 
@@ -145,7 +152,7 @@ writer：
 | `max_fs_files` | 1000 | 单 VM 文件数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 单文件 UTF-8 字节上限 |
 
-累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示本层不设上限。
+累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示不设上限。
 
 结构性字段必须是非负有限整数；累计字段额外接受 `-1`。除此之外的负数和非整数值在所有字段上都会被拒绝。
 

@@ -12,6 +12,7 @@ from ..io import InputRequired, OutputLimitExceeded, VirtualIO
 from ..vfs import VirtualFileSystem
 from ._model import (
     _MAX_SOURCE_BYTES,
+    _TERMINAL_STATES,
     _UNBOUND,
     Frame,
     SericiteFunction,
@@ -42,6 +43,17 @@ from ._values import (
 )
 
 _ERROR_SCHEMA = SericiteSchema((("kind", "str"), ("message", "str")))
+_TERMINAL_VM_READ_METHODS = frozenset(
+    {
+        "VM.list_dir",
+        "VM.path_exists",
+        "VM.read_file",
+        "VM.snapshot",
+        "VM.step",
+        "VM.step_instruction",
+        "VM.stdout",
+    }
+)
 
 
 class _EngineCore:
@@ -418,6 +430,8 @@ class _EngineCore:
         return False
 
     def _fail(self, context: VMContext, error: SericiteError, line: int) -> None:
+        if error.kind == "resource_exhausted" and error._resource_vm_id is None:
+            error._resource_vm_id = context.vm_id
         context.error = error.bind(context.filename, line)
         context.state = (
             "resource_exhausted" if error.kind == "resource_exhausted" else "error"
@@ -435,6 +449,11 @@ class _EngineCore:
         self, context: VMContext, error: SericiteError, *, floor: int = 0
     ) -> bool:
         if error.kind in _UNCATCHABLE_KINDS:
+            return False
+        if error.kind == "resource_exhausted" and error._resource_vm_id in (
+            None,
+            context.vm_id,
+        ):
             return False
         while len(context.frames) > floor:
             frame = context.frames[-1]
@@ -772,6 +791,12 @@ class _EngineCore:
             return
         if isinstance(function, _NativeFunction):
             home = function.home
+            if (
+                isinstance(home, VMContext)
+                and home.state in _TERMINAL_STATES
+                and function.name in _TERMINAL_VM_READ_METHODS
+            ):
+                home = None
             contexts = (context,) if home is None else (context, home)
             if function.needs_caller:
                 kwargs["_caller_context"] = context

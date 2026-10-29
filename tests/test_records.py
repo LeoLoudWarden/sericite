@@ -1035,7 +1035,7 @@ class HomeVmTests(unittest.TestCase):
 
     def test_spawned_vm_capped_by_caller_limits(self):
         # a grandchild VM created via a granted function has its quota also capped by the caller:
-        # the grandchild can run at most within the caller's budget (resource_exhausted is uncatchable, terminating the chain)
+        # the grandchild can run at most within the caller's budget (caller-quota exhaustion is uncatchable, terminating the chain)
         child_src = '\nout = spawn("i = 0\\nwhile i < 100000:\\n    i = i + 1")\n'
         source = (
             "def spawn(code):\n"

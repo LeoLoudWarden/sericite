@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-UNCATCHABLE_ERROR_KINDS = frozenset(
-    {"host_error", "internal_error", "resource_exhausted"}
-)
+UNCATCHABLE_ERROR_KINDS = frozenset({"host_error", "internal_error"})
 # Kinds a script can catch at runtime with an `except <kind>` filter. `syntax_error`
 # is included because nested-VM compilation raises it at runtime when a child VM's
-# source is rejected.
+# source is rejected. `resource_exhausted` is catchable only when it arrives from
+# another VM; the runtime still rejects it in the VM whose quota was exhausted.
 CATCHABLE_ERROR_KINDS = frozenset(
     {
         "arity_error",
@@ -21,6 +20,7 @@ CATCHABLE_ERROR_KINDS = frozenset(
         "name_error",
         "not_directory",
         "raise_error",
+        "resource_exhausted",
         "runtime_error",
         "syntax_error",
         "type_error",
@@ -49,6 +49,7 @@ class SericiteError(Exception):
         self.filename = filename
         self.line = line
         self.column = column
+        self._resource_vm_id: int | None = None
 
     def bind(self, filename: str, line: int | None) -> SericiteError:
         if self.filename is None:
