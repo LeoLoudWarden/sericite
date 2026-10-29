@@ -73,7 +73,7 @@ class TryExceptTests(unittest.TestCase):
         filters = (
             "()",
             "(name_error, zero_divsion)",
-            "(name_error, resource_exhausted)",
+            "(name_error, internal_error)",
             "(name_error, ...)",
             "(name_error, 1)",
         )
@@ -145,6 +145,7 @@ class TryExceptTests(unittest.TestCase):
             "name_error",
             "not_directory",
             "raise_error",
+            "resource_exhausted",
             "runtime_error",
             "syntax_error",
             "type_error",
@@ -157,7 +158,7 @@ class TryExceptTests(unittest.TestCase):
                 )
 
     def test_uncatchable_except_kinds_rejected_at_compile_time(self):
-        for kind in ("resource_exhausted", "internal_error", "host_error"):
+        for kind in ("internal_error", "host_error"):
             with self.subTest(kind=kind):
                 engine = SericiteEngine()
                 with self.assertRaises(SericiteError) as ctx:
@@ -226,6 +227,49 @@ class TryExceptTests(unittest.TestCase):
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertNotIn("must not happen", vm.stdout())
+
+    def test_local_resource_exhausted_not_catchable_by_explicit_kind(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_instructions=100))
+        vm = engine.create_root(
+            "try:\n"
+            "    while True:\n"
+            "        x = 1\n"
+            "except resource_exhausted:\n"
+            '    print("must not happen")\n'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertNotIn("must not happen", vm.stdout())
+
+    def test_child_resource_exhausted_caught_by_parent(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    x = 1", max_instructions=20)\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except resource_exhausted as e:\n"
+            '    print("caught", e.kind)\n'
+            'print("parent alive")\n'
+        )
+        self.assertEqual(vm.run(), "caught resource_exhausted\nparent alive\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_parent_quota_exhaustion_cannot_be_caught_through_child(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_instructions=100))
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    x = 1")\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except resource_exhausted:\n"
+            '    print("must not happen")\n'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
         self.assertNotIn("must not happen", vm.stdout())
 
     def test_error_record_allocation_failure_is_terminal(self):

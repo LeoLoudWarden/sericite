@@ -701,6 +701,66 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[2].state, "resource_exhausted")
 
+    def test_terminal_target_read_methods_charge_only_caller(self):
+        operations = (
+            "sub.snapshot()",
+            'sub.read_file("/f.txt")',
+            'sub.list_dir("/")',
+            'sub.path_exists("/f.txt")',
+            "sub.step()",
+            "sub.step_instruction()",
+            "sub.stdout()",
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
+                    'sub.write_file("/f.txt", "ok")\n'
+                    "try:\n"
+                    "    sub.run()\n"
+                    "except resource_exhausted:\n"
+                    "    pass\n"
+                    f"result = {operation}\n"
+                    'print("parent alive")\n'
+                )
+                self.assertEqual(vm.run(), "parent alive\n")
+                self.assertEqual(vm.snapshot()["state"], "done")
+                self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_terminal_target_prebound_read_method_charges_only_caller(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
+            'sub.write_file("/f.txt", "ok")\n'
+            "bound = sub.read_file\n"
+            "try:\n"
+            "    sub.run()\n"
+            "except resource_exhausted:\n"
+            "    pass\n"
+            'result = bound("/f.txt")\n'
+            "print(result)\n"
+        )
+        self.assertEqual(vm.run(), "ok\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_terminal_target_read_still_enforces_caller_quota(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_instructions=200))
+        long_path = "/" + "x" * 1000
+        vm = engine.create_root(
+            'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except resource_exhausted:\n"
+            "    pass\n"
+            f"result = sub.read_file({long_path!r})\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
 
 class VfsChargeTests(unittest.TestCase):
     def test_directory_index_tracks_nested_files(self):

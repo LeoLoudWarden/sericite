@@ -52,7 +52,7 @@ engine.create_root(
 
 引擎构造时设置默认配额；`create_root()` 再传 `limits` 时会替换该 root 的整套配置，而不是逐字段合并。
 
-对于可信、长期运行的 root，五项累计配额可用 `-1` 表示本层不设上限（哪些字段及合并、继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节）；结构性配额必须保持有限。
+对于可信、长期运行的 root，五项累计配额可用 `-1` 表示不设上限（哪些字段及合并、继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节）；结构性配额必须保持有限。
 
 `-1` 是显式的信任决定，只用于你掌控的代码。无限配额对资源安全的含义与边界见[安全模型](security.zh-CN.md)第 3 节。
 
@@ -96,7 +96,9 @@ record/schema、VM 句柄、函数及其他宿主对象不能越界。需要传�
 
 ### 5.3 异常与重入
 
-- FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原样传播，脚本可按 kind 捕获，因此其消息由宿主自行保证不含秘密。
+- FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原 kind 传播，是否可捕获遵守语言规则；普通可捕获 kind 可由脚本按 kind 处理，因此其消息由宿主自行保证不含秘密。
+- `resource_exhausted` 是特殊情况：宿主回调直接抛出它时，按当前 VM 自身的资源错误处理，脚本不可捕获，VM 进入 `resource_exhausted` 终态。
+- 若资源类失败应当允许脚本恢复，请在回调内转换成 `runtime_error`、`ffi_error` 等普通契约 kind，不要直接抛 `resource_exhausted`。
 - 回调抛出契约**之外**的任何 `Exception` 都视为治理失败：其内部状态不再可信。引擎让当前 VM 以**不可捕获**的 `host_error` 终止，消息只含宿主异常的类型名，绝不含异常文本，控制权交还宿主。
 - 脚本无法捕获这类失败——裸 `except:` 也不行——也无法借它探测宿主异常类型。请在回调内部捕获自己的异常，把脚本可见的失败翻译成契约 kind。
 - `SystemExit`、`KeyboardInterrupt` 等其他 `BaseException` 是发给宿主的进程级事件：原样穿透 `run()` 上抛。不要授予其依赖库会在对抗输入路径上调用 `sys.exit()` 的函数——这与"不要授予能被驱动着删文件的函数"是同一条纪律。
@@ -119,7 +121,7 @@ except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
 ```
 
-`resource_exhausted`、`internal_error` 与 `host_error` 只是不能被 **Sericite 脚本** 捕获；宿主可以且应该处理它们。语法、运行时和 FFI 错误的 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节。
+`resource_exhausted` 的脚本侧可捕获规则（仅当来自 `VM()` 隔离的代码时可捕获）与 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节；`internal_error` 与 `host_error` 始终不能被脚本捕获。宿主可以且应该处理这三类错误。
 
 ## 7. 不可信代码的宿主检查清单
 

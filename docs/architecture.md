@@ -58,7 +58,11 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - c. `SericiteError.filename` embeds the engine-local vm_id and is host-only. Script-facing error surfaces — the value bound by `except kind as e`, the snapshot `error` view, and message text — must contain no leak channel.
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
-10. `resource_exhausted` and `internal_error` must not be catchable by script `try/except` — quotas must not be swallowed by scripts.
+10.
+  - a. A `resource_exhausted` originating in the current VM must not be catchable by script `try/except` — a VM must not swallow its own quotas.
+  - b. A `resource_exhausted` arriving from another, terminated VM may be caught by a living parent.
+  - c. `internal_error` is always uncatchable.
+  - d. A cross-VM resource error records its source VM internally, and that identifier must never enter script-visible values.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross.
@@ -80,7 +84,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 
 The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [VM reference](vm-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
-Error kinds are centrally registered in the `errors` module, and catchability is compiler-enforced: unknown filter names and uncatchable kinds are both rejected at compile time as `syntax_error`. The full kind list is in the [language reference](language-reference.md) §5.
+Error kinds are centrally registered in the `errors` module. The compiler rejects unknown filter names and always-uncatchable kinds; the runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10). The full kind list is in the [language reference](language-reference.md) §5.
 
 ## 5. Resource quotas
 
@@ -112,7 +116,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 
 - An AccountRoute is constructed from caller, home, and target when a call begins; every instruction in that execution scope uses it.
 - Shared ancestors are charged once per causal charge, with no special cross-sibling delta mirroring.
-- VM-method execution is jointly constrained by target and caller; result ownership enters only the actual caller's route.
+- VM-method execution is normally jointly constrained by target and caller; result ownership enters only the actual caller's route. The exception is read-only handle operations on a terminal target: they execute no target code and are charged only to the caller. Write and driving operations do not use this exception.
 - A child VM created through a granted function is an empty world attached causally under its initiator, with quotas tightened elementwise across home and caller.
 
 ### 5.5 Checklist for new language features
@@ -163,12 +167,12 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 - Host callback execution time and memory are self-policed by the host and are not metered. Engine-side FFI argument/result copying is charged per node, and host return structures are also bounded by a node budget and depth limit.
 - The total memory ledger is approximate (strings counted as chars ×4, list slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
-- `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce an uncatchable `resource_exhausted` when its rendered result exceeds the limit.
+- `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules.
 - Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
 - A VM's execution context is retained after reaching a terminal state for debug snapshots and further `exec` deliveries; release it with `dispose()` (contract in the [VM reference](vm-reference.md) §3).
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
-- Cross-VM calls charge shared ancestors once. VM-method execution is jointly constrained by target and caller, while result ownership enters only the actual caller.
+- Cross-VM calls charge shared ancestors once, and read-only handle operations on a terminal target are charged only to the caller; the full charging rules are in section 5.4.
 
 ## 9. Explicitly not supported yet
 

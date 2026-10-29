@@ -67,7 +67,14 @@ out = sub.run()
 print(sub.read_file("/result.txt"))      # retrieve the file it wrote
 ```
 
-Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught (see the [language reference](language-reference.md) §5 for error kinds).
+Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught. After a child enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own quota errors remain uncatchable (full rules in the [language reference](language-reference.md) §5).
+
+Handle operations on a terminal VM are charged in two ways depending on whether they drive the target:
+
+- read-only operations (`snapshot`, VFS reads, …) are charged only to the caller and are not blocked by the target's exhausted accounts;
+- write or driving operations (`write_file`, `feed_input`, `run` with inputs, `exec`, …) remain jointly metered by target and caller and may be rejected by an exhausted target.
+
+The recommended workflow remains: preset files and inputs before execution, and read results afterward.
 
 ### Output forwarding and buffering
 
