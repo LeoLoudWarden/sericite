@@ -157,11 +157,22 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter can be one catchable kind, a non-empty parenthesized group of kinds, or `...` for every catchable kind. These are static filter forms, not variable evaluation or general-purpose tuples. Unknown names (including misspellings), empty groups, and uncatchable kinds inside a group are rejected at compile time with a `syntax_error`. `resource_exhausted`, `internal_error`, and `host_error` cannot be caught by either bare `except:` or `except ...`.
+An `except` filter is static syntax, not variable evaluation or a general-purpose tuple. There are three filter forms:
 
-`as e` binds a record with exactly two string fields: `e.kind` is the actual error kind and `e.message` is the readable error text. Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
+- a single catchable kind: `except kind`;
+- a non-empty parenthesized group of kinds: `except (kind1, kind2)`;
+- `...` for every catchable kind: `except ...`.
 
-The catchable kinds are:
+Unknown names (including misspellings), empty groups, and uncatchable kinds inside a group are rejected at compile time with a `syntax_error`.
+
+`as e` binds a record with exactly two string fields:
+
+- `e.kind`: the actual error kind;
+- `e.message`: the readable error text.
+
+Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
+
+Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).

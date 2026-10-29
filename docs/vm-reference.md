@@ -157,7 +157,7 @@ When a script creates a child VM, the `VM()` quota keyword arguments correspond 
 
 The same rule applies when home and caller limits are combined for granted functions.
 
-Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow. Stdout is buffered by default even when forwarded live; configure `buffer_output=False` when historical-output retention is not needed.
+Unlimited skips only the limit check, not accounting: diagnostic ledgers continue to grow.
 
 Instruction, memory, and child-VM consumption is charged to relevant ancestors through causal routes. The charging model is in the [architecture notes](architecture.md) §5; a Python host configures the same fields for a root via `SericiteLimits` — see the [Sericite-PY reference](sericite-py-reference.md) §3.
 

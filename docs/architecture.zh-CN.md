@@ -19,9 +19,9 @@
 | `engine` | 调度循环、帧/求值栈、运算语义、异常展开（跨帧/跨 VM）、内建函数、VM 生命周期与 exec 投递、资源配额、调试快照 |
 | `accounting` | 因果记账路由、统一 Meter、原子收费与一次性资源变更许可 |
 | `vfs` | 单 VM 私有虚拟文件系统（纯内存、纯文本；平坦文件字典 + 直接子项目录树及名称元数据） |
-| `io` | 每个 VM 独立的虚拟输入与输出（输出字节上限与可选缓冲；脚本输入变更需许可，宿主预置走显式 trusted 通道）；每台 VM 都可经显式配置的 writer 转发输出，root 还可使用宿主回调（用户契约见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节与[虚拟机参考](vm-reference.zh-CN.md)第 4 节） |
+| `io` | 每个 VM 独立的虚拟输入与输出（输出字节上限与可选缓冲；脚本输入变更需许可，宿主预置走显式 trusted 通道）。输出可经显式配置的 writer 转发：脚本侧见[虚拟机参考](vm-reference.zh-CN.md)第 4 节，宿主侧 root 回调见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节 |
 | `errors` | `SericiteError` 与集中管理的错误 kind 注册表 |
-| `cli` / `__main__` | 命令行入口：源码读取与 include 拼接及来源行号映射、可信能力文件装载、root argv 初始化、一次性执行与基于持久 `exec()` 的 REPL、宿主侧诊断；不改变编译、调度或隔离不变量（命令行契约见 [CLI 参考](cli-reference.zh-CN.md)） |
+| `cli` / `__main__` | 命令行入口：源码读取与 include 拼接及来源行号映射、可信能力文件装载、root argv 初始化、一次性执行与基于持久 `exec()` 的 REPL、宿主侧诊断。不改变编译、调度或隔离不变量（命令行契约见 [CLI 参考](cli-reference.zh-CN.md)） |
 
 `compiler` 包按内聚职责拆分为：
 

@@ -43,7 +43,7 @@ engine.create_root(
 - `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。
 - `functions`：授予脚本的宿主函数表，见第 5 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
-- `buffer_output`：是否在内存中保留 root stdout。默认 `True`，保持 `run()`/`exec()`/`stdout()` 与快照行为；为 `False` 时输出仍计量并转发，但缓冲 stdout 与这些读取结果为空，可避免长期 root 无限保留历史输出。
+- `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
 
 ## 3. 配额：SericiteLimits
@@ -52,7 +52,7 @@ engine.create_root(
 
 引擎构造时设置默认配额；`create_root()` 再传 `limits` 时会替换该 root 的整套配置，而不是逐字段合并。
 
-对于可信、长期运行的 root，`max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 这五项累计配额可用 `-1` 表示本层不设上限；结构性配额必须保持有限。合并与继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。
+对于可信、长期运行的 root，五项累计配额可用 `-1` 表示本层不设上限（哪些字段及合并、继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节）；结构性配额必须保持有限。
 
 `-1` 是显式的信任决定，只用于你掌控的代码。无限配额对资源安全的含义与边界见[安全模型](security.zh-CN.md)第 3 节。
 
