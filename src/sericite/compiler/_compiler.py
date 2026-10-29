@@ -427,9 +427,15 @@ class _Compiler:
         handler_exits: list[int] = []
         for handler in node.handlers:
             target = len(code.instrs)
-            kinds = (
-                None if handler.type is None else (handler.type.id,)  # type: ignore[union-attr]
-            )
+            if handler.type is None or (
+                isinstance(handler.type, ast.Constant)
+                and handler.type.value is Ellipsis
+            ):
+                kinds = None
+            elif isinstance(handler.type, ast.Name):
+                kinds = (handler.type.id,)
+            else:
+                kinds = tuple(element.id for element in handler.type.elts)
             handler_labels = self._without_labels(entry_labels, body_assigned)
             if handler.name is not None:
                 handler_labels.pop(handler.name, None)

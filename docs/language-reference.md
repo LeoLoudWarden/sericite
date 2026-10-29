@@ -140,9 +140,13 @@ Not supported: variadic arguments (`*args`), keyword-only parameters.
 ```python
 try:
     x = 1 / 0
-except zero_division as e:   # filter by error kind; e is the message string
-    print("caught:", e)
-except:                      # bare except catches everything catchable
+except zero_division as e:   # filter by error kind; e is an error record
+    print("caught:", e.message)
+except (name_error, type_error) as e:  # catch several kinds in one clause
+    print("caught:", e.kind, e.message)
+except ... as e:             # catch everything catchable and bind e
+    print("caught:", e.kind, e.message)
+except:                      # bare except catches all without binding a value
     print("wrong")
 else:
     print("no error")
@@ -153,7 +157,9 @@ raise "something wrong"      # raises kind raise_error, catchable
 raise                        # bare raise inside except: re-raise the current error
 ```
 
-An `except` filter must name a catchable error kind; it is not a variable or an arbitrary binding name. Unknown names, including misspellings, are rejected at compile time with a `syntax_error`. The uncatchable kinds `resource_exhausted`, `internal_error`, and `host_error` are likewise rejected at compile time — they can never be caught, even by a bare `except:`. Use `except kind as e` to filter by kind and bind the message string, or bare `except:` to catch everything catchable.
+An `except` filter can be one catchable kind, a non-empty parenthesized group of kinds, or `...` for every catchable kind. These are static filter forms, not variable evaluation or general-purpose tuples. Unknown names (including misspellings), empty groups, and uncatchable kinds inside a group are rejected at compile time with a `syntax_error`. `resource_exhausted`, `internal_error`, and `host_error` cannot be caught by either bare `except:` or `except ...`.
+
+`as e` binds a record with exactly two string fields: `e.kind` is the actual error kind and `e.message` is the readable error text. Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
 
 The catchable kinds are:
 
@@ -266,7 +272,7 @@ print(out)                       # 'hi\n'
 try:
     sub = VM("import os")
 except syntax_error as e:
-    print("compile failed:", e)
+    print("compile failed:", e.message)
 ```
 
 VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions:
@@ -407,7 +413,7 @@ def parse_qty(text):
     try:
         return int(text)
     except conversion_error as e:
-        print("  bad number:", e)
+        print("  bad number:", e.message)
         return 0
     finally:
         print("  parse done")
@@ -425,7 +431,7 @@ def load_config():
 try:
     load_config()
 except raise_error as e:
-    print("config:", e)
+    print("config:", e.message)
 
 # custom raise + bare except as the catch-all
 try:

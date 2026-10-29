@@ -280,12 +280,12 @@ class SnapshotViewTests(unittest.TestCase):
             "try:\n"
             '    VM("def broken(:")\n'
             "except syntax_error as e:\n"
-            '    print("compile:", e)\n'
+            '    print("compile:", e.message)\n'
             'sub = VM("raise \\"boom\\"")\n'
             "try:\n"
             "    sub.run()\n"
             "except raise_error as e:\n"
-            '    print("runtime:", e)\n'
+            '    print("runtime:", e.message)\n'
         )
         output = engine.create_root(source).run()
         self.assertEqual(output, "compile: invalid syntax\nruntime: boom\n")

@@ -41,6 +41,8 @@ from ._values import (
     _type_name,
 )
 
+_ERROR_SCHEMA = SericiteSchema((("kind", "str"), ("message", "str")))
+
 
 class _EngineCore:
     def __init__(self, limits: SericiteLimits | None = None) -> None:
@@ -356,7 +358,6 @@ class _EngineCore:
     ) -> bool:
         if context.state != "ready":
             return False
-        floor = exception_floor or 0
         frame = context.frames[-1]
         self._sync_active_errors(frame)
         instr = frame.code.instrs[frame.pc]
@@ -376,12 +377,7 @@ class _EngineCore:
             )
             return False
         except SericiteError as exc:
-            if self._handle_exception(context, exc, floor=floor):
-                return True
-            if exception_floor is not None:
-                raise
-            self._fail(context, exc, instr.line)
-            return False
+            return self._handle_error(context, exc, instr.line, exception_floor)
         except RecursionError:
             error = SericiteError("recursion limit exceeded", kind="resource_exhausted")
             if exception_floor is not None:
@@ -390,12 +386,7 @@ class _EngineCore:
             return False
         except OverflowError:
             error = SericiteError("numeric overflow", kind="conversion_error")
-            if self._handle_exception(context, error, floor=floor):
-                return True
-            if exception_floor is not None:
-                raise error
-            self._fail(context, error, instr.line)
-            return False
+            return self._handle_error(context, error, instr.line, exception_floor)
         except Exception:  # noqa: BLE001 — any host-internal failure becomes internal_error
             if exception_floor is not None:
                 raise SericiteError(
@@ -408,6 +399,23 @@ class _EngineCore:
             )
             return False
         return True
+
+    def _handle_error(
+        self,
+        context: VMContext,
+        error: SericiteError,
+        line: int,
+        exception_floor: int | None,
+    ) -> bool:
+        try:
+            if self._handle_exception(context, error, floor=exception_floor or 0):
+                return True
+        except SericiteError as handling_error:
+            error = handling_error
+        if exception_floor is not None:
+            raise error
+        self._fail(context, error, line)
+        return False
 
     def _fail(self, context: VMContext, error: SericiteError, line: int) -> None:
         context.error = error.bind(context.filename, line)
@@ -443,7 +451,13 @@ class _EngineCore:
             if handler.error_name is not None:
                 self._store_local(frame, handler.error_name, error)
             if handler.bind is not None:
-                self._store_local(frame, handler.bind, error.message)
+                record = self._construct_record(
+                    context,
+                    _ERROR_SCHEMA,
+                    (error.kind, error.message),
+                    {},
+                )
+                self._store_local(frame, handler.bind, record)
             return True
         return False
 

@@ -194,7 +194,7 @@ class ClosureTests(unittest.TestCase):
             "        x = 1 / 0\n"
             "    except zero_division as error:\n"
             "        def read():\n"
-            "            return error\n"
+            "            return error.message\n"
             "    return read\n"
             "print(outer()())\n"
         )

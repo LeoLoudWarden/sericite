@@ -15,7 +15,7 @@ class TryExceptTests(unittest.TestCase):
             "try:\n"
             "    x = 1 / 0\n"
             "except zero_division as e:\n"
-            '    print("caught: " + e)\n'
+            '    print("caught: " + e.message)\n'
         )
         self.assertEqual(run(source), "caught: division by zero\n")
 
@@ -36,10 +36,74 @@ class TryExceptTests(unittest.TestCase):
         source = 'try:\n    x = int("abc")\nexcept:\n    print("caught")\n'
         self.assertEqual(run(source), "caught\n")
 
+    def test_kind_group_catches_each_listed_kind(self):
+        cases = (
+            ("x = 1 / 0", "zero_division"),
+            ("x = missing", "name_error"),
+            ('x = int("bad")', "conversion_error"),
+        )
+        for operation, expected in cases:
+            with self.subTest(expected=expected):
+                source = (
+                    "try:\n"
+                    f"    {operation}\n"
+                    "except (zero_division, name_error, conversion_error) as e:\n"
+                    "    print(e.kind)\n"
+                )
+                self.assertEqual(run(source), expected + "\n")
+
+    def test_wildcard_binds_fixed_error_record(self):
+        source = (
+            "try:\n"
+            "    x = 1 / 0\n"
+            "except ... as e:\n"
+            "    print(unwrap(e))\n"
+            "try:\n"
+            '    int("bad")\n'
+            "except (...) as e:\n"
+            "    print(e.kind, e.message)\n"
+        )
+        self.assertEqual(
+            run(source),
+            "{'kind': 'zero_division', 'message': 'division by zero'}\n"
+            "conversion_error cannot convert to int: 'bad'\n",
+        )
+
+    def test_invalid_kind_groups_rejected_at_compile_time(self):
+        filters = (
+            "()",
+            "(name_error, zero_divsion)",
+            "(name_error, resource_exhausted)",
+            "(name_error, ...)",
+            "(name_error, 1)",
+        )
+        for filter_source in filters:
+            with self.subTest(filter_source=filter_source):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(
+                        f"try:\n    pass\nexcept {filter_source}:\n    pass\n"
+                    )
+                self.assertEqual(ctx.exception.kind, "syntax_error")
+
+    def test_group_and_wildcard_syntax_not_general_values(self):
+        for source in ("value = (name_error, type_error)\n", "value = ...\n"):
+            with self.subTest(source=source):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                self.assertEqual(ctx.exception.kind, "syntax_error")
+
     def test_non_matching_kind_propagates(self):
         engine = SericiteEngine()
         vm = engine.create_root(
             "try:\n    x = missing\nexcept zero_division:\n    y = 1\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "name_error")
+
+    def test_non_matching_kind_group_propagates(self):
+        vm = SericiteEngine().create_root(
+            "try:\n    x = missing\nexcept (zero_division, type_error):\n    pass\n"
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -107,7 +171,7 @@ class TryExceptTests(unittest.TestCase):
             "try:\n"
             f"    sub = VM({child!r})\n"
             "except syntax_error as e:\n"
-            '    print("caught: " + e)\n'
+            '    print("caught: " + e.message)\n'
         )
         self.assertIn("caught: unknown error kind: 'unknown_kind'", run(source))
 
@@ -164,13 +228,21 @@ class TryExceptTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertNotIn("must not happen", vm.stdout())
 
+    def test_error_record_allocation_failure_is_terminal(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_total_bytes=1))
+        vm = engine.create_root("try:\n    1 / 0\nexcept ... as e:\n    pass\n")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
+
     def test_child_vm_error_caught_by_parent(self):
         source = (
             'sub = VM("x = missing")\n'
             "try:\n"
             "    sub.run()\n"
             "except name_error as e:\n"
-            '    print("parent caught: " + e)\n'
+            '    print("parent caught: " + e.message)\n'
         )
         self.assertIn("parent caught:", run(source))
 
@@ -309,7 +381,7 @@ class VFSTests(unittest.TestCase):
             "try:\n"
             '    read_file("/missing.txt")\n'
             "except file_not_found as e:\n"
-            '    print("caught: " + e)\n'
+            '    print("caught: " + e.message)\n'
         )
         self.assertEqual(run(source), "caught: no such file: /missing.txt\n")
 

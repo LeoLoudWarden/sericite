@@ -10,7 +10,7 @@ print("no password:", "password" not in user)
 try:
     print(user["missing"])
 except key_error as e:
-    print("caught:", e)
+    print("caught:", e.message)
 
 i = 0
 names = user.keys()

@@ -24,4 +24,4 @@ print("sum 1..5 skip 4:", total)
 try:
     raise "demo error"
 except raise_error as e:
-    print("raised:", e)
+    print("raised:", e.message)
