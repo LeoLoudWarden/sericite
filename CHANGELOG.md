@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added
+- `except (kind1, kind2, ...)` 支持在一个分支中静态捕获多种错误；`except ... as e` 支持捕获所有可捕获错误并绑定异常值，未知 kind 与不可捕获 kind 仍在编译期拒绝。
+
+### Changed
+- **语义破坏变更**：`except` 的 `as e` 绑定值由消息字符串改为固定含 `kind` 与 `message` 两个字符串字段的 record；原字符串用法需迁移为 `e.message`，root-agent 的错误分发同步改为单个通用捕获分支。
+
 ## [0.9.1] - 2026-10-29
 
 ### Changed

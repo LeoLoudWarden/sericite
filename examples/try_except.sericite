@@ -1,7 +1,7 @@
 try:
     x = 1 / 0
 except zero_division as e:
-    print("caught: " + e)
+    print("caught: " + e.message)
 
 def f():
     return missing_thing + 1
@@ -14,7 +14,7 @@ except name_error:
 try:
     read_file("/missing.txt")
 except file_not_found as e:
-    print("caught: " + e)
+    print("caught: " + e.message)
 
 i = 0
 caught = 0

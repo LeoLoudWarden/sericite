@@ -24,13 +24,22 @@ def _validate(tree: ast.Module, filename: str) -> None:
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_NODES:
             _reject(node, filename, f"unsupported syntax: {type(node).__name__}")
-        if isinstance(node, ast.Constant) and type(node.value) not in {
-            str,
-            int,
-            float,
-            bool,
-            type(None),
-        }:
+        if (
+            isinstance(node, ast.Constant)
+            and type(node.value)
+            not in {
+                str,
+                int,
+                float,
+                bool,
+                type(None),
+            }
+            and not (
+                node.value is Ellipsis
+                and isinstance(parents.get(node), ast.ExceptHandler)
+                and parents[node].type is node
+            )
+        ):
             _reject(node, filename, "unsupported constant")
         if isinstance(node, ast.Name):
             if node.id.startswith("__"):
@@ -133,32 +142,50 @@ def _validate(tree: ast.Module, filename: str) -> None:
             _reject(node, filename, "** arguments are not supported")
         if isinstance(node, ast.Dict) and any(key is None for key in node.keys):
             _reject(node, filename, "** unpacking is not supported")
-        if (
-            isinstance(node, ast.ExceptHandler)
-            and node.type is not None
-            and not isinstance(node.type, ast.Name)
-        ):
-            _reject(
-                node,
-                filename,
-                "except clause must name an error kind",
-            )
-        if isinstance(node, ast.ExceptHandler) and isinstance(node.type, ast.Name):
-            if node.type.id in UNCATCHABLE_ERROR_KINDS:
+        if isinstance(node, ast.Tuple):
+            parent = parents.get(node)
+            if not isinstance(parent, ast.ExceptHandler) or parent.type is not node:
+                _reject(node, filename, "unsupported syntax: Tuple")
+        if isinstance(node, ast.ExceptHandler) and node.type is not None:
+            filter_node = node.type
+            if isinstance(filter_node, ast.Constant) and filter_node.value is Ellipsis:
+                kind_nodes = []
+            elif isinstance(filter_node, ast.Name):
+                kind_nodes = [filter_node]
+            elif isinstance(filter_node, ast.Tuple):
+                if not filter_node.elts:
+                    _reject(filter_node, filename, "except kind group cannot be empty")
+                if any(
+                    not isinstance(element, ast.Name) for element in filter_node.elts
+                ):
+                    _reject(
+                        filter_node,
+                        filename,
+                        "except kind group must contain only error kind names",
+                    )
+                kind_nodes = filter_node.elts
+            else:
                 _reject(
-                    node.type,
+                    filter_node,
                     filename,
-                    f"error kind '{node.type.id}' is not catchable; "
-                    "it cannot be caught even by a bare 'except:'",
+                    "except clause must name error kinds or use '...'",
                 )
-            if node.type.id not in CATCHABLE_ERROR_KINDS:
-                _reject(
-                    node.type,
-                    filename,
-                    f"unknown error kind: '{node.type.id}'; "
-                    "use 'except <kind> as name' to filter and bind a message, "
-                    "or bare 'except:' to catch all catchable errors",
-                )
+            for kind_node in kind_nodes:
+                if kind_node.id in UNCATCHABLE_ERROR_KINDS:
+                    _reject(
+                        kind_node,
+                        filename,
+                        f"error kind '{kind_node.id}' is not catchable; "
+                        "it cannot be caught even by a bare 'except:'",
+                    )
+                if kind_node.id not in CATCHABLE_ERROR_KINDS:
+                    _reject(
+                        kind_node,
+                        filename,
+                        f"unknown error kind: '{kind_node.id}'; "
+                        "use 'except <kind> as name' to filter and bind an error record, "
+                        "or bare 'except:' to catch all catchable errors",
+                    )
         if isinstance(node, ast.FunctionDef):
             if node.name.startswith("__"):
                 _reject(node, filename, "dunder names are not available")

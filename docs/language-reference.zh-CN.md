@@ -140,9 +140,13 @@ def double(x):
 ```python
 try:
     x = 1 / 0
-except zero_division as e:   # 按错误类型过滤，e 是消息字符串
-    print("caught:", e)
-except:                      # 裸 except 兜底
+except zero_division as e:   # 按错误类型过滤，e 是异常 record
+    print("caught:", e.message)
+except (name_error, type_error) as e:  # 一个分支捕获多种类型
+    print("caught:", e.kind, e.message)
+except ... as e:             # 捕获所有可捕获错误并绑定 e
+    print("caught:", e.kind, e.message)
+except:                      # 裸 except 兜底，不绑定异常值
     print("wrong")
 else:
     print("没出错")
@@ -153,7 +157,9 @@ raise "出问题了"             # 抛出 raise_error 类型，可捕获
 raise                        # 在 except 块内裸 raise：重新抛出当前错误
 ```
 
-`except` 的过滤条件必须是可捕获的错误 kind，不是变量或任意绑定名。未知名字（包括拼写错误）会在编译期以 `syntax_error` 拒绝。不可捕获的 `resource_exhausted`、`internal_error` 与 `host_error` 同样在编译期被拒绝——它们连裸 `except:` 都无法捕获。`except kind as e` 按 kind 过滤并绑定消息字符串；裸 `except:` 捕获所有可捕获错误。
+`except` 的过滤条件可以是一个可捕获 kind、一个非空的 kind 括号组，或表示全部可捕获 kind 的 `...`；它们都是静态过滤语法，不是变量求值或通用元组。未知名字（包括拼写错误）、空组和组内的不可捕获 kind 会在编译期以 `syntax_error` 拒绝。`resource_exhausted`、`internal_error` 与 `host_error` 连裸 `except:` 和 `except ...` 也无法捕获。
+
+`as e` 绑定一个固定含两个字符串字段的 record：`e.kind` 是实际发生的错误类型，`e.message` 是可读错误文本。裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
 
 可捕获 kind 的完整列表：
 
@@ -266,7 +272,7 @@ print(out)                       # 'hi\n'
 try:
     sub = VM("import os")
 except syntax_error as e:
-    print("编译失败:", e)
+    print("编译失败:", e.message)
 ```
 
 VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件。创建时可以收紧配额、授予函数：
@@ -407,7 +413,7 @@ def parse_qty(text):
     try:
         return int(text)
     except conversion_error as e:
-        print("  bad number:", e)
+        print("  bad number:", e.message)
         return 0
     finally:
         print("  parse done")
@@ -425,7 +431,7 @@ def load_config():
 try:
     load_config()
 except raise_error as e:
-    print("config:", e)
+    print("config:", e.message)
 
 # 自定义 raise + 兜底 except
 try:

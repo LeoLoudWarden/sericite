@@ -540,7 +540,7 @@ class LabelTests(unittest.TestCase):
             "    try:\n"
             "        print(p.z)\n"
             "    except attribute_error as e:\n"
-            "        print(e)\n"
+            "        print(e.message)\n"
             "    p = Q(2)\n"
             "    i = i + 1\n"
         )
@@ -608,7 +608,7 @@ class LabelTests(unittest.TestCase):
                     "    try:\n"
                     "        print(p.z)\n"
                     "    except attribute_error as e:\n"
-                    "        print(e)\n"
+                    "        print(e.message)\n"
                 )
                 self.assertEqual(out, "record {x: int} has no field 'z'\n")
 
@@ -652,7 +652,7 @@ class ClosureAndVMTests(unittest.TestCase):
             '    "try:\\n"\n'
             "    \"    f({'x': 1})\\n\"\n"
             '    "except contract_error as e:\\n"\n'
-            '    "    print(e)\\n",\n'
+            '    "    print(e.message)\\n",\n'
             "    functions={'f': get_x})\n"
             "print(sub.run())\n"
         )
@@ -670,7 +670,7 @@ class ClosureAndVMTests(unittest.TestCase):
             '    "try:\\n"\n'
             '    "    g()\\n"\n'
             '    "except contract_error as e:\\n"\n'
-            '    "    print(e)\\n",\n'
+            '    "    print(e.message)\\n",\n'
             "    functions={'g': bad})\n"
             "print(sub.run())\n"
         )
@@ -686,7 +686,7 @@ class ClosureAndVMTests(unittest.TestCase):
             '    "try:\\n"\n'
             '    "    h(1)\\n"\n'
             '    "except arity_error as e:\\n"\n'
-            '    "    print(e)\\n",\n'
+            '    "    print(e.message)\\n",\n'
             "    functions={'h': two_args})\n"
             "print(sub.run())\n"
         )
@@ -708,7 +708,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "try:\n"
             "    leak(C('x'))\n"
             "except attribute_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
@@ -731,7 +731,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "try:\n"
             "    leak(D(1))\n"
             "except contract_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
@@ -753,7 +753,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "try:\n"
             "    leak()\n"
             "except contract_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
@@ -773,7 +773,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "try:\n"
             "    leak()\n"
             "except arity_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
@@ -959,7 +959,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "try:\n"
             "    leak()\n"
             "except contract_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
@@ -1025,7 +1025,7 @@ class HomeVmTests(unittest.TestCase):
             "try:\n"
             "    len(g)\n"
             "except type_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
             '""", functions={\'g\': f})\n'
             "print(sub.run())\n"
         )

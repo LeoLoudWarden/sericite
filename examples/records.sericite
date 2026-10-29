@@ -29,10 +29,10 @@ print(r == p)                # True (structural equality)
 try:
     dist_from_origin({"x": 1, "y": 2})
 except contract_error as e:
-    print("rejected:", e)
+    print("rejected:", e.message)
 
 # The missing-field error carries the compile-time label
 try:
     print(p.z)
 except attribute_error as e:
-    print("missing:", e)
+    print("missing:", e.message)

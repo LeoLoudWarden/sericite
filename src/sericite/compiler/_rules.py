@@ -51,6 +51,7 @@ _ALLOWED_NODES = {
     ast.Store,
     ast.Constant,
     ast.List,
+    ast.Tuple,
     ast.Dict,
     ast.Subscript,
     ast.Slice,

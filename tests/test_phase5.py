@@ -196,7 +196,7 @@ class SecurityQuotaTests(unittest.TestCase):
             "try:\n"
             "    float(text())\n"
             "except conversion_error as error:\n"
-            "    result = error\n",
+            "    result = error.message\n",
             functions={"text": lambda: "x" * 10_000},
         )
         vm.run()
@@ -754,7 +754,7 @@ class RaiseTests(unittest.TestCase):
             "try:\n"
             '    raise "custom boom"\n'
             "except raise_error as e:\n"
-            '    print("caught: " + e)\n'
+            '    print("caught: " + e.message)\n'
         )
         self.assertEqual(run(source), "caught: custom boom\n")
 
@@ -766,7 +766,7 @@ class RaiseTests(unittest.TestCase):
             "    except raise_error:\n"
             "        raise\n"
             "except raise_error as e:\n"
-            '    print("got: " + e)\n'
+            '    print("got: " + e.message)\n'
         )
         self.assertEqual(run(source), "got: inner\n")
 
@@ -782,7 +782,7 @@ class RaiseTests(unittest.TestCase):
             "            pass\n"
             "        raise\n"
             "except raise_error as e:\n"
-            '    print("got: " + e)\n'
+            '    print("got: " + e.message)\n'
         )
         self.assertEqual(run(source), "got: outer\n")
 
@@ -801,7 +801,7 @@ class RaiseTests(unittest.TestCase):
             "            pass\n"
             "        raise\n"
             "except raise_error as e:\n"
-            '    print("got: " + e)\n'
+            '    print("got: " + e.message)\n'
         )
         self.assertEqual(run(source), "got: outer\n")
 
@@ -819,7 +819,7 @@ class RaiseTests(unittest.TestCase):
             "        finally:\n"
             "            raise\n"
             "except raise_error as e:\n"
-            '    print("got: " + e)\n'
+            '    print("got: " + e.message)\n'
         )
         self.assertEqual(run(source), "got: outer\n")
 
@@ -844,7 +844,7 @@ class RaiseTests(unittest.TestCase):
             "try:\n"
             "    f()\n"
             "except raise_error as e:\n"
-            "    print(e)\n"
+            "    print(e.message)\n"
         )
         self.assertEqual(run(source), "from f\n")
 

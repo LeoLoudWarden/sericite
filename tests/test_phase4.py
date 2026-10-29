@@ -26,7 +26,7 @@ class DictTests(unittest.TestCase):
             "try:\n"
             '    x = d["missing"]\n'
             "except key_error as e:\n"
-            '    print("caught: " + e)\n'
+            '    print("caught: " + e.message)\n'
         )
         self.assertEqual(run(source), "caught: missing key: missing\n")
 
