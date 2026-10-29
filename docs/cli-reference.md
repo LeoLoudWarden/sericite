@@ -102,6 +102,8 @@ Error diagnostics mark positions by source of origin:
 - a command string appears as `<command>` and stdin source as `<stdin>`;
 - nested VMs retain `<sericite:vm_N>`.
 
+Runtime errors append `Traceback (most recent call last):` followed by each frame's function, filename, and line. Every root frame is mapped independently using the source rules above. Frames defined in another VM do not disclose their source lines and display `line ?`. Errors rejected before VM execution begins have no frames and retain the single-line diagnostic.
+
 ## 4. Capabilities: trusted Python startup configuration
 
 ### 4.1 Configuration entry point

@@ -195,11 +195,17 @@ class _EngineHostDebug:
             }
         error = None
         if context.error is not None:
+            frames = context.error._trace_for(context.vm_id)
+            if meter is not None:
+                meter.work(len(frames))
             error = {
                 "kind": context.error.kind,
                 "message": context.error.message,
                 "line": context.error.line,
                 "column": context.error.column,
+                "frames": [
+                    {"function": frame.function, "line": frame.line} for frame in frames
+                ],
             }
         return {
             "state": context.state,

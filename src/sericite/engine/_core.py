@@ -7,7 +7,7 @@ from .. import isa
 from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
 from ..compiler import compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
-from ..errors import SericiteError
+from ..errors import SericiteError, SericiteFrame
 from ..io import InputRequired, OutputLimitExceeded, VirtualIO
 from ..vfs import VirtualFileSystem
 from ._model import (
@@ -42,7 +42,10 @@ from ._values import (
     _type_name,
 )
 
-_ERROR_SCHEMA = SericiteSchema((("kind", "str"), ("message", "str")))
+_ERROR_FRAME_SCHEMA = SericiteSchema((("function", "str"), ("line", "any")))
+_ERROR_SCHEMA = SericiteSchema(
+    (("kind", "str"), ("message", "str"), ("frames", "list"))
+)
 _TERMINAL_VM_READ_METHODS = frozenset(
     {
         "VM.list_dir",
@@ -380,36 +383,19 @@ class _EngineCore:
             context.state = "waiting_input"
             return False
         except OutputLimitExceeded:
-            if exception_floor is not None:
-                raise
-            self._fail(
-                context,
-                SericiteError("output limit exceeded", kind="resource_exhausted"),
-                instr.line,
-            )
-            return False
+            error = SericiteError("output limit exceeded", kind="resource_exhausted")
+            return self._handle_error(context, error, instr.line, exception_floor)
         except SericiteError as exc:
             return self._handle_error(context, exc, instr.line, exception_floor)
         except RecursionError:
             error = SericiteError("recursion limit exceeded", kind="resource_exhausted")
-            if exception_floor is not None:
-                raise error from None
-            self._fail(context, error, instr.line)
-            return False
+            return self._handle_error(context, error, instr.line, exception_floor)
         except OverflowError:
             error = SericiteError("numeric overflow", kind="conversion_error")
             return self._handle_error(context, error, instr.line, exception_floor)
         except Exception:  # noqa: BLE001 — any host-internal failure becomes internal_error
-            if exception_floor is not None:
-                raise SericiteError(
-                    "internal runtime error", kind="internal_error"
-                ) from None
-            self._fail(
-                context,
-                SericiteError("internal runtime error", kind="internal_error"),
-                instr.line,
-            )
-            return False
+            error = SericiteError("internal runtime error", kind="internal_error")
+            return self._handle_error(context, error, instr.line, exception_floor)
         return True
 
     def _handle_error(
@@ -420,16 +406,61 @@ class _EngineCore:
         exception_floor: int | None,
     ) -> bool:
         try:
+            self._capture_error(context, error, line)
             if self._handle_exception(context, error, floor=exception_floor or 0):
                 return True
         except SericiteError as handling_error:
             error = handling_error
+            self._capture_error(context, error, line)
         if exception_floor is not None:
             raise error
         self._fail(context, error, line)
         return False
 
+    def _capture_error(
+        self, context: VMContext, error: SericiteError, line: int
+    ) -> None:
+        if context.vm_id in error._traces:
+            return
+        frames = context.frames
+        try:
+            self._meter(context).work(len(frames))
+            self._meter(context).allocate(16 + len(frames) * 48)
+        except SericiteError:
+            if (
+                error.kind != "resource_exhausted"
+                and error.kind not in _UNCATCHABLE_KINDS
+            ):
+                raise
+            error._set_trace(context.vm_id, ())
+            return
+        trace = []
+        last = len(frames) - 1
+        for index, frame in enumerate(frames):
+            if frame.code.origin_vm != context.vm_id:
+                frame_line = None
+            elif index == last:
+                frame_line = line
+            elif 0 <= frame.pc < len(frame.code.instrs):
+                frame_line = frame.code.instrs[frame.pc].line
+            else:
+                frame_line = None
+            trace.append(
+                SericiteFrame(frame.display_name or frame.code.name, frame_line)
+            )
+        error._set_trace(context.vm_id, tuple(trace))
+
     def _fail(self, context: VMContext, error: SericiteError, line: int) -> None:
+        try:
+            self._capture_error(context, error, line)
+        except SericiteError as capture_error:
+            error = capture_error
+            self._capture_error(context, error, line)
+        trace = error._trace_for(context.vm_id)
+        if trace:
+            line = trace[-1].line
+        elif context.frames and context.frames[-1].code.origin_vm != context.vm_id:
+            line = None
         if error.kind == "resource_exhausted" and error._resource_vm_id is None:
             error._resource_vm_id = context.vm_id
         context.error = error.bind(context.filename, line)
@@ -470,15 +501,31 @@ class _EngineCore:
             if handler.error_name is not None:
                 self._store_local(frame, handler.error_name, error)
             if handler.bind is not None:
-                record = self._construct_record(
-                    context,
-                    _ERROR_SCHEMA,
-                    (error.kind, error.message),
-                    {},
+                self._store_local(
+                    frame, handler.bind, self._error_record(context, error)
                 )
-                self._store_local(frame, handler.bind, record)
             return True
         return False
+
+    def _error_record(self, context: VMContext, error: SericiteError) -> SericiteRecord:
+        trace = error._trace_for(context.vm_id)
+        self._meter(context).work(len(trace))
+        self._meter(context).allocate(len(trace) * 8)
+        frames = [
+            self._construct_record(
+                context,
+                _ERROR_FRAME_SCHEMA,
+                (frame.function, frame.line),
+                {},
+            )
+            for frame in trace
+        ]
+        return self._construct_record(
+            context,
+            _ERROR_SCHEMA,
+            (error.kind, error.message, frames),
+            {},
+        )
 
     def _find_handler(self, frame: Frame, kind: str) -> isa.Handler | None:
         best: isa.Handler | None = None

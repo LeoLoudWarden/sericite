@@ -165,12 +165,17 @@ An `except` filter is static syntax, not variable evaluation or a general-purpos
 
 Unknown names (including misspellings), empty groups, and uncatchable kinds inside a group are rejected at compile time with a `syntax_error`.
 
-`as e` binds a record with exactly two string fields:
+`as e` binds a record with exactly three fields:
 
-- `e.kind`: the actual error kind;
-- `e.message`: the readable error text.
+- `e.kind`: a string containing the actual error kind;
+- `e.message`: a string containing the readable error text;
+- `e.frames`: a list of call frames. Each frame is a record with `function` (string) and `line` (integer or `None`), ordered from the outermost call to the failure; the last frame is the error site. `line` is `None` for a frame defined in another VM (redacted).
 
 Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
+
+Bare `raise` and saved rethrows through `finally` preserve the original frames; a new error raised in a handler or `finally` gets a new trace. Mutating `e` or its frame records does not affect the internal error.
+
+Frames are isolated per execution environment: you only see the frames from your own environment.
 
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 

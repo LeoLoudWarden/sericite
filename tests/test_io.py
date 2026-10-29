@@ -197,6 +197,21 @@ class ScriptOutputWriterTests(unittest.TestCase):
         )
         self.assertEqual(root.run(), "bad\ncaught\n")
 
+    def test_writer_error_trace_keeps_writer_and_print_frames(self) -> None:
+        root = SericiteEngine().create_root(
+            "def forward(text):\n"
+            '    if text == "bad\\n":\n'
+            '        raise "boom"\n'
+            "sub = VM("
+            "'try:\\n"
+            '    print("bad")\\n'
+            "except raise_error as e:\\n"
+            "    for frame in e.frames:\\n"
+            "        print(frame.function, frame.line)', output_writer=forward)\n"
+            'print(sub.run(), end="")'
+        )
+        self.assertEqual(root.run(), "bad\n<module> 2\noutput_writer None\n")
+
     def test_writer_cannot_suspend_native_print(self) -> None:
         root = SericiteEngine().create_root(
             "def waiting(text):\n"

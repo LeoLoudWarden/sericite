@@ -1,6 +1,13 @@
 import unittest
+from dataclasses import replace
 
-from sericite import SericiteEngine, SericiteError, SericiteLimits, VMHandle
+from sericite import (
+    SericiteEngine,
+    SericiteError,
+    SericiteFrame,
+    SericiteLimits,
+    VMHandle,
+)
 
 ADD_PROGRAM = """\
 a = input()
@@ -291,8 +298,54 @@ class SnapshotViewTests(unittest.TestCase):
         self.assertEqual(output, "compile: invalid syntax\nruntime: boom\n")
         self.assertNotIn("sericite", output)
         error = VMHandle(engine, 1).snapshot()["error"]
-        self.assertEqual(set(error.keys()), {"kind", "message", "line", "column"})
+        self.assertEqual(
+            set(error.keys()), {"kind", "message", "line", "column", "frames"}
+        )
         self.assertNotIn("sericite", error["message"])
+        self.assertNotIn("sericite:vm", repr(error["frames"]))
+
+    def test_uncaught_error_frames_survive_unwinding(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            "def inner():\n"
+            "    return missing + 1\n\n"
+            "def outer():\n"
+            "    return inner()\n\n"
+            "outer()\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        expected = [("<module>", 7), ("outer", 5), ("inner", 2)]
+        self.assertEqual(
+            [(frame.function, frame.line) for frame in ctx.exception.frames],
+            expected,
+        )
+        self.assertEqual(
+            vm.snapshot()["error"]["frames"],
+            [{"function": function, "line": line} for function, line in expected],
+        )
+        self.assertTrue(
+            all(isinstance(frame, SericiteFrame) for frame in ctx.exception.frames)
+        )
+
+    def test_trace_capture_preserves_internal_error_on_quota_failure(self):
+        engine = SericiteEngine(limits=SericiteLimits(max_total_bytes=0))
+        engine.create_root("pass\n")
+        error = SericiteError("internal bug", kind="internal_error")
+        engine._capture_error(engine._contexts[0], error, 1)
+        self.assertEqual(error.kind, "internal_error")
+        self.assertEqual(error.frames, ())
+
+    def test_trace_capture_tolerates_invalid_caller_pc(self):
+        engine = SericiteEngine()
+        engine.create_root("pass\n")
+        context = engine._contexts[0]
+        context.frames.append(replace(context.frames[0]))
+        context.frames[0].pc = len(context.frames[0].code.instrs)
+        error = SericiteError("damaged frame", kind="internal_error")
+        engine._capture_error(context, error, 1)
+        self.assertIsNone(error.frames[0].line)
+        self.assertEqual(error.frames[1].line, 1)
 
 
 class ValidationTests(unittest.TestCase):

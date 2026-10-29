@@ -251,6 +251,27 @@ class CliTests(unittest.TestCase):
             result = self.run_cli(main)
             self.assertIn(f"{main}:1: name_error", result.stderr)
 
+    def test_traceback_maps_each_frame_to_its_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = self.write(
+                Path(tmp),
+                "runtime.sericite",
+                "def inner():\n"
+                "    return missing\n\n"
+                "def outer():\n"
+                "    return inner()\n",
+            )
+            result = self.run_cli("--include", runtime, "-c", "outer()")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stderr,
+            f"{runtime}:2: name_error: name 'missing' is not defined\n"
+            "Traceback (most recent call last):\n"
+            '  File "<command>", line 1, in <module>\n'
+            f'  File "{runtime}", line 5, in outer\n'
+            f'  File "{runtime}", line 2, in inner\n',
+        )
+
     def test_capabilities_functions_limits_and_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

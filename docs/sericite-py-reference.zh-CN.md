@@ -119,7 +119,18 @@ try:
     vm.run()
 except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
+    for frame in exc.frames:
+        print(frame.function, frame.line)
 ```
+
+`exc.frames` 是首个来源 VM 的调用栈，类型为 `tuple[SericiteFrame, ...]`，按最外层调用到错误点排列。
+
+每帧是一个 `SericiteFrame`——与 `SericiteError` 一样从 `sericite` 顶层导入：
+
+- `function`：`str`，函数名；
+- `line`：`int | None`，行号；帧来自其他 VM 时脱敏为 `None`。
+
+各 VM 快照的 `error.frames` 对应该快照所属 VM，但形态不同：它是 dict 列表（`{"function": str, "line": int | None}`），不是 `SericiteFrame` 对象。编译期尚未进入 VM 执行的错误没有调用栈。
 
 `resource_exhausted` 的脚本侧可捕获规则（仅当来自 `VM()` 隔离的代码时可捕获）与 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节；`internal_error` 与 `host_error` 始终不能被脚本捕获。宿主可以且应该处理这三类错误。
 

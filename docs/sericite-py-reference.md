@@ -119,7 +119,18 @@ try:
     vm.run()
 except SericiteError as exc:
     print(exc.kind, exc.message, exc.filename, exc.line, exc.column)
+    for frame in exc.frames:
+        print(frame.function, frame.line)
 ```
+
+`exc.frames` is the first source VM's call stack, typed as `tuple[SericiteFrame, ...]`, ordered from the outermost call to the error site.
+
+Each frame is a `SericiteFrame` — a top-level host API imported from `sericite` like `SericiteError`:
+
+- `function`: `str`, the function name;
+- `line`: `int | None`, the line number; `None` for a frame from another VM (redacted).
+
+A VM snapshot's `error.frames` instead describes the VM that owns that snapshot, but it has a different shape: a list of dicts (`{"function": str, "line": int | None}`), not `SericiteFrame` objects. Errors rejected before VM execution begins have no frames.
 
 The script-side catchability of `resource_exhausted` (catchable only from code isolated behind `VM()`) and the `kind` registry are in the [language reference](language-reference.md) §5; `internal_error` and `host_error` are always uncatchable by scripts. Hosts can and should handle all three kinds.
 
