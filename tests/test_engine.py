@@ -77,6 +77,27 @@ class RootVMTests(unittest.TestCase):
         output = vm.run()
         self.assertEqual(output, "23\n")
 
+    def test_input_provider_may_signal_catchable_input_error(self):
+        def closed():
+            raise SericiteError("input required", kind="input_error")
+
+        vm = SericiteEngine().create_root(
+            "try:\n"
+            "    input()\n"
+            "except input_error as e:\n"
+            "    print(e.kind, e.frames[-1].line)",
+            input_provider=closed,
+        )
+        self.assertEqual(vm.run(), "input_error 2\n")
+
+    def test_input_provider_none_still_suspends_and_resumes(self):
+        vm = SericiteEngine().create_root(ADD_PROGRAM, input_provider=lambda: None)
+        self.assertEqual(vm.run(), "")
+        self.assertEqual(vm.snapshot()["state"], "waiting_input")
+        vm.feed_input("2")
+        vm.feed_input("3")
+        self.assertEqual(vm.run(), "23\n")
+
     def test_empty_program_is_done(self):
         engine = SericiteEngine()
         vm = engine.create_root("")
@@ -200,6 +221,17 @@ class SubVMTests(unittest.TestCase):
         vm = engine.create_root(SUB_VM_PROGRAM)
         output = vm.run()
         self.assertEqual(output, "23\n\n")
+
+    def test_child_input_exhaustion_suspends_and_resumes(self):
+        child_source = "a = input()\nb = input()\nprint(a + b)"
+        vm = SericiteEngine().create_root(
+            f"box = VM({child_source!r})\n"
+            'box.run(["x"])\n'
+            'print(box.snapshot()["state"])\n'
+            'box.feed_input("y")\n'
+            'print(box.run(), end="")'
+        )
+        self.assertEqual(vm.run(), "waiting_input\nxy\n")
 
     def test_handle_repr_shows_state_without_engine_counter(self):
         engine = SericiteEngine()

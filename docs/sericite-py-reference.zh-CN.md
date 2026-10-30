@@ -40,7 +40,7 @@ engine.create_root(
 - `source`：Sericite 源码字符串，UTF-8 长度上限 4MB。
 - `limits`：root 使用的 `SericiteLimits`，见第 3 节。
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
-- `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。
+- `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。若要改为报告输入源已经永久关闭，可显式抛出 `SericiteError(kind="input_error")`；脚本可以捕获该错误，而 `None`/`EOFError`/`StopIteration` 的既有暂停契约不变。CLI 就用这种显式错误表达 stdin EOF。
 - `functions`：授予脚本的宿主函数表，见第 5 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。

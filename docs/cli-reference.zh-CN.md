@@ -58,7 +58,7 @@ sericite --capabilities capabilities.py -c 'run()'
 - 变量、函数、schema 和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
 - 单个表达式用 `repr` 回显结果；其他语句只有自身产生的输出。
 - 单次编译或运行错误写 stderr，随后可以继续输入；include 或能力配置的启动失败仍使进程以 1 退出。
-- EOF 正常退出，退出码为 0。脚本 `input()` 仍读取宿主 stdin；输入耗尽按 `input_error` 报告。
+- EOF 使 REPL 正常退出，退出码为 0。脚本 `input()` 仍读取宿主 stdin；EOF 抛出可捕获的 `input_error`。脚本未捕获时打印该错误，随后会话继续。
 
 暂不提供历史记录、自动补全、复杂行编辑或调试命令。
 
@@ -181,8 +181,8 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 
 ## 5. 输入、输出与退出码
 
-- 文件、`-c` 和 REPL 中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 后仍请求输入会以 `input_error` 报告。
-- `sericite -` 会消费全部 stdin 作为源码，因此同一 stdin 不能再提供运行输入。
+- 文件、`-c` 和 REPL 中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 抛出可捕获的 `input_error`。一次性模式下未捕获该错误时，打印真实调用栈并以 1 退出。
+- `sericite -` 会消费全部 stdin 作为源码，因此运行时 `input()` 会遇到已关闭的输入流并抛出 `input_error`。
 - root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
 - 下游 stdout 管道关闭时，CLI 丢弃后续输出并安静退出 0，不把宿主 `BrokenPipeError` 转换成脚本错误。
 - 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续。

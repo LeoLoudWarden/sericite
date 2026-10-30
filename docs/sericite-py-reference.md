@@ -40,7 +40,7 @@ engine.create_root(
 - `source`: Sericite source text, capped at 4MB in UTF-8.
 - `limits`: the root's `SericiteLimits`; see section 3.
 - `inputs`: an iterable of strings queued in order.
-- `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`.
+- `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`. To report a permanently closed input source instead, raise `SericiteError(kind="input_error")`; the script can catch that error, while the existing suspension contract for `None`/`EOFError`/`StopIteration` is unchanged. The CLI uses this explicit error for stdin EOF.
 - `functions`: host capabilities granted to the script; see section 5.
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
 - `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
