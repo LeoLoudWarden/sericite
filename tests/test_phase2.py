@@ -29,6 +29,30 @@ class ArithmeticTests(unittest.TestCase):
     def test_string_concat(self):
         self.assertEqual(run('print("ab" + "cd")\n'), "abcd\n")
 
+    def test_string_repetition_in_both_directions(self):
+        source = (
+            'print("ab" * 3)\nprint(3 * "ab")\ntext = "x"\ntext *= 4\nprint(text)\n'
+        )
+        self.assertEqual(run(source), "ababab\nababab\nxxxx\n")
+
+    def test_string_repetition_zero_negative_and_empty(self):
+        huge = 10**100
+        source = (
+            'print("ab" * 0 == "")\n'
+            'print("ab" * -3 == "")\n'
+            f"huge = {huge}\n"
+            'print("" * huge == "")\n'
+        )
+        self.assertEqual(run(source), "True\nTrue\nTrue\n")
+
+    def test_string_repetition_rejects_other_operand_types(self):
+        sources = ('"a" * 1.5', 'True * "a"', '"a" * True', "[1] * 2")
+        for expression in sources:
+            with self.subTest(expression=expression):
+                with self.assertRaises(SericiteError) as ctx:
+                    run(f"result = {expression}")
+                self.assertEqual(ctx.exception.kind, "type_error")
+
     def test_bool_not_a_number(self):
         with self.assertRaises(SericiteError) as ctx:
             run("print(True + 1)\n")
@@ -41,6 +65,51 @@ class ArithmeticTests(unittest.TestCase):
         with self.assertRaises(SericiteError) as ctx:
             run("print(1 % 0)\n")
         self.assertEqual(ctx.exception.kind, "zero_division")
+
+
+class StringRepetitionAccountingTests(unittest.TestCase):
+    def test_result_size_limit(self):
+        engine = SericiteEngine(SericiteLimits(max_string_bytes=6))
+        vm = engine.create_root('result = "ab" * 3')
+        vm.run()
+        self.assertEqual(vm.snapshot()["locals"]["result"], "ababab")
+
+        for source in ('result = 3 * "ab"', f'huge = {10**100}\nresult = "x" * huge'):
+            with self.subTest(source=source):
+                engine = SericiteEngine(SericiteLimits(max_string_bytes=5))
+                vm = engine.create_root(source)
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_work_and_allocation_scale_with_result_size(self):
+        counts = {}
+        for size in (10, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            text = "x" * size
+            vm = engine.create_root(
+                "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()",
+                functions={
+                    "make_value": lambda text=text: text,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    ),
+                },
+            )
+            vm.run()
+            result = engine._contexts[0].frames[0].locals["result"]
+            work = checkpoints[1][0] - checkpoints[0][0]
+            allocation = checkpoints[1][1] - checkpoints[0][1]
+            counts[size] = work
+            self.assertEqual(len(result), size * 3)
+            self.assertEqual(allocation, len(result) * 4 + 8)
+        self.assertGreater(counts[1000], counts[10])
 
 
 class AssignmentTests(unittest.TestCase):

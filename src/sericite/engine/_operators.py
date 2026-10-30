@@ -50,11 +50,28 @@ class _EngineOperators:
             if _is_number(left) and _is_number(right):
                 return self._check_int(context, left + right)
             raise _operand_error(op, left, right)
-        if op in ("-", "*"):
+        if op == "*":
+            if (type(left) is str and type(right) is int) or (
+                type(left) is int and type(right) is str
+            ):
+                text = left if type(left) is str else right
+                count = right if type(left) is str else left
+                size = len(text) * count if count > 0 else 0
+                if size > context.limits.max_string_bytes:
+                    raise SericiteError(
+                        "string size limit exceeded", kind="resource_exhausted"
+                    )
+                if size == 0:
+                    return ""
+                self._meter(context).allocate(size * 4)
+                self._meter(context).work(size // 64)
+                return text * count
             if _is_number(left) and _is_number(right):
-                return self._check_int(
-                    context, left - right if op == "-" else left * right
-                )
+                return self._check_int(context, left * right)
+            raise _operand_error(op, left, right)
+        if op == "-":
+            if _is_number(left) and _is_number(right):
+                return self._check_int(context, left - right)
             raise _operand_error(op, left, right)
         if op in ("/", "//", "%"):
             if _is_number(left) and _is_number(right):
