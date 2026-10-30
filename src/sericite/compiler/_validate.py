@@ -85,8 +85,8 @@ def _validate(tree: ast.Module, filename: str) -> None:
         ):
             _reject(node, filename, "unsupported constant")
         if isinstance(node, ast.FormattedValue):
-            if node.conversion != -1:
-                _reject(node, filename, "f-string conversions are not supported yet")
+            if node.conversion not in (-1, 97, 114, 115):
+                _reject(node, filename, "unsupported f-string conversion")
             if node.format_spec is not None:
                 _reject(node, filename, "f-string format specs are not supported yet")
         if isinstance(node, ast.Name):

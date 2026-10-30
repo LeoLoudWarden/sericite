@@ -32,13 +32,13 @@ from ._values import (
     _contract_cost,
     _contract_holds,
     _contract_violation,
+    _format_value,
     _from_host,
     _make_iterator,
     _normalize_contract,
     _record_text,
     _stamp_origin,
     _to_host,
-    _to_str,
     _truthy,
     _type_name,
 )
@@ -649,8 +649,11 @@ class _EngineCore:
             self._meter(context).allocate(arg * 16)
             stack.append(mapping)
         elif op == isa.FORMAT_VALUE:
-            stack[-1] = _to_str(
-                stack[-1], context.limits.max_string_bytes, meter=self._meter(context)
+            stack[-1] = _format_value(
+                stack[-1],
+                arg,
+                context.limits.max_string_bytes,
+                meter=self._meter(context),
             )
         elif op == isa.BUILD_STRING:
             parts = stack[len(stack) - arg :] if arg else []

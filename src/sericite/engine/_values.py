@@ -514,6 +514,7 @@ class _StringRenderer:
         output: bool = False,
         truncate: bool = False,
         meter: Meter | None = None,
+        ascii_only: bool = False,
     ) -> None:
         self.parts: list[str] = []
         self.size = 0
@@ -523,6 +524,7 @@ class _StringRenderer:
         self.output = output
         self.truncate = truncate
         self.meter = meter
+        self.ascii_only = ascii_only
         self.exhausted = False
 
     def _work(self, amount: int) -> None:
@@ -532,6 +534,9 @@ class _StringRenderer:
     def _add(self, text: str) -> None:
         if self.exhausted:
             return
+        if self.ascii_only:
+            self._work(len(text) // 64)
+            text = text.encode("ascii", "backslashreplace").decode("ascii")
         if len(text) > self.remaining_chars:
             if self.truncate:
                 if self.remaining_chars >= 3:
@@ -688,4 +693,20 @@ def _to_str(
 ) -> str:
     renderer = _StringRenderer(max_chars, meter=meter)
     renderer.render(value)
+    return renderer.text(allocate=meter is not None)
+
+
+def _format_value(
+    value: object,
+    conversion: int,
+    max_chars: int = _MAX_RENDER_CHARS,
+    *,
+    meter: Meter | None = None,
+) -> str:
+    if conversion in (-1, 115):
+        return _to_str(value, max_chars, meter=meter)
+    if conversion not in (97, 114):
+        raise SericiteError("unknown f-string conversion", kind="internal_error")
+    renderer = _StringRenderer(max_chars, meter=meter, ascii_only=conversion == 97)
+    renderer.render(value, repr_strings=True)
     return renderer.text(allocate=meter is not None)

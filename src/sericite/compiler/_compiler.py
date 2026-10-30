@@ -540,7 +540,7 @@ class _Compiler:
             for value in node.values:
                 if isinstance(value, ast.FormattedValue):
                     self.compile_expression(value.value, code)
-                    self.emit(code, isa.FORMAT_VALUE, None, value.lineno)
+                    self.emit(code, isa.FORMAT_VALUE, value.conversion, value.lineno)
                 else:
                     self.compile_expression(value, code)
             self.emit(code, isa.BUILD_STRING, len(node.values), line)
