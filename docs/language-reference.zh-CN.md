@@ -25,6 +25,11 @@ line2""" # 多行
 not x        # 逻辑非；and / or 短路求值
 1 < 2        # 比较：== != < <= > >=（不支持链式 a < b < c）
 "a" in {"a": 1}    # in / not in：dict 查键、list 查元素、str 查子串
+nan = float("nan")
+nan == nan                   # False：NaN 不等于自身
+[nan] == [nan]               # False：两个新容器逐元素比较
+lst = [nan]
+lst == lst                   # True：同一个对象
 ```
 
 增强赋值支持 `+=`、`-=`、`*=`、`/=`、`//=`、`%=`，目标可以是名字、列表/字典下标或 record 字段。`target += rhs` 等价于 `target = target + rhs`，但目标地址只求值一次；其他运算符同理。运算规则与普通二元运算完全一致，例如列表 `+=` 仍创建拼接后的新列表，而不是原地扩展。
@@ -48,23 +53,6 @@ s[2:99]     # "cdef"：越界按截断处理，不报错
 - 跨类型大小比较报错：`1 < "a"` 报错（`==`/`!=` 可以跨类型，结果为 False/True）。
 - 字典键只允许 `str/int/float/bool/None`，缺键读取报 `key_error`。
 - 字符串支持整数索引读取与切片，但不能写；列表支持索引读写与切片。
-
-NaN 遵循 IEEE 比较语义：
-
-- 标量：`n == n` 与所有大小比较均为 False，`n != n` 为 True。
-- 容器与 record 中的 NaN 按元素逐个比较，因此两个分别构造的容器即使装着同一个 NaN 也不相等。
-- 同一个容器或 record 对象与自身比较时为 True：这是对象身份相同，不是 NaN 相等。
-- list 成员检查使用元素相等性；dict 查找保留 Python 的 identity-or-equality 键行为。
-
-```python
-n = float("nan")
-lst = [n]
-print(lst == lst)              # True：同一个列表对象
-print([n] == [n])              # False：逐元素比较
-print([n] == [float("nan")])   # False
-print(n in [n])                # False：list 成员检查用元素相等
-print({n: 1}[n])               # 1：dict 键查找保留 identity-or-equality
-```
 
 ## 3. 控制流
 
@@ -150,7 +138,12 @@ def double(x):
 
 这等价于先定义 `double`，再执行 `double = trace(double)` 重新绑定。装饰器表达式从上到下求值；堆叠装饰器从下往上应用。
 
-不支持：可变参数（`*args`）、仅关键字参数。重复参数名，以及函数调用或 record 构造中的重复关键字实参，均在编译期报 `syntax_error`；同一参数同时收到位置值和关键字值仍在运行期报 `arity_error`。
+不支持：可变参数（`*args`）、仅关键字参数。
+
+参数与实参校验：
+
+- 重复参数名，或函数调用/record 构造中重复的关键字实参：编译期报 `syntax_error`；
+- 同一参数同时收到位置值和关键字值：运行期报 `arity_error`。
 
 ## 5. 异常
 
@@ -190,7 +183,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
   - `function`：函数名字符串；
   - `line`：源码行号整数，或 `None`（该帧定义在别的 VM，已脱敏）。
 
-  栈从最外层调用排列到实际错误点，最后一帧是错误点。每个等待被调函数返回的调用方帧都指向真实的 `CALL` 指令，包括多行表达式中的调用。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
+  栈从最外层调用排列到实际错误点，最后一帧是错误点。调用方帧的行号是实际发起该调用的那一行；调用跨多行时，不会退回到语句或表达式的起始行。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
 
 裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
 
@@ -265,7 +258,7 @@ class 体只允许字段声明，两种形式：`x`（契约 any，任意值）�
 - `any`/`bool`/`list`/`dict` 是仅注解位的契约名：不可调用、不可赋值；
 - `int`/`float`/`str` 同时仍是转换内建。
 
-`None` 是值，不是契约。参数、返回、字段和带值注解赋值中的显式 `None` 注解统一报 `syntax_error`；不需要契约检查时应省略注解。
+`None` 是值，不是契约。参数、返回值、字段和带注解的赋值都不能写显式 `None` 注解，否则报 `syntax_error`；不需要契约检查时省略注解。
 
 record 的语义边界：
 
