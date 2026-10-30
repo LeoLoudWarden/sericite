@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added
+- 新增 `sericite-debugger` 与 `sorting-arena` 两个完整演示：前者展示语句/指令级单步、watchpoint 与递归自调试，后者展示不可信排序代码的隔离裁判、正确性校验与指令数排名。
+
+### Changed
+- 完善 `root-agent` 演示的实时输出折叠、工具结果截断反馈、verbose 展示与 LLM 日志，并补齐离线全链路测试。
+
 ### Fixed
 - 修复列表/字典下标增强赋值在 `if`/`elif`/`else`、`while` 等控制流路径中因求值栈残留触发 `internal_error` 的问题；目标地址仍只求值一次，名称与 record 字段增强赋值语义不变。
 - 修复跨 VM 异常传播后，祖先 VM 快照的 `error.line` 错用子 VM 行号的问题；各 VM 快照现在使用本层脱敏调用栈的错误点行号，跨 VM 不再混用原始列号。外来代码脱敏及宿主异常保留原始错误点的契约不变。

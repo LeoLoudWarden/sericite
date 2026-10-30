@@ -1,0 +1,2 @@
+child = VM("while True: pass", max_instructions=-1)
+child.run()

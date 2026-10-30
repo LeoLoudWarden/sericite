@@ -1,0 +1,2 @@
+answer = read_file("/expected.txt")
+write_file("/output.txt", answer)

@@ -1,0 +1,2 @@
+write_file("/output.txt", read_file("/input.txt"))
+input()
