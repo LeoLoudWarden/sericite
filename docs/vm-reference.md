@@ -67,16 +67,18 @@ out = sub.run()
 print(sub.read_file("/result.txt"))      # retrieve the file it wrote
 ```
 
-Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught. After a child enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's quota errors remain uncatchable (full rules in the [language reference](language-reference.md) §5).
+The recommended workflow is: preset files and inputs before execution, then read results afterward.
 
-Handle operations on a terminal VM are charged in two ways depending on whether they drive the target:
+Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
-- read-only operations (`snapshot`, `step`, `step_instruction`, VFS reads, …) are charged only to the caller and are not blocked by the target's exhausted accounts; terminal stepping returns a snapshot without re-driving the target;
-- write or driving operations (`write_file`, `feed_input`, `run` with inputs, `exec`, …) remain jointly metered by target and caller and may be rejected by an exhausted target.
+After a child enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's quota errors remain uncatchable. For the full script-visible rules see the [language reference](language-reference.md) §5.
 
-If such an operation exhausts the target's own quota, a non-terminal target enters `resource_exhausted` and the error can be caught by the living caller. A caller or shared-ancestor quota failure remains uncatchable and is not attributed to the target.
+A terminal VM can still be operated on, but two kinds of methods behave differently:
 
-The recommended workflow remains: preset files and inputs before execution, and read results afterward.
+- methods that do not drive the VM (`snapshot`, `step`, `step_instruction`, VFS reads, …) remain available; on a terminal VM, `step`/`step_instruction` only return a snapshot;
+- write or driving methods (`write_file`, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
+
+The charging model — which operations are charged to whom — is in the [architecture](architecture.md) §5.4.
 
 ### Output forwarding and buffering
 
@@ -123,7 +125,7 @@ A snapshot returned by `step()`, `step_instruction()`, or `snapshot()` contains 
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose live child handles or host objects.
 
-`error.frames` is that VM's call stack, ordered from the outermost call to the error site. Each entry has `function` (string) and `line` (integer or `None`); `line` is `None` for a frame defined in another VM (redacted).
+`error.frames` is that VM's call stack. Each entry is `{"function": str, "line": int | None}`; ordering and line redaction follow the script error record — see the [language reference](language-reference.md) §5.
 
 When one of these methods is called from the host (on a `VMHandle`), the returned dict is a strict superset of the script-safe view above, adding host-only diagnostic fields:
 

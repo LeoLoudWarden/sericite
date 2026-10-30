@@ -49,7 +49,22 @@ Key differences from Python (mistakes raise `type_error`):
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
 - Strings support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
 
-NaN follows IEEE scalar comparisons: `n == n` and all ordering comparisons are False, while `n != n` is True. Nested NaN values use the same element semantics, although comparing a container or record to itself retains the identity fast path. List membership uses element equality; dict lookup retains Python's identity-or-equality key behavior.
+NaN follows IEEE comparison semantics:
+
+- Scalars: `n == n` and all ordering comparisons are False; `n != n` is True.
+- NaN inside containers and records is compared element by element, so two separately constructed containers are unequal even when they hold the same NaN.
+- The same container or record object compared with itself is True: that is object identity, not NaN equality.
+- List membership uses element equality; dict lookup retains Python's identity-or-equality key behavior.
+
+```python
+n = float("nan")
+lst = [n]
+print(lst == lst)              # True: the same list object
+print([n] == [n])              # False: element-wise comparison
+print([n] == [float("nan")])   # False
+print(n in [n])                # False: list membership uses element equality
+print({n: 1}[n])               # 1: dict lookup retains identity-or-equality
+```
 
 ## 3. Control flow
 
@@ -171,13 +186,19 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
 
 - `e.kind`: a string containing the actual error kind;
 - `e.message`: a string containing the readable error text;
-- `e.frames`: a list of call frames. Each frame is a record with `function` (string) and `line` (integer or `None`), ordered from the outermost call to the failure; the last frame is the error site. `line` is `None` for a frame defined in another VM (redacted).
+- `e.frames`: a list of call frames. Each frame is a record with exactly two fields:
+  - `function`: the function name string;
+  - `line`: the source line integer, or `None` (a frame defined in another VM, redacted).
+
+  Frames are ordered from the outermost call to the failure; the last frame is the error site. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
 Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
 
-Bare `raise` and saved rethrows through `finally` preserve the original frames; a new error raised in a handler or `finally` gets a new trace. Mutating `e` or its frame records does not affect the internal error.
+Bare `raise` and saved rethrows through `finally` preserve the original frames; a new error raised in a handler or `finally` gets a new trace.
 
-Frames are isolated per execution environment: you only see the frames from your own environment.
+`e` and its frame records are safe copies: mutating them does not affect the internal error.
+
+The trace contains only frames from the current execution environment. Granted functions (including output writers) execute on this VM's frame stack but are defined in another VM, so such frames appear under the granted name with `line` set to `None`.
 
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
@@ -303,7 +324,7 @@ sub.dispose()                    # release when done
 
 VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions.
 
-The same VM can be driven repeatedly: `exec()` to deliver new source, feed input, single-step, snapshots, and more; the full contract is in the [VM reference](vm-reference.md).
+The same VM can be driven repeatedly: deliver new source with `exec()`, feed input, or single-step execution; you can also take snapshots at any time. The full contract is in the [VM reference](vm-reference.md).
 
 ```python
 sub = VM("", max_instructions=10000, functions={"double": double})

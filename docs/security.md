@@ -18,7 +18,8 @@ By design promise (and covered by regression tests), a script inside a VM:
 - **cannot see** ungranted parent variables, parent files, host objects, or Python reflection entry points;
 - **cannot tell** how deeply it is nested; error and debug views contain only logical source locations and safe values — no host tracebacks or real paths leak through;
 - **cannot bypass** configured resource quotas: a child VM's consumption is charged to all its ancestors, and requesting unlimited cumulative quotas cannot remove a finite ancestor ceiling — structural resources always remain capped;
-- **cannot swallow its own quotas** — a `resource_exhausted` originating in the current VM is not catchable by script try/except. A parent can catch a resource error only from another, terminated VM; this cannot lift its own or an ancestor's limits. `internal_error` is likewise uncatchable;
+- **cannot swallow its own quotas** — a `resource_exhausted` originating in the current VM is not catchable by script try/except. A parent can catch a resource error only from another, terminated VM; this cannot lift its own or an ancestor's limits;
+- **cannot catch internal errors** — `internal_error` is not catchable by scripts;
 - **cannot receive** raw host exceptions: a host exception outside the FFI contract kills the VM with the uncatchable `host_error` — the message carries only the host exception's type name, never its text, the script cannot catch it, and it cannot be used to probe host exception types. The full FFI exception contract is in the [Sericite-PY reference](sericite-py-reference.md) §5.3;
 - **cannot see** other layers' names: records/schemas carry no names; compile-time labels such as class names and annotation names are visible only in the error messages of the VM that defined them. A granted function reporting an error inside your VM does so under its granted name with structural descriptions — definition-side function names and type labels never appear.
 

@@ -52,7 +52,7 @@ The `SericiteLimits` field list and defaults are in the [VM reference](vm-refere
 
 The engine constructor supplies the default quotas. Passing `limits` to `create_root()` replaces the whole configuration for that root rather than merging individual fields.
 
-For a trusted, long-running root, the five cumulative fields accept `-1` for no local cap (which fields, and the combining/inheritance rules, are in the [VM reference](vm-reference.md) §5); structural limits must remain finite.
+For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the field list and combining/inheritance rules are in the [VM reference](vm-reference.md) §5); structural limits must remain finite.
 
 `-1` is an explicit trust decision: use it only for code you control. For what unlimited quotas do and do not mean for resource safety, see the [security model](security.md) §3.
 
@@ -97,8 +97,7 @@ Records/schemas, VM handles, functions, and other host objects cannot cross. Cal
 ### 5.3 Exceptions and reentrancy
 
 - The FFI exception contract: a well-behaved host callback either returns a result or raises `SericiteError` with a contract kind (`file_not_found`, `runtime_error`, …) — this says "I'm alive, and this job cannot be delivered." A `SericiteError` propagates under its original kind, with catchability governed by the language rules; ordinary catchable kinds can be handled by the script, so the host must keep secrets out of the message.
-- `resource_exhausted` is special: raising it directly from a host callback is treated as the current VM's own resource error, which the script cannot catch, and terminates the VM in the `resource_exhausted` state.
-- If a resource-related failure should be recoverable by the script, translate it inside the callback to an ordinary contract kind such as `runtime_error` or `ffi_error` instead of raising `resource_exhausted`.
+- `resource_exhausted` is special: if a host callback raises it, the engine treats it as the VM's own quota exhaustion — the VM enters the terminal `resource_exhausted` state, and the script cannot catch it. If the script should be able to recover from such a failure, raise an ordinary contract kind such as `runtime_error` or `ffi_error` inside the callback instead.
 - Any **other** `Exception` escaping a host callback is a governance failure: the callback's internal state is no longer trustworthy. The engine kills the VM with the **uncatchable** `host_error` — message: only the host exception's type name, never its text — and returns control to the host.
 - Scripts cannot catch this failure — not even with a bare `except:` — and cannot probe host exception types through it. Catch your own exceptions inside the callback and translate the ones scripts may see into contract kinds.
 - `SystemExit`, `KeyboardInterrupt`, and other `BaseException`s are process-level events addressed to the host: they propagate out of `run()` unchanged. Do not grant functions whose libraries can call `sys.exit()` on adversarial input paths — same discipline as not granting functions that can be driven to delete files.
@@ -123,7 +122,7 @@ except SericiteError as exc:
         print(frame.function, frame.line)
 ```
 
-`exc.frames` is the first source VM's call stack, typed as `tuple[SericiteFrame, ...]`, ordered from the outermost call to the error site.
+`exc.frames` is the call stack of the VM where the error originated (the first VM that captured a trace), typed as `tuple[SericiteFrame, ...]`; ordering and redaction follow the script error record — see the [language reference](language-reference.md) §5.
 
 Each frame is a `SericiteFrame` — a top-level host API imported from `sericite` like `SericiteError`:
 
@@ -132,7 +131,7 @@ Each frame is a `SericiteFrame` — a top-level host API imported from `sericite
 
 A VM snapshot's `error.frames` instead describes the VM that owns that snapshot, but it has a different shape: a list of dicts (`{"function": str, "line": int | None}`), not `SericiteFrame` objects. Errors rejected before VM execution begins have no frames.
 
-The script-side catchability of `resource_exhausted` (catchable only from code isolated behind `VM()`) and the `kind` registry are in the [language reference](language-reference.md) §5; `internal_error` and `host_error` are always uncatchable by scripts. Hosts can and should handle all three kinds.
+The script-side catchability of `resource_exhausted` (catchable only from code isolated behind `VM()`) and the `kind` registry are in the [language reference](language-reference.md) §5; `internal_error` and `host_error` are always uncatchable by scripts. Hosts can and should handle `resource_exhausted`, `internal_error`, and `host_error`.
 
 ## 7. Host checklist for untrusted code
 

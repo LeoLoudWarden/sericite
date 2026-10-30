@@ -49,7 +49,22 @@ s[2:99]     # "cdef"：越界按截断处理，不报错
 - 字典键只允许 `str/int/float/bool/None`，缺键读取报 `key_error`。
 - 字符串支持整数索引读取与切片，但不能写；列表支持索引读写与切片。
 
-NaN 的标量比较遵循 IEEE 规则：`n == n` 与所有大小比较均为 False，`n != n` 为 True。嵌套的 NaN 也按同样的元素语义比较，但容器或 record 与自身比较时仍保留 identity 快路径。list 成员检查使用元素相等性；dict 查找保留 Python 的 identity-or-equality 键行为。
+NaN 遵循 IEEE 比较语义：
+
+- 标量：`n == n` 与所有大小比较均为 False，`n != n` 为 True。
+- 容器与 record 中的 NaN 按元素逐个比较，因此两个分别构造的容器即使装着同一个 NaN 也不相等。
+- 同一个容器或 record 对象与自身比较时为 True：这是对象身份相同，不是 NaN 相等。
+- list 成员检查使用元素相等性；dict 查找保留 Python 的 identity-or-equality 键行为。
+
+```python
+n = float("nan")
+lst = [n]
+print(lst == lst)              # True：同一个列表对象
+print([n] == [n])              # False：逐元素比较
+print([n] == [float("nan")])   # False
+print(n in [n])                # False：list 成员检查用元素相等
+print({n: 1}[n])               # 1：dict 键查找保留 identity-or-equality
+```
 
 ## 3. 控制流
 
@@ -171,13 +186,19 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 - `e.kind`：字符串，实际发生的错误类型；
 - `e.message`：字符串，可读错误文本；
-- `e.frames`：调用栈 list，每项是固定含 `function`（字符串）与 `line`（整数或 `None`）的 record，按最外层调用到实际错误点排列，最后一帧是错误点。`line` 为 `None` 表示该帧定义在别的 VM（脱敏）。
+- `e.frames`：调用栈 list，每项是 record，固定含两个字段：
+  - `function`：函数名字符串；
+  - `line`：源码行号整数，或 `None`（该帧定义在别的 VM，已脱敏）。
+
+  栈从最外层调用排列到实际错误点，最后一帧是错误点。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
 
 裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
 
-裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；handler 或 `finally` 中新产生的错误使用新调用栈。修改 `e` 或其帧 record 不影响内部错误。
+裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；handler 或 `finally` 中新产生的错误则使用新调用栈。
 
-调用栈按执行环境隔离：你只能看到自己环境内的帧。
+`e` 及其帧 record 是安全副本：修改它们不影响内部错误。
+
+调用栈只包含当前执行环境中的帧。授予函数（包括输出 writer）在本 VM 的帧栈上执行，但定义在别的 VM，因此这类帧以授予名出现、`line` 为 `None`。
 
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
@@ -301,9 +322,9 @@ print(out)                       # 'hi\n'
 sub.dispose()                    # 用完释放
 ```
 
-VM 是相互隔离的工作空间： 看不到你的变量，碰不到你的文件。 创建时可以收紧配额、授予函数。
+VM 是相互隔离的工作空间：看不到你的变量，碰不到你的文件。创建时可以收紧配额、授予函数。
 
-同一台 VM 可以反复驱动：`exec()` 投递新源码、喂输入、单步、快照等；完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
+同一台 VM 可以反复驱动：`exec()` 投递新源码、喂输入、单步执行；也可以随时查看快照。完整契约见[虚拟机参考](vm-reference.zh-CN.md)。
 
 ```python
 sub = VM("", max_instructions=10000, functions={"double": double})
