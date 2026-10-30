@@ -612,10 +612,32 @@ class BuiltinTests(unittest.TestCase):
                     run(f'print("x", end={value})\n')
                 self.assertEqual(ctx.exception.kind, "type_error")
 
-    def test_print_rejects_unknown_keyword(self):
+    def test_print_sep(self):
+        source = (
+            'print("a", "b", "c", sep="-")\n'
+            'print("a", "b", sep="")\n'
+            'print("a", "b", end="!", sep=",")\n'
+            'print(sep=",")\n'
+        )
+        self.assertEqual(run(source), "a-b-c\nab\na,b!\n")
+
+    def test_print_sep_must_be_string(self):
+        for value in ("None", "1", "[]", "True"):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as ctx:
+                    run(f'print("x", sep={value})\n')
+                self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_print_sep_counts_toward_output_limit(self):
+        engine = SericiteEngine(SericiteLimits(max_output_bytes=3))
+        vm = engine.create_root('print("a", "b", sep=",", end="")')
+        self.assertEqual(vm.run(), "a,b")
+
+        engine = SericiteEngine(SericiteLimits(max_output_bytes=2))
+        vm = engine.create_root('print("a", "b", sep=",", end="")')
         with self.assertRaises(SericiteError) as ctx:
-            run('print("x", sep=" ")\n')
-        self.assertEqual(ctx.exception.kind, "type_error")
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
     def test_print_end_counts_toward_output_limit(self):
         limits = SericiteLimits(max_output_bytes=3)
