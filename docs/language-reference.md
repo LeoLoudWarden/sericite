@@ -25,6 +25,11 @@ line2""" # multi-line
 not x        # logical not; and / or short-circuit
 1 < 2        # comparison: == != < <= > >= (no chaining like a < b < c)
 "a" in {"a": 1}    # in / not in: dict keys, list elements, str substrings
+nan = float("nan")
+nan == nan                   # False: NaN is not equal to itself
+[nan] == [nan]               # False: two new containers compared element by element
+lst = [nan]
+lst == lst                   # True: the same object
 ```
 
 Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
@@ -48,23 +53,6 @@ Key differences from Python (mistakes raise `type_error`):
 - Cross-type ordering comparison is an error: `1 < "a"` raises (`==`/`!=` may cross types, evaluating to False/True).
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
 - Strings support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
-
-NaN follows IEEE comparison semantics:
-
-- Scalars: `n == n` and all ordering comparisons are False; `n != n` is True.
-- NaN inside containers and records is compared element by element, so two separately constructed containers are unequal even when they hold the same NaN.
-- The same container or record object compared with itself is True: that is object identity, not NaN equality.
-- List membership uses element equality; dict lookup retains Python's identity-or-equality key behavior.
-
-```python
-n = float("nan")
-lst = [n]
-print(lst == lst)              # True: the same list object
-print([n] == [n])              # False: element-wise comparison
-print([n] == [float("nan")])   # False
-print(n in [n])                # False: list membership uses element equality
-print({n: 1}[n])               # 1: dict lookup retains identity-or-equality
-```
 
 ## 3. Control flow
 
@@ -150,7 +138,12 @@ def double(x):
 
 This is equivalent to defining `double`, then rebinding it with `double = trace(double)`. Decorator expressions are evaluated from top to bottom; stacked decorators are applied from bottom to top.
 
-Not supported: variadic arguments (`*args`), keyword-only parameters. Duplicate parameter names and duplicate keyword arguments at any call, including record construction, are rejected at compile time with `syntax_error`. Supplying both a positional and a keyword value for one parameter remains a runtime `arity_error`.
+Not supported: variadic arguments (`*args`), keyword-only parameters.
+
+Parameter and argument validation:
+
+- duplicate parameter names, or duplicate keyword arguments in any call including record construction: `syntax_error` at compile time;
+- one parameter receiving both a positional and a keyword value: `arity_error` at runtime.
 
 ## 5. Exceptions
 
@@ -190,7 +183,7 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
   - `function`: the function name string;
   - `line`: the source line integer, or `None` (a frame defined in another VM, redacted).
 
-  Frames are ordered from the outermost call to the failure; the last frame is the error site. Every suspended caller frame identifies its actual `CALL` instruction, including a call inside a multiline expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
+  Frames are ordered from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call; for a call spanning multiple lines, it does not fall back to the first line of the statement or expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
 Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
 
@@ -265,7 +258,7 @@ A class body only allows field declarations, in two forms: `x` (contract `any`, 
 - `any`/`bool`/`list`/`dict` are annotation-only contract names: they cannot be called or assigned;
 - `int`/`float`/`str` remain conversion builtins.
 
-`None` is a value, not a contract. An explicit `None` annotation is rejected with `syntax_error` in parameter, return, field, and annotated-assignment positions; omit the annotation when no contract check is intended.
+`None` is a value, not a contract. Parameter, return, field, and annotated-assignment positions cannot use an explicit `None` annotation; doing so raises `syntax_error`. Omit the annotation when no contract check is intended.
 
 Record semantics:
 

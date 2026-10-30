@@ -112,7 +112,13 @@ Traceback (most recent call last):
   File "/path/runtime.sericite", line 2, in inner
 ```
 
-每个 root 帧按上述来源规则映射（示例中的 `<command>` 是 `-c` 源码）。REPL 中，每帧通过定义该代码的那次投递映射：表达式 wrapper 的偏移只作用于当前投递，include 定义的函数保留原 include 文件名和文件内行号；无法取得帧来源时显示 `<sericite>` 和 `line ?`，不猜测位置。其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
+调用栈帧的行号沿用上述来源规则（示例中的 `<command>` 是 `-c` 源码）：
+
+- REPL 中，每帧映射到定义该代码的那次输入；当前输入的行号校正只作用于该次输入；
+- include 定义的函数始终保留 include 文件名与文件内行号；
+- 无法确定来源时显示 `<sericite>` 和 `line ?`；其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
+
+尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
 
 ## 4. capabilities：可信 Python 启动配置
 
