@@ -169,8 +169,10 @@ class _Compiler:
             self._tmp_counter += 1
             self.compile_expression(target.value, code)
             self.emit(code, isa.STORE_NAME, target_name, line)
-            self.emit(code, isa.LOAD_NAME, target_name, line)
+            # Attribute reads consume the target here; subscript reads load it with
+            # the index below. Keep both paths stack-neutral without a shared load.
             if isinstance(target, ast.Attribute):
+                self.emit(code, isa.LOAD_NAME, target_name, line)
                 attr = (target.attr, *self._attr_hints(target.value, target.attr))
                 self.emit(code, isa.LOAD_ATTR, attr, line)
                 self.compile_expression(node.value, code)

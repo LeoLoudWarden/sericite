@@ -104,6 +104,33 @@ class AugmentedAssignmentTests(unittest.TestCase):
         )
         self.assertEqual(run(source), "[5] {'n': 6} 6 5\n")
 
+    def test_subscript_augmentation_in_branches_and_loops(self):
+        source = (
+            "values = [8]\nmapping = {'x': 8}\n"
+            "if False:\n    pass\nelif True:\n    values[0] += 2\n"
+            "else:\n    values[0] = 100\n"
+            "if False:\n    pass\nelse:\n    mapping['x'] -= 3\n"
+            "if True:\n    values[0] *= 2\n"
+            "while mapping['x'] < 20:\n    mapping['x'] += 5\n"
+            "print(values, mapping)\n"
+        )
+        self.assertEqual(run(source), "[20] {'x': 20}\n")
+
+    def test_all_subscript_augmentation_operators_in_function_branches(self):
+        source = (
+            "def apply():\n"
+            "    values = [7, 7, 7, 7, 7, 7]\n"
+            "    if True:\n        values[0] += 2\n    else:\n        pass\n"
+            "    if False:\n        pass\n    elif True:\n        values[1] -= 10\n"
+            "    if True:\n        values[2] *= 4\n    else:\n        pass\n"
+            "    if False:\n        pass\n    else:\n        values[3] /= 2\n"
+            "    if True:\n        values[4] //= 2\n"
+            "    if True:\n        values[5] %= 4\n"
+            "    return values\n"
+            "print(apply())\n"
+        )
+        self.assertEqual(run(source), "[9, -3, 28, 3.5, 3, 3]\n")
+
     def test_target_address_is_evaluated_once_before_rhs(self):
         source = (
             "class Box:\n    value: int\n"
