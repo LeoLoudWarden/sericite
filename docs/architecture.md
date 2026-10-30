@@ -80,7 +80,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 15. The dispatch entry has re-entrancy protection: the same VM must not be driven by two dispatch loops at once (e.g. the host calling `run()`, `exec()`, or `step()` on the same VM from inside an `input_provider`/FFI callback).
 16.
   - a. Only structure crosses VMs: records/schemas carry no names, and schema equality compares the structure of field sets and contracts; class names, annotation names, and other labels are compile-time, scope-local diagnostic data that expires at scope exit.
-  - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear;
+  - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear. Foreign `name_error` uses a generic undefined-name message without the definition-side local, closure, or module variable name;
   - c. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values. Design rationale is in [design](design.md) §3.4; script-visible semantics in the [language reference](language-reference.md) §7.
 
 ## 4. Script interface

@@ -573,7 +573,7 @@ class _EngineCore:
         elif op == isa.STORE_NAME:
             frame.locals[arg] = stack.pop()
         elif op == isa.LOAD_DEREF:
-            stack.append(self._load_deref(frame, arg))
+            stack.append(self._load_deref(context, frame, arg))
         elif op == isa.STORE_DEREF:
             self._cell(frame, arg).value = stack.pop()
         elif op == isa.DUP:
@@ -1169,17 +1169,23 @@ class _EngineCore:
             return frame.closure[name]
         raise SericiteError("missing closure cell", kind="internal_error")
 
-    def _load_deref(self, frame: Frame, name: str) -> object:
+    @staticmethod
+    def _undefined_name(context: VMContext, frame: Frame, name: str) -> SericiteError:
+        if frame.code.origin_vm == context.vm_id:
+            return SericiteError(f"name '{name}' is not defined", kind="name_error")
+        return SericiteError("name is not defined", kind="name_error")
+
+    def _load_deref(self, context: VMContext, frame: Frame, name: str) -> object:
         value = self._cell(frame, name).value
         if value is _UNBOUND:
-            raise SericiteError(f"name '{name}' is not defined", kind="name_error")
+            raise self._undefined_name(context, frame, name)
         return value
 
     def _load_name(self, context: VMContext, frame: Frame, name: str) -> object:
         if name in frame.locals:
             return frame.locals[name]
         if frame.code.name != "<module>" and name in frame.code.local_names:
-            raise SericiteError(f"name '{name}' is not defined", kind="name_error")
+            raise self._undefined_name(context, frame, name)
         module_locals = (
             frame.module_locals
             if frame.module_locals is not None
@@ -1194,4 +1200,4 @@ class _EngineCore:
         builtin = self._builtin(frame.home or context, name, caller=context)
         if builtin is not None:
             return builtin
-        raise SericiteError(f"name '{name}' is not defined", kind="name_error")
+        raise self._undefined_name(context, frame, name)

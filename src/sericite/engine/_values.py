@@ -381,10 +381,10 @@ def _equals(
 ) -> bool:
     """Compare structurally, charging each visited node before processing it."""
     meter.work(1)
-    if left is right:
-        return True
     if _is_number(left) and _is_number(right):
         return left == right
+    if left is right:
+        return True
     if type(left) is not type(right):
         return False
     if type(left) is str:

@@ -49,6 +49,8 @@ Key differences from Python (mistakes raise `type_error`):
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
 - Strings support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
 
+NaN follows IEEE scalar comparisons: `n == n` and all ordering comparisons are False, while `n != n` is True. Nested NaN values use the same element semantics, although comparing a container or record to itself retains the identity fast path. List membership uses element equality; dict lookup retains Python's identity-or-equality key behavior.
+
 ## 3. Control flow
 
 ```python
