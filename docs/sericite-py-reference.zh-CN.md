@@ -46,6 +46,8 @@ engine.create_root(
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
 
+宿主参数类型错误会在 API 边界抛出 `SericiteError(kind="type_error")`。引擎和 root 的 `limits` 只接受 `None` 或 `SericiteLimits`；`source` 必须是字符串；`functions` 必须是可调用对象组成的 dict；两个 IO 回调必须是 `None` 或可调用对象；`inputs` 和 `argv` 必须是字符串可迭代对象；`buffer_output` 必须是 bool。root 校验失败不会注册 VM。
+
 ## 3. 配额：SericiteLimits
 
 `SericiteLimits` 的字段清单与默认值见[虚拟机参考](vm-reference.zh-CN.md)第 5 节；脚本内 `VM()` 的配额关键字参数与之一一对应。所有字段都有默认值；默认值面向开发调试，不是执行不可信代码时的安全建议。

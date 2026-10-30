@@ -46,6 +46,8 @@ engine.create_root(
 - `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
 - `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
 
+Invalid host argument types raise `SericiteError(kind="type_error")` at the API boundary. Engine and root `limits` accept only `None` or `SericiteLimits`; `source` must be a string; `functions` must be a dict of callables; the IO callbacks must be `None` or callable; `inputs` and `argv` must be iterables of strings; and `buffer_output` must be a bool. Root validation failures do not register a VM.
+
 ## 3. Quotas: SericiteLimits
 
 The `SericiteLimits` field list and defaults are in the [VM reference](vm-reference.md) §5; the `VM()` quota keyword arguments inside scripts correspond to them one-to-one. Every field has a default; defaults target development and debugging, not safe execution of untrusted code.

@@ -61,11 +61,31 @@ _TERMINAL_VM_READ_METHODS = frozenset(
 
 class _EngineCore:
     def __init__(self, limits: SericiteLimits | None = None) -> None:
-        self._limits = limits or SericiteLimits()
+        self._validate_limits(limits)
+        self._limits = limits if limits is not None else SericiteLimits()
         self._contexts: dict[int, VMContext] = {}
         self._account_routes: dict[int, AccountRoute] = {}
         self._meters: dict[int, Meter] = {}
         self._next_vm_id = 0
+
+    @staticmethod
+    def _validate_limits(limits: SericiteLimits | None) -> None:
+        if limits is not None and not isinstance(limits, SericiteLimits):
+            raise SericiteError(
+                "limits must be a SericiteLimits or None", kind="type_error"
+            )
+
+    @staticmethod
+    def _copy_string_iterable(values: object, name: str) -> list[str]:
+        try:
+            copied = list(values)
+        except TypeError:
+            raise SericiteError(
+                f"{name} must be an iterable of strings", kind="type_error"
+            ) from None
+        if any(not isinstance(value, str) for value in copied):
+            raise SericiteError(f"{name} must contain strings", kind="type_error")
+        return copied
 
     def create_root(
         self,
@@ -78,24 +98,43 @@ class _EngineCore:
         buffer_output: bool = True,
         argv: Iterable[str] | None = None,
     ) -> VMHandle:
+        if not isinstance(source, str):
+            raise SericiteError("source must be a string", kind="type_error")
+        self._validate_limits(limits)
         if type(buffer_output) is not bool:
             raise SericiteError("buffer_output must be a bool", kind="type_error")
+        if functions is not None and not isinstance(functions, dict):
+            raise SericiteError(
+                "functions must be a dict of callables", kind="type_error"
+            )
+        if input_provider is not None and not callable(input_provider):
+            raise SericiteError(
+                "input_provider must be callable or None", kind="type_error"
+            )
+        if output_writer is not None and not callable(output_writer):
+            raise SericiteError(
+                "output_writer must be callable or None", kind="type_error"
+            )
         if argv is None:
             root_argv = []
         else:
             if isinstance(argv, str):
                 raise SericiteError("root argv must contain strings", kind="type_error")
-            try:
-                root_argv = list(argv)
-            except TypeError:
-                raise SericiteError(
-                    "root argv must be an iterable of strings", kind="type_error"
-                ) from None
-            if any(not isinstance(value, str) for value in root_argv):
-                raise SericiteError("root argv must contain strings", kind="type_error")
-        effective = limits or self._limits
+            root_argv = self._copy_string_iterable(argv, "root argv")
+        root_inputs = (
+            None
+            if inputs is None
+            else self._copy_string_iterable(inputs, "root inputs")
+        )
+        effective = self._limits if limits is None else limits
+        if functions is not None and "argv" in functions:
+            raise SericiteError(
+                "granted function name 'argv' conflicts with a root initial value",
+                kind="type_error",
+            )
+        granted = self._validate_host_functions(functions)
         io = VirtualIO(
-            inputs=inputs,
+            inputs=root_inputs,
             input_provider=input_provider,
             max_output_bytes=(
                 None
@@ -105,12 +144,6 @@ class _EngineCore:
             output_writer=output_writer,
             buffer_output=buffer_output,
         )
-        if functions is not None and "argv" in functions:
-            raise SericiteError(
-                "granted function name 'argv' conflicts with a root initial value",
-                kind="type_error",
-            )
-        granted = self._validate_host_functions(functions)
         return self._create_vm(
             source=source,
             parent_id=None,
