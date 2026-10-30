@@ -21,7 +21,6 @@ _STACK_DELTAS = {
     isa.LOAD_ATTR: 0,
     isa.STORE_ATTR: -2,
     isa.CHECK_ANNOT: -1,
-    isa.FORMAT_VALUE: 0,
 }
 
 
@@ -52,7 +51,9 @@ def _analyze_stack(code: isa.CodeUnit, filename: str) -> None:
         elif instr.op in (isa.RETURN, isa.RAISE):
             pass
         else:
-            if instr.op in (isa.BUILD_LIST, isa.BUILD_STRING):
+            if instr.op == isa.FORMAT_VALUE:
+                delta = -int(instr.arg[1])
+            elif instr.op in (isa.BUILD_LIST, isa.BUILD_STRING):
                 delta = 1 - instr.arg
             elif instr.op == isa.BUILD_DICT:
                 delta = 1 - 2 * instr.arg

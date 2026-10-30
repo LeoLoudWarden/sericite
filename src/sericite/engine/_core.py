@@ -10,6 +10,7 @@ from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError, SericiteFrame
 from ..io import InputRequired, OutputLimitExceeded, VirtualIO
 from ..vfs import VirtualFileSystem
+from ._format import _format_value
 from ._model import (
     _MAX_SOURCE_BYTES,
     _TERMINAL_STATES,
@@ -32,7 +33,6 @@ from ._values import (
     _contract_cost,
     _contract_holds,
     _contract_violation,
-    _format_value,
     _from_host,
     _make_iterator,
     _normalize_contract,
@@ -649,10 +649,13 @@ class _EngineCore:
             self._meter(context).allocate(arg * 16)
             stack.append(mapping)
         elif op == isa.FORMAT_VALUE:
+            conversion, has_spec = arg
+            spec = stack.pop() if has_spec else None
             stack[-1] = _format_value(
                 stack[-1],
-                arg,
+                conversion,
                 context.limits.max_string_bytes,
+                spec=spec,
                 meter=self._meter(context),
             )
         elif op == isa.BUILD_STRING:

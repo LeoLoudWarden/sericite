@@ -540,7 +540,16 @@ class _Compiler:
             for value in node.values:
                 if isinstance(value, ast.FormattedValue):
                     self.compile_expression(value.value, code)
-                    self.emit(code, isa.FORMAT_VALUE, value.conversion, value.lineno)
+                    has_spec = value.format_spec is not None
+                    if has_spec:
+                        spec = "".join(part.value for part in value.format_spec.values)
+                        self.emit(code, isa.LOAD_CONST, spec, value.lineno)
+                    self.emit(
+                        code,
+                        isa.FORMAT_VALUE,
+                        (value.conversion, has_spec),
+                        value.lineno,
+                    )
                 else:
                     self.compile_expression(value, code)
             self.emit(code, isa.BUILD_STRING, len(node.values), line)

@@ -113,23 +113,100 @@ class FStringTests(unittest.TestCase):
             "name='world'\nnumber + 1=4\nname = 'world'\nname=world\nname='world'\n",
         )
 
-    def test_format_specs_are_rejected_for_now(self):
-        cases = (
-            'f"{value:>3}"',
-            'f"{value:{width}}"',
-            'f"{value=:>3}"',
-        )
-        for source in cases:
+    def test_dynamic_format_specs_are_rejected_for_now(self):
+        for source in ('f"{value:{width}}"', 'f"{value:>{width}s}"'):
             with self.subTest(source=source):
                 with self.assertRaises(SericiteError) as ctx:
                     compile_source(source, "fstring.sericite")
                 self.assertEqual(ctx.exception.kind, "syntax_error")
                 self.assertEqual(
-                    ctx.exception.message, "f-string format specs are not supported yet"
+                    ctx.exception.message,
+                    "dynamic f-string format specs are not supported yet",
                 )
                 self.assertEqual(ctx.exception.filename, "fstring.sericite")
                 self.assertEqual(ctx.exception.line, 1)
                 self.assertIsNotNone(ctx.exception.column)
+
+
+class FStringFormatSpecTests(unittest.TestCase):
+    def test_string_alignment_fill_width_and_precision(self):
+        source = (
+            'text = "abc"\n'
+            'print(f"{text:>6}|{text:<6}|{text:^6}|{text:.2}|{text:*>5}")\n'
+        )
+        self.assertEqual(run(source), "   abc|abc   | abc  |ab|**abc\n")
+
+    def test_integer_bases_padding_sign_character_and_grouping(self):
+        source = (
+            "value = 255\n"
+            'print(f"{value:d}|{value:#x}|{value:#X}|{value:#b}|{value:#o}")\n'
+            'print(f"{value:08d}|{value:+06d}|{65:c}")\n'
+            'print(f"{1234567:,d}|{1234567:_d}")\n'
+        )
+        self.assertEqual(
+            run(source),
+            "255|0xff|0XFF|0b11111111|0o377\n00000255|+00255|A\n1,234,567|1_234_567\n",
+        )
+
+    def test_float_precision_scientific_general_and_percent(self):
+        source = (
+            "value = 3.14159\n"
+            'print(f"{value:.2f}|{value:10.3f}|{value:.1e}|{value:.3g}")\n'
+            'print(f"{0.125:.1%}|{1.25:.2}")\n'
+        )
+        self.assertEqual(run(source), "3.14|     3.142|3.1e+00|3.14\n12.5%|1.2\n")
+
+    def test_integer_can_use_float_presentation_types(self):
+        self.assertEqual(
+            run('print(f"{1:.2f}|{1:e}|{1:%}")\n'), "1.00|1.000000e+00|100.000000%\n"
+        )
+
+    def test_conversions_are_applied_before_string_formatting(self):
+        source = (
+            'name = "hello"\n'
+            'print(f"{name!r:>9}|{name!a:*>9}|{[1, 2]!s:>8}")\n'
+            'print(f"{name=:.3s}")\n'
+            'print(f"{name=:>9}")\n'
+        )
+        self.assertEqual(
+            run(source),
+            "  'hello'|**'hello'|  [1, 2]\nname=hel\nname=    hello\n",
+        )
+
+    def test_empty_spec_preserves_normal_conversion(self):
+        self.assertEqual(
+            run("print(f\"{[1, 2]:}|{True:}|{'x'!r:}\")\n"),
+            "[1, 2]|True|'x'\n",
+        )
+
+    def test_invalid_specs_have_stable_sericite_errors(self):
+        cases = {
+            'f"{1:.}"': "conversion_error",
+            'f"{1:>3xx}"': "conversion_error",
+            'f"{1:.2}"': "conversion_error",
+            "f\"{'x':05d}\"": "conversion_error",
+            'f"{1.5:d}"': "type_error",
+            'f"{1:s}"': "type_error",
+            'f"{[1]:>3}"': "type_error",
+            'f"{True:>3}"': "type_error",
+        }
+        for source, kind in cases.items():
+            with self.subTest(source=source):
+                engine = SericiteEngine()
+                vm = engine.create_root(f"result = {source}")
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, kind)
+
+    def test_format_error_restores_handler_stack_depth(self):
+        source = (
+            "try:\n"
+            '    text = f"prefix{1:.}"\n'
+            "except conversion_error:\n"
+            '    text = "caught"\n'
+            "print(text)\n"
+        )
+        self.assertEqual(run(source), "caught\n")
 
 
 class FStringAccountingTests(unittest.TestCase):
@@ -219,6 +296,79 @@ class FStringAccountingTests(unittest.TestCase):
         allocation = checkpoints[1][1] - checkpoints[0][1]
         self.assertEqual(result, r"pre'\xe9'post")
         self.assertEqual(allocation, len(r"'\xe9'") * 4 + len(result) * 4 + 8)
+
+    def test_format_width_and_precision_limits(self):
+        sources = (
+            'result = f"{1:6d}"',
+            'result = f"{1.0:.6f}"',
+            'result = f"{1:999999999999999999999999d}"',
+            'result = f"{1.0:.999999999999999999999999f}"',
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                engine = SericiteEngine(SericiteLimits(max_string_bytes=5))
+                vm = engine.create_root(source)
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_format_result_size_boundary(self):
+        engine = SericiteEngine(SericiteLimits(max_string_bytes=6))
+        vm = engine.create_root('result = f"{255:#06x}"')
+        vm.run()
+        self.assertEqual(vm.snapshot()["locals"]["result"], "0x00ff")
+
+        engine = SericiteEngine(SericiteLimits(max_string_bytes=5))
+        vm = engine.create_root('result = f"{255:#06x}"')
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_common_formats_fit_their_exact_result_limit(self):
+        cases = (
+            ('f"{1:d}"', "1"),
+            ('f"{1.0:f}"', "1.000000"),
+            ('f"{1:e}"', "1.000000e+00"),
+            ('f"{1.25:.2}"', "1.2"),
+            ('f"{0.00123:.0g}"', "0.001"),
+        )
+        for expression, expected in cases:
+            with self.subTest(expression=expression):
+                limits = SericiteLimits(max_string_bytes=len(expected))
+                vm = SericiteEngine(limits).create_root(f"result = {expression}")
+                vm.run()
+                self.assertEqual(vm.snapshot()["locals"]["result"], expected)
+
+    def test_format_work_and_allocation_scale_with_width(self):
+        counts = {}
+        for width in (10, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            vm = engine.create_root(
+                "value = make_value()\n"
+                "checkpoint()\n"
+                f'result = f"{{value:{width}d}}"\n'
+                "checkpoint()",
+                functions={
+                    "make_value": lambda: 255,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    ),
+                },
+            )
+            vm.run()
+            result = engine._contexts[0].frames[0].locals["result"]
+            work = checkpoints[1][0] - checkpoints[0][0]
+            allocation = checkpoints[1][1] - checkpoints[0][1]
+            counts[width] = work
+            self.assertEqual(len(result), width)
+            self.assertEqual(allocation, width * 8 + 8)
+        self.assertGreater(counts[1000], counts[10])
 
     def test_child_vm_string_limit_is_enforced(self):
         source = (
