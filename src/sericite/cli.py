@@ -1,6 +1,7 @@
 import argparse
 import ast
 import codeop
+import os
 import runpy
 import sys
 from collections.abc import Sequence
@@ -83,13 +84,20 @@ def _read_stdin() -> str | None:
 
 
 def _write_stdout(value: str) -> None:
-    sys.stdout.write(value)
-    sys.stdout.flush()
+    try:
+        sys.stdout.write(value)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(devnull_fd, sys.stdout.fileno())
+        finally:
+            os.close(devnull_fd)
 
 
 def _read_file(path: str, role: str) -> str:
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return Path(path).read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as exc:
         detail = exc.strerror if isinstance(exc, OSError) else str(exc)
         raise _CliError(
@@ -106,7 +114,7 @@ def _load_source(
     elif args.command is not None:
         parts.append(("<command>", args.command))
     elif source_name == "-":
-        parts.append(("<stdin>", sys.stdin.read()))
+        parts.append(("<stdin>", sys.stdin.read().removeprefix("\ufeff")))
     else:
         assert source_name is not None
         parts.append((source_name, _read_file(source_name, "source")))
@@ -402,7 +410,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    items = args.items[1:] if args.items[:1] == ["--"] else args.items
+    items = args.items
     interactive = args.command is None and not items
     if args.command is not None:
         source_name = None

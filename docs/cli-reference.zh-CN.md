@@ -36,7 +36,9 @@ sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
 | `--capabilities FILE` | 从可信 Python 文件调用 `configure()`，配置 root VM |
 | `--include FILE` | 在主源码或 REPL 前组合一个文件；可重复，顺序即命令行顺序 |
 
-`SOURCE_FILE` 与 `-c` 互斥；两者都省略时进入 REPL。CLI 选项放在源码入口之前，入口之后的内容全部属于脚本，包括 `--flag` 这类横线参数。可在入口前用 `--` 显式结束 CLI 选项，以横线开头的文件名也由此传入。文件路径按当前工作目录解析；`.sericite` 是约定后缀，不做强制校验。
+`SOURCE_FILE` 与 `-c` 互斥；两者都省略时进入 REPL。CLI 选项放在源码入口之前，入口之后的内容全部属于脚本，包括 `--flag` 这类横线参数和单独的 `--`。可在入口前用 `--` 显式结束 CLI 选项，以横线开头的文件名也由此传入；入口前的分隔符由 CLI 消费，不进入 `argv`。文件路径按当前工作目录解析；`.sericite` 是约定后缀，不做强制校验。
+
+主文件和 include 文件按 UTF-8 解码，忽略文本开头可选的一个 UTF-8 BOM；stdin 源码遵守同一规则。只移除文本起始位置的一个 BOM，因此行号和列号不受影响，额外的 BOM 仍作为普通源码输入处理。
 
 ```bash
 sericite -c 'print("hello")'
@@ -182,11 +184,12 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 - 文件、`-c` 和 REPL 中，脚本 `input()` 从宿主 stdin 逐行读取；EOF 后仍请求输入会以 `input_error` 报告。
 - `sericite -` 会消费全部 stdin 作为源码，因此同一 stdin 不能再提供运行输入。
 - root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
+- 下游 stdout 管道关闭时，CLI 丢弃后续输出并安静退出 0，不把宿主 `BrokenPipeError` 转换成脚本错误。
 - 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续。
 
 | 退出码 | 含义 |
 |---:|---|
-| 0 | root 正常完成，或 REPL 以 EOF 结束 |
+| 0 | root 正常完成、REPL 以 EOF 结束，或下游 stdout 管道关闭 |
 | 1 | 文件/配置读取或校验失败、一次性执行或 REPL 启动错误、一次性执行的输入耗尽（`input_error`） |
 | 2 | 命令行用法错误 |
 
