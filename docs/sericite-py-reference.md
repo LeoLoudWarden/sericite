@@ -40,13 +40,13 @@ engine.create_root(
 - `source`: Sericite source text, capped at 4MB in UTF-8.
 - `limits`: the root's `SericiteLimits`; see section 3.
 - `inputs`: an iterable of strings queued in order.
-- `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`. To report a permanently closed input source instead, raise `SericiteError(kind="input_error")`; the script can catch that error, while the existing suspension contract for `None`/`EOFError`/`StopIteration` is unchanged. The CLI uses this explicit error for stdin EOF.
+- `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`; to report a permanently closed input source, raise `SericiteError(kind="input_error")`, which scripts can catch.
 - `functions`: host capabilities granted to the script; see section 5.
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
 - `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
 - `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
 
-Invalid host argument types raise `SericiteError(kind="type_error")` at the API boundary. Engine and root `limits` accept only `None` or `SericiteLimits`; `source` must be a string; `functions` must be a dict of callables; the IO callbacks must be `None` or callable; `inputs` and `argv` must be iterables of strings; and `buffer_output` must be a bool. Root validation failures do not register a VM.
+Invalid argument types raise `type_error` at the API boundary. Root arguments are validated before VM creation, so a failure registers no VM; `limits` may be `None` or a `SericiteLimits`.
 
 ## 3. Quotas: SericiteLimits
 

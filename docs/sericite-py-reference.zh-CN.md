@@ -40,13 +40,13 @@ engine.create_root(
 - `source`：Sericite 源码字符串，UTF-8 长度上限 4MB。
 - `limits`：root 使用的 `SericiteLimits`，见第 3 节。
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
-- `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`。若要改为报告输入源已经永久关闭，可显式抛出 `SericiteError(kind="input_error")`；脚本可以捕获该错误，而 `None`/`EOFError`/`StopIteration` 的既有暂停契约不变。CLI 就用这种显式错误表达 stdin EOF。
+- `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`；要报告输入源永久关闭，抛出 `SericiteError(kind="input_error")`，脚本可以捕获。
 - `functions`：授予脚本的宿主函数表，见第 5 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
 
-宿主参数类型错误会在 API 边界抛出 `SericiteError(kind="type_error")`。引擎和 root 的 `limits` 只接受 `None` 或 `SericiteLimits`；`source` 必须是字符串；`functions` 必须是可调用对象组成的 dict；两个 IO 回调必须是 `None` 或可调用对象；`inputs` 和 `argv` 必须是字符串可迭代对象；`buffer_output` 必须是 bool。root 校验失败不会注册 VM。
+参数类型错误在 API 边界报 `type_error`。root 参数校验先于 VM 创建，失败不会注册 VM；`limits` 可以是 `None` 或 `SericiteLimits`。
 
 ## 3. 配额：SericiteLimits
 
