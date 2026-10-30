@@ -1,0 +1,25 @@
+def quicksort(values):
+    if len(values) < 2:
+        return values
+    pivot = values[len(values) // 2]
+    before = []
+    equal = []
+    after = []
+    for value in values:
+        if value < pivot:
+            before.append(value)
+        elif value > pivot:
+            after.append(value)
+        else:
+            equal.append(value)
+    return quicksort(before) + equal + quicksort(after)
+
+
+values = []
+for token in read_file("/input.txt").split():
+    values.append(int(token))
+
+output = []
+for value in quicksort(values):
+    output.append(str(value))
+write_file("/output.txt", " ".join(output))

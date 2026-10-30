@@ -1,0 +1,279 @@
+MAX_VALUE_CHARS = 96
+STDOUT_TAIL_LINES = 5
+SOURCE_WINDOW_LINES = 11
+
+
+def pad_left(text, width):
+    while len(text) < width:
+        text = " " + text
+    return text
+
+
+def compact(value):
+    text = repr(value)
+    if len(text) > MAX_VALUE_CHARS:
+        return text[:MAX_VALUE_CHARS] + " …"
+    return text
+
+
+def line_number(value):
+    if value == None:
+        return "-"
+    return str(value)
+
+
+def print_help():
+    print("  Enter  execute one source statement")
+    print("  i      execute one internal instruction")
+    print("  c      continue by instruction until a watchpoint or terminal state")
+    print("  w NAME watch a local in the current frame; w off disables it")
+    print("  r      run without watchpoints")
+    print("  q      terminate the child VM")
+    print("  h      show this help")
+
+
+def render_source(snapshot, source_lines):
+    print("├─ SOURCE ───────────────────────────────────────────────────────────┤")
+    focus = snapshot["next_line"]
+    marker = ">"
+    if focus == None and snapshot["error"] != None:
+        focus = snapshot["error"]["line"]
+        marker = "!"
+    if focus == None:
+        focus = 1
+    total = len(source_lines)
+    start = 1
+    end = total
+    if total > SOURCE_WINDOW_LINES:
+        start = focus - 4
+        if start < 1:
+            start = 1
+        end = start + SOURCE_WINDOW_LINES - 1
+        if end > total:
+            end = total
+            start = total - SOURCE_WINDOW_LINES + 1
+    if start > 1:
+        print("│     …  " + str(start - 1) + " earlier lines")
+    index = start
+    while index <= end:
+        prefix = "  "
+        if index == focus:
+            prefix = marker + " "
+        print("│ " + prefix + pad_left(str(index), 3) + "  " + source_lines[index - 1])
+        index = index + 1
+    if end < total:
+        print("│     …  " + str(total - end) + " later lines")
+
+
+def render(snapshot, source_lines):
+    print("\n╭─ CHILD VM ───────────────────────────────────────────────────────────╮")
+    print(
+        "│ state "
+        + snapshot["state"]
+        + " · instructions "
+        + str(snapshot["instruction_count"])
+        + " · last "
+        + line_number(snapshot["last_line"])
+        + " → next "
+        + line_number(snapshot["next_line"])
+    )
+    watch = session["watch"]
+    if watch == "":
+        watch = "off"
+    print("│ target " + str(len(source)) + " chars · watch " + watch)
+    render_source(snapshot, source_lines)
+    print("├─ LOCALS · current frame ───────────────────────────────────────────┤")
+    locals_view = snapshot["locals"]
+    if len(locals_view) == 0:
+        print("│ (empty)")
+    for name in locals_view:
+        print("│ " + name + " = " + compact(locals_view[name]))
+    print("├─ CHILD STDOUT · tail ──────────────────────────────────────────────┤")
+    output_lines = snapshot["stdout"].splitlines()
+    if len(output_lines) == 0:
+        print("│ (empty)")
+    start = 0
+    if len(output_lines) > STDOUT_TAIL_LINES:
+        start = len(output_lines) - STDOUT_TAIL_LINES
+    for line in output_lines[start:]:
+        print("│ " + line)
+    if snapshot["error"] != None:
+        print("├─ ERROR · safe snapshot ────────────────────────────────────────────┤")
+        print("│ " + snapshot["error"]["kind"] + ": " + snapshot["error"]["message"])
+        for frame in snapshot["error"]["frames"]:
+            print("│ " + frame["function"] + ":" + line_number(frame["line"]))
+    print("╰──────────────────────────────────────────────────────────────────────╯")
+
+
+def note_watch(before, after):
+    session["watch_hit"] = False
+    name = session["watch"]
+    if name == "":
+        return
+    before_present = name in before["locals"]
+    after_present = name in after["locals"]
+    before_value = before["locals"].get(name)
+    after_value = after["locals"].get(name)
+    changed = False
+    if before_present != after_present:
+        changed = True
+    elif before_present:
+        if before_value != after_value:
+            changed = True
+    if changed:
+        session["watch_hit"] = True
+        session["before_present"] = before_present
+        session["after_present"] = after_present
+        session["before_value"] = before_value
+        session["after_value"] = after_value
+
+
+def show_watchpoint():
+    if not session["watch_hit"]:
+        return
+    print("\n◆ watchpoint hit · " + session["watch"])
+    before = "(not in frame)"
+    after = "(not in frame)"
+    if session["before_present"]:
+        before = compact(session["before_value"])
+    if session["after_present"]:
+        after = compact(session["after_value"])
+    print("  before: " + before)
+    print("  after:  " + after)
+    session["watch_hit"] = False
+
+
+def step_statement():
+    before = sub.snapshot()
+    snapshot = sub.step()
+    note_watch(before, snapshot)
+    return snapshot
+
+
+def step_instruction():
+    before = sub.snapshot()
+    snapshot = sub.step_instruction()
+    note_watch(before, snapshot)
+    return snapshot
+
+
+def continue_to_watchpoint():
+    if session["watch"] == "":
+        return run_without_watchpoints()
+    snapshot = sub.snapshot()
+    while snapshot["state"] == "ready":
+        before = snapshot
+        try:
+            snapshot = sub.step_instruction()
+        except ...:
+            snapshot = sub.snapshot()
+            break
+        note_watch(before, snapshot)
+        if session["watch_hit"]:
+            break
+    return snapshot
+
+
+def run_without_watchpoints():
+    session["watch_hit"] = False
+    try:
+        sub.run()
+    except ...:
+        pass
+    return sub.snapshot()
+
+
+if len(argv) < 2:
+    print("usage: debugger.sericite SOURCE [INPUT] [TARGET_ARG ...]")
+    print("SOURCE is Sericite code, not a filename.")
+else:
+    target_argv = ["<target>"] + argv[3:]
+    source = "argv = " + repr(target_argv) + "\n" + argv[1]
+    source_lines = source.splitlines()
+    try:
+        sub = VM(
+            source,
+            max_instructions=20000,
+            max_output_bytes=65536,
+            max_frames=100,
+            max_child_vms=16,
+            max_string_bytes=262144,
+            max_total_bytes=16777216,
+        )
+    except syntax_error as e:
+        print("target syntax_error: " + e.message)
+    else:
+        if len(argv) > 2:
+            for line in argv[2].splitlines():
+                sub.feed_input(line)
+        session = {
+            "watch": "",
+            "watch_hit": False,
+            "before_present": False,
+            "after_present": False,
+            "before_value": None,
+            "after_value": None,
+        }
+        print("╭─ SERICITE DEBUGGER ────────────────────────────────────────────────╮")
+        print("│ One Sericite program debugging another.                           │")
+        print("╰──────────────────────────────────────────────────────────────────────╯")
+        print_help()
+        snapshot = sub.snapshot()
+        render(snapshot, source_lines)
+        try:
+            while snapshot["state"] == "ready" or snapshot["state"] == "waiting_input":
+                if snapshot["state"] == "waiting_input":
+                    print("\n[child stdin] ", end="")
+                    try:
+                        child_input = input()
+                    except input_error:
+                        print("\ninput closed")
+                        break
+                    sub.feed_input(child_input)
+                    snapshot = sub.snapshot()
+                    continue
+                print("\n[Enter/i/c/r/w/q/h] ", end="")
+                try:
+                    command = input().strip()
+                except input_error:
+                    print("\ninput closed")
+                    break
+                if command == "":
+                    snapshot = step_statement()
+                elif command == "i":
+                    snapshot = step_instruction()
+                elif command == "c":
+                    snapshot = continue_to_watchpoint()
+                elif command == "r":
+                    snapshot = run_without_watchpoints()
+                elif command == "q":
+                    sub.terminate()
+                    snapshot = sub.snapshot()
+                elif command == "h":
+                    print_help()
+                    continue
+                elif command == "w off":
+                    session["watch"] = ""
+                    session["watch_hit"] = False
+                    print("watchpoint disabled")
+                    continue
+                else:
+                    parts = command.split()
+                    if len(parts) == 2 and parts[0] == "w":
+                        session["watch"] = parts[1]
+                        session["watch_hit"] = False
+                        print("watchpoint armed: " + parts[1])
+                        continue
+                    print("unknown command; h shows help")
+                    continue
+                show_watchpoint()
+                render(snapshot, source_lines)
+            print("session ended · " + snapshot["state"])
+        finally:
+            state = sub.snapshot()["state"]
+            if state == "ready" or state == "waiting_input":
+                sub.terminate()
+            try:
+                sub.dispose()
+            except runtime_error:
+                pass

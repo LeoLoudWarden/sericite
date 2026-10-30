@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from itertools import count
 from pathlib import Path
@@ -19,13 +20,18 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent.parent
 DOC_VFS_PATH = "/sericite语言特性速览.md"
 MAX_FETCH_CHARS = 500_000
-LOG_LLM = True
+LOG_LLM = False
 LOG_LLM_FULL_JSON = False
+WAIT_LOG_INTERVAL = 15
 
 
 def _log_line(message: str) -> None:
     if LOG_LLM:
         print(f"[llm_chat] {message}", file=sys.stderr, flush=True)
+
+
+def _log_warning(message: str) -> None:
+    print(f"[llm_chat] {message}", file=sys.stderr, flush=True)
 
 
 def _log_json(label: str, payload) -> None:
@@ -36,6 +42,27 @@ def _log_json(label: str, payload) -> None:
             file=sys.stderr,
             flush=True,
         )
+
+
+def _post_with_wait_log(call_id: int, **kwargs):
+    stopped = threading.Event()
+
+    def report_wait():
+        waited = 0
+        interval = WAIT_LOG_INTERVAL
+        while not stopped.wait(interval):
+            waited += interval
+            _log_warning(f"call #{call_id} still waiting · {waited}s")
+            if waited >= 60:
+                interval = 60
+
+    waiter = threading.Thread(target=report_wait, daemon=True)
+    waiter.start()
+    try:
+        return requests.post(**kwargs)
+    finally:
+        stopped.set()
+        waiter.join()
 
 
 def _normalize_api_url(url: str) -> str:
@@ -79,18 +106,19 @@ def make_llm_chat(api_url: str, api_key: str, model: str):
         resp = None
         for attempt in range(3):
             try:
-                resp = requests.post(
-                    api_url,
+                resp = _post_with_wait_log(
+                    call_id,
+                    url=api_url,
                     json=body,
                     headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=600,
+                    timeout=90,
                 )
                 break
             except (
                 requests.exceptions.ReadTimeout,
                 requests.exceptions.ConnectionError,
             ) as exc:
-                _log_line(
+                _log_warning(
                     f"call #{call_id} network error: {type(exc).__name__} "
                     f"(attempt {attempt + 1}/3)"
                 )
@@ -183,7 +211,7 @@ def configure():
             "set them in demos/root-agent/.env or the environment"
         )
     return {
-        "limits": SericiteLimits(max_instructions=20_000_000),
+        "limits": SericiteLimits(max_instructions=100_000_000),
         "functions": {
             "llm_chat": make_llm_chat(_normalize_api_url(api_url), api_key, model),
             "http_get": make_http_get(),

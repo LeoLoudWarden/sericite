@@ -1,0 +1,252 @@
+CASE_INSTRUCTION_LIMIT = 120000
+CASE_OUTPUT_LIMIT = 512
+
+CASE_SIZE = 24
+
+
+def parse_numbers(text):
+    values = []
+    for token in text.split():
+        values.append(int(token))
+    return values
+
+
+def reference_sort(values):
+    if len(values) < 2:
+        return values
+    pivot = values[len(values) // 2]
+    before = []
+    equal = []
+    after = []
+    for value in values:
+        if value < pivot:
+            before.append(value)
+        elif value > pivot:
+            after.append(value)
+        else:
+            equal.append(value)
+    return reference_sort(before) + equal + reference_sort(after)
+
+
+def join_numbers(values):
+    tokens = []
+    for value in values:
+        tokens.append(str(value))
+    return " ".join(tokens)
+
+
+def random_values(upper):
+    values = []
+    for index in range(CASE_SIZE):
+        values.append(random_int(upper))
+    return values
+
+
+def reverse_values(values):
+    result = []
+    index = len(values) - 1
+    while index >= 0:
+        result.append(values[index])
+        index = index - 1
+    return result
+
+
+def nearly_sorted_values():
+    values = reference_sort(random_values(100))
+    for index in range(4):
+        left = random_int(CASE_SIZE)
+        right = random_int(CASE_SIZE)
+        temporary = values[left]
+        values[left] = values[right]
+        values[right] = temporary
+    return values
+
+
+def make_cases():
+    return [
+        {"name": "mixed", "input": join_numbers(random_values(100))},
+        {
+            "name": "reversed",
+            "input": join_numbers(reverse_values(reference_sort(random_values(100)))),
+        },
+        {"name": "nearly sorted", "input": join_numbers(nearly_sorted_values())},
+        {"name": "duplicates", "input": join_numbers(random_values(10))},
+    ]
+
+
+CASES = make_cases()
+
+
+def expected_tokens(text):
+    expected = []
+    for value in reference_sort(parse_numbers(text)):
+        expected.append(str(value))
+    return expected
+
+
+def run_case(source, input_text):
+    sub = VM(
+        "",
+        max_instructions=CASE_INSTRUCTION_LIMIT,
+        max_output_bytes=CASE_OUTPUT_LIMIT,
+        max_frames=64,
+        max_child_vms=0,
+        max_list_size=4096,
+        max_dict_size=256,
+        max_string_bytes=8192,
+        max_total_bytes=1048576,
+        max_fs_files=8,
+        max_fs_file_bytes=4096,
+    )
+    result = {"ok": False, "instructions": 0, "output": "", "error": ""}
+    try:
+        sub.write_file("/input.txt", input_text)
+        sub.exec(source)
+        snapshot = sub.snapshot()
+        if snapshot["state"] == "waiting_input":
+            result["error"] = "input_error"
+        else:
+            result["output"] = sub.read_file("/output.txt")
+            result["instructions"] = snapshot["instruction_count"]
+            result["ok"] = True
+    except ... as e:
+        result["error"] = e.kind
+    finally:
+        sub.terminate()
+        sub.dispose()
+    return result
+
+
+def pad_right(text, width):
+    while len(text) < width:
+        text = text + " "
+    return text
+
+
+def pad_left(text, width):
+    while len(text) < width:
+        text = " " + text
+    return text
+
+
+def format_number(number):
+    digits = str(number)
+    result = ""
+    group = 0
+    index = len(digits) - 1
+    while index >= 0:
+        if group == 3:
+            result = "," + result
+            group = 0
+        result = digits[index] + result
+        group = group + 1
+        index = index - 1
+    return result
+
+
+def contestant_name(filename):
+    return filename[3:len(filename) - 9]
+
+
+def error_note(kind):
+    if kind == "resource_exhausted":
+        return "stopped by the VM quota"
+    if kind == "file_not_found":
+        return "judge and host files are not visible"
+    return "submission failed inside its own VM"
+
+
+def insert_ranked(ranked, result):
+    ranked.append(result)
+    index = len(ranked) - 1
+    while index > 0:
+        if ranked[index - 1]["instructions"] <= result["instructions"]:
+            break
+        ranked[index] = ranked[index - 1]
+        index = index - 1
+    ranked[index] = result
+
+
+for case in CASES:
+    case["expected"] = expected_tokens(case["input"])
+
+entries = list_dir("/entries")
+qualified = []
+rejected = []
+
+print("╭──────────────────────────────────────────────────────────────────────╮")
+print("│  SERICITE / SORTING ARENA                                            │")
+print("│  Untrusted code in. Correct answers and instruction counts out.      │")
+print("╰──────────────────────────────────────────────────────────────────────╯")
+print(
+    "  "
+    + str(len(entries))
+    + " submissions · "
+    + str(len(CASES))
+    + " test cases · "
+    + format_number(CASE_INSTRUCTION_LIMIT)
+    + "-instruction ceiling per case"
+)
+print("  Every submission gets a fresh VM. No network, host files, or shared state.")
+print("  Fresh random cases from Python random_int · granted to the judge only")
+
+for filename in entries:
+    source = read_file("/entries/" + filename)
+    name = contestant_name(filename)
+    print("\n  " + name)
+    print("  " + "────────────────────────────────────────────────────────────────")
+    total = 0
+    accepted = True
+    failure = ""
+    for case in CASES:
+        result = run_case(source, case["input"])
+        if not result["ok"]:
+            accepted = False
+            failure = result["error"]
+            print(
+                "    × "
+                + pad_right(case["name"], 16)
+                + failure
+                + " · "
+                + error_note(failure)
+            )
+            break
+        if result["output"].split() != case["expected"]:
+            accepted = False
+            failure = "wrong_answer"
+            print("    × " + pad_right(case["name"], 16) + "wrong answer")
+            break
+        total = total + result["instructions"]
+        print(
+            "    ✓ "
+            + pad_right(case["name"], 16)
+            + pad_left(format_number(result["instructions"]), 9)
+            + " instructions"
+        )
+    result = {"name": name, "instructions": total, "error": failure}
+    if accepted:
+        insert_ranked(qualified, result)
+        print("    → qualified · " + format_number(total) + " instructions total")
+    else:
+        rejected.append(result)
+
+print("\n╭─ FINAL STANDINGS ────────────────────────────────────────────────────╮")
+print("  RANK  CONTESTANT                  TOTAL INSTRUCTIONS")
+rank = 1
+for result in qualified:
+    print(
+        "  "
+        + pad_right(str(rank), 6)
+        + pad_right(result["name"], 24)
+        + format_number(result["instructions"])
+    )
+    rank = rank + 1
+for result in rejected:
+    print(
+        "  "
+        + pad_right("DQ", 6)
+        + pad_right(result["name"], 24)
+        + result["error"]
+    )
+print("╰──────────────────────────────────────────────────────────────────────╯")
+print("  The arena survived every submission. The scoreboard only counts correct code.")

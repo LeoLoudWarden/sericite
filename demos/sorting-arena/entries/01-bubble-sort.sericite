@@ -1,0 +1,18 @@
+values = []
+for token in read_file("/input.txt").split():
+    values.append(int(token))
+
+swapped = True
+while swapped:
+    swapped = False
+    for index in range(len(values) - 1):
+        if values[index] > values[index + 1]:
+            temporary = values[index]
+            values[index] = values[index + 1]
+            values[index + 1] = temporary
+            swapped = True
+
+output = []
+for value in values:
+    output.append(str(value))
+write_file("/output.txt", " ".join(output))

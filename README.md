@@ -25,6 +25,8 @@ pip install sericite
 
 The distribution is named `sericite`; the import package is `sericite`.
 
+examples/、demos/ 和 docs/ 位于 GitHub 仓库及源码分发包中，不包含在 wheel 中。
+
 ## Quick start
 
 As a CLI:

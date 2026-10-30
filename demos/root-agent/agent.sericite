@@ -2,6 +2,12 @@
 DOC_PATH = "/sericite语言特性速览.md"
 MAX_RESULT_CHARS = 4000
 MAX_ROUNDS = 30
+MAX_LIVE_LINES = 8
+MAX_LIVE_LINE_CHARS = 240
+LIVE_TAIL_LINES = 3
+VERBOSE = "--verbose" in argv
+live = {"chars": 0, "lines": 0, "shown": 0, "folded": False, "tail": []}
+exec_feedback = {"truncations": 0}
 
 TOOLS = [
     {
@@ -86,8 +92,28 @@ def seed_tree(sub, prefix="/"):
             sub.write_file(path, text)
 
 
+def print_live_line(line):
+    if len(line) > MAX_LIVE_LINE_CHARS:
+        line = line[:MAX_LIVE_LINE_CHARS] + " …"
+    print("vm 1  " + line)
+
+
 def layer_1_output(text):
-    print("[外层VM实时] " + repr(text))
+    lines = text.splitlines()
+    live["chars"] += len(text)
+    live["lines"] += len(lines)
+    for line in lines:
+        live["tail"].append(line)
+        if len(live["tail"]) > LIVE_TAIL_LINES:
+            live["tail"].pop(0)
+        if VERBOSE:
+            print("vm 1  " + line)
+        elif live["shown"] < MAX_LIVE_LINES:
+            print_live_line(line)
+            live["shown"] += 1
+        elif not live["folded"]:
+            live["folded"] = True
+            print("vm 1  … folding live output; tail follows")
 
 
 # One persistent execution VM for the whole session: variables, definitions,
@@ -106,12 +132,70 @@ def exec_error(kind, message):
     return "(" + kind + ": " + message + ")"
 
 
+def finish_live_output():
+    if not VERBOSE and live["folded"]:
+        print(
+            "vm 1  … display folded · "
+            + str(live["chars"])
+            + " chars / "
+            + str(live["lines"])
+            + " lines total"
+        )
+        for line in live["tail"]:
+            print_live_line(line)
+
+
+def truncate_output(output):
+    exec_feedback["truncations"] += 1
+    total = len(output)
+    if exec_feedback["truncations"] == 1:
+        print(
+            "root  ↳ output truncated · "
+            + str(total)
+            + " chars · suggested write_file + file_read"
+        )
+        advice = (
+            "提示：本次输出共 "
+            + str(total)
+            + " 字符，仅返回前 "
+            + str(MAX_RESULT_CHARS)
+            + " 字符。处理大文本时，请用 write_file 将完整内容写入当前工作区，"
+            + "再使用 file_read 工具读取。"
+        )
+    else:
+        print(
+            "root  ↳ output truncated again · "
+            + str(total)
+            + " chars · use write_file + file_read"
+        )
+        advice = (
+            "再次截断：本次输出共 "
+            + str(total)
+            + " 字符，仍只返回前 "
+            + str(MAX_RESULT_CHARS)
+            + " 字符。请不要重复打印或重跑大段输出；请用 write_file 写入当前工作区，"
+            + "再改用 file_read 工具。"
+        )
+    return output[:MAX_RESULT_CHARS] + "\n\n[" + advice + "]"
+
+
 def execute_code(code):
+    live["chars"] = 0
+    live["lines"] = 0
+    live["shown"] = 0
+    live["folded"] = False
+    live["tail"] = []
     try:
         output = sub.exec(code)
     except ... as e:
+        finish_live_output()
         return exec_error(e.kind, e.message)
-    return output[:MAX_RESULT_CHARS] or "(no output)"
+    finish_live_output()
+    if not output:
+        return "(no output)"
+    if len(output) > MAX_RESULT_CHARS:
+        return truncate_output(output)
+    return output
 
 
 def dispatch_tool(name, args):
@@ -135,6 +219,32 @@ def dispatch_tool(name, args):
     return "(unknown tool: " + name + ")"
 
 
+def tool_summary(name, args):
+    if name == "sericite_exec":
+        code = args.get("code", "")
+        return name + " · " + str(len(code.splitlines())) + " lines"
+    path = norm_path(args.get("path", ""))
+    if name == "file_write":
+        return (
+            name
+            + " "
+            + path
+            + " · "
+            + str(len(args.get("content", "")))
+            + " chars"
+        )
+    return name + " " + path
+
+
+def print_tool_result(name, result):
+    if result[:1] == "(":
+        print("root  ↳ " + result)
+    elif name == "file_read":
+        print("root  ↳ " + str(len(result)) + " chars · full result sent to model")
+    elif name == "file_list":
+        print("root  ↳ " + str(len(result.splitlines())) + " entries")
+
+
 messages = [
     {"role": "system", "content": read_file("/control/prompt_outer.txt")},
     {"role": "user", "content": "开始吧"},
@@ -142,26 +252,32 @@ messages = [
 final = "(达到最大轮数)"
 rounds = 0
 while rounds < MAX_ROUNDS:
+    print("\n── outer round " + str(rounds + 1) + " ─────────────────")
     resp = llm_chat({"messages": messages, "tools": TOOLS})
-    if resp["content"]:
-        print("[外层 第" + str(rounds + 1) + "轮] " + resp["content"])
     messages.append(resp["assistant_message"])
     calls = resp["tool_calls"]
     if len(calls) == 0:
         final = resp["content"]
         break
+    if resp["content"]:
+        print("model  " + resp["content"])
     for call in calls:
-        print("[外层 工具调用] " + call["name"])
         call_args = call["args"]
-        for k in call_args.keys():
-            v = call_args[k]
-            print("[外层 工具参数(" + k + ")] " + repr(v))
-        result = dispatch_tool(call["name"], call["args"])
-        print("[外层 工具结果] " + repr(result))
+        if VERBOSE:
+            print("root  " + call["name"])
+            for k in call_args.keys():
+                print("root  arg " + k + " = " + repr(call_args[k]))
+        else:
+            print("root  " + tool_summary(call["name"], call_args))
+        result = dispatch_tool(call["name"], call_args)
+        if VERBOSE:
+            print("root  result = " + repr(result))
+        else:
+            print_tool_result(call["name"], result)
         messages.append(
             {"role": "tool", "tool_call_id": call["id"], "content": result}
         )
     rounds = rounds + 1
 
-print("\n=== 外层会话最终回答 ===")
+print("\n── final ─────────────────────────")
 print(final)

@@ -1,0 +1,20 @@
+values = []
+for token in read_file("/input.txt").split():
+    values.append(int(token))
+
+index = 1
+while index < len(values):
+    value = values[index]
+    position = index - 1
+    while position >= 0:
+        if values[position] <= value:
+            break
+        values[position + 1] = values[position]
+        position = position - 1
+    values[position + 1] = value
+    index = index + 1
+
+output = []
+for value in values:
+    output.append(str(value))
+write_file("/output.txt", " ".join(output))
