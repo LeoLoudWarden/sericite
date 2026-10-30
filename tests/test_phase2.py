@@ -43,6 +43,29 @@ class ArithmeticTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "zero_division")
 
 
+class AssignmentTests(unittest.TestCase):
+    def test_chain_assignment_evaluates_value_once(self):
+        source = (
+            "def value():\n"
+            '    print("evaluated")\n'
+            "    return 7\n"
+            "a = b = value()\n"
+            "print(a, b)\n"
+        )
+        self.assertEqual(run(source), "evaluated\n7 7\n")
+
+    def test_chain_assignment_rejects_non_name_targets(self):
+        cases = (
+            "values = [0]\nvalues[0] = other = 1\n",
+            "class Box:\n    value: int\nbox = Box(0)\nbox.value = other = 1\n",
+        )
+        for source in cases:
+            with self.subTest(source=source):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                self.assertEqual(ctx.exception.kind, "syntax_error")
+
+
 class AugmentedAssignmentTests(unittest.TestCase):
     def test_all_supported_operators(self):
         source = (

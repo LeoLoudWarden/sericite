@@ -52,7 +52,7 @@ from sericite import SericiteEngine
 engine = SericiteEngine()
 vm = engine.create_root("""
 sub = VM("print('hello from a child VM')")
-print(sub.run())
+print(sub.run(), end="")
 """)
 print(vm.run(), end="")
 ```

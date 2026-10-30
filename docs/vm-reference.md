@@ -158,6 +158,8 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_fs_files` | 1000 | Files per VM |
 | `max_fs_file_bytes` | 1,048,576 | UTF-8 bytes per file |
 
+Despite its historical name, `max_string_bytes` limits characters per string; file and output quotas are measured in UTF-8 bytes.
+
 The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap.
 
 All structural fields must be non-negative finite integers. Cumulative fields additionally accept `-1`; any other negative value, and any non-integer value, is rejected for every field.
@@ -192,5 +194,7 @@ A granted sericite function:
 - executes its body on the caller's frame stack;
 - is jointly constrained — world services and target execution — by causal routes spanning home/target and caller, with shared ancestors charged once;
 - passes result ownership to the actual caller.
+
+A granted function's parameter names are part of its public call signature and may be used as keyword arguments by the receiving VM; definition-side parameter names remain hidden in error messages.
 
 Granting or re-granting a function grants the world reachable through it — including captured VM handles, which carry their `terminate()`/`dispose()` authority. Grant only functions whose reachable state the child VM may observe or modify. VM handles themselves cannot cross FFI into the host. The mechanism and its design invariants are in the [architecture notes](architecture.md), invariant 13 and section 5.4; granting Python functions to a root from the host (FFI) is covered by the [Sericite-PY reference](sericite-py-reference.md) §5.

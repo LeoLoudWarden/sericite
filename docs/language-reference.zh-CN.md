@@ -32,6 +32,8 @@ lst = [nan]
 lst == lst                   # True：同一个对象
 ```
 
+`a = b = value` 只对 `value` 求值一次，再依次绑定各个名字；多目标中的 attribute/subscript 形式不受支持。
+
 增强赋值支持 `+=`、`-=`、`*=`、`/=`、`//=`、`%=`，目标可以是名字、列表/字典下标或 record 字段。`target += rhs` 等价于 `target = target + rhs`，但目标地址只求值一次；其他运算符同理。运算规则与普通二元运算完全一致，例如列表 `+=` 仍创建拼接后的新列表，而不是原地扩展。
 
 字符串和列表支持只读切片 `value[start:stop]` 与 `value[start:stop:step]`：
@@ -185,7 +187,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
   栈从最外层调用排列到实际错误点，最后一帧是错误点。调用方帧的行号是实际发起该调用的那一行；调用跨多行时，不会退回到语句或表达式的起始行。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
 
-裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
+裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。`as e` 是当前作用域中的普通绑定，handler 结束后仍然保留，嵌套的同名 handler 会覆盖它。
 
 裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；handler 或 `finally` 中新产生的错误则使用新调用栈。
 
