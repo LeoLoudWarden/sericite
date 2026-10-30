@@ -15,10 +15,17 @@ class Limits(Protocol):
 
 
 class Account(Protocol):
+    vm_id: int
     parent_id: int | None
     instruction_count: int
     alloc_bytes: int
     limits: Limits
+
+
+def _resource_error(message: str, account: Account) -> SericiteError:
+    error = SericiteError(message, kind="resource_exhausted")
+    error._resource_vm_id = account.vm_id
+    return error
 
 
 class AccountRoute:
@@ -59,16 +66,12 @@ class AccountRoute:
                 account.limits.max_instructions != UNLIMITED
                 and account.instruction_count + work > account.limits.max_instructions
             ):
-                raise SericiteError(
-                    "instruction limit exceeded", kind="resource_exhausted"
-                )
+                raise _resource_error("instruction limit exceeded", account)
             if (
                 account.limits.max_total_bytes != UNLIMITED
                 and account.alloc_bytes + allocation > account.limits.max_total_bytes
             ):
-                raise SericiteError(
-                    "total memory limit exceeded", kind="resource_exhausted"
-                )
+                raise _resource_error("total memory limit exceeded", account)
         for account in self._accounts:
             account.instruction_count += work
             account.alloc_bytes += allocation
@@ -92,7 +95,7 @@ class Meter:
             account.limits.max_instructions != UNLIMITED
             and account.instruction_count + amount > account.limits.max_instructions
         ):
-            raise SericiteError("instruction limit exceeded", kind="resource_exhausted")
+            raise _resource_error("instruction limit exceeded", account)
         account.instruction_count += amount
 
     def allocate(self, amount: int) -> None:

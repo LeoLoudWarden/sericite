@@ -701,6 +701,126 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[2].state, "resource_exhausted")
 
+    def test_exhausted_target_write_and_drive_errors_are_catchable(self):
+        operations = (
+            'sub.write_file("/x", "y")',
+            'sub.exec("print(1)")',
+            'sub.run(["x"])',
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    'sub = VM("while True:\\n    pass", max_instructions=50)\n'
+                    "try:\n"
+                    "    sub.run()\n"
+                    "except resource_exhausted:\n"
+                    "    pass\n"
+                    "try:\n"
+                    f"    {operation}\n"
+                    "except resource_exhausted:\n"
+                    '    print("caught")\n'
+                    'print("alive")\n'
+                )
+                self.assertEqual(vm.run(), "caught\nalive\n")
+                self.assertEqual(vm.snapshot()["state"], "done")
+                self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_terminal_target_run_rethrows_and_steps_return_snapshots(self):
+        operations = (
+            ("sub.run()", "caught\nalive\n"),
+            ("sub.step()", "resource_exhausted\nalive\n"),
+            ("sub.step_instruction()", "resource_exhausted\nalive\n"),
+        )
+        for operation, expected in operations:
+            with self.subTest(operation=operation):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    'sub = VM("while True:\\n    pass", max_instructions=50)\n'
+                    "try:\n"
+                    "    sub.run()\n"
+                    "except resource_exhausted:\n"
+                    "    pass\n"
+                    "try:\n"
+                    f"    result = {operation}\n"
+                    "except resource_exhausted:\n"
+                    '    print("caught")\n'
+                    "else:\n"
+                    '    print(result["state"])\n'
+                    'print("alive")\n'
+                )
+                self.assertEqual(vm.run(), expected)
+                self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_nonterminal_target_quota_failure_is_catchable_and_terminal(self):
+        cases = (
+            ("instruction", "max_instructions=1", 'sub.write_file("/x", "y")'),
+            (
+                "memory",
+                "max_total_bytes=256",
+                f'sub.write_file("/x", {"x" * 1000!r})',
+            ),
+            ("file_size", "max_fs_file_bytes=1", 'sub.write_file("/x", "yy")'),
+            ("file_count", "max_fs_files=0", 'sub.write_file("/x", "y")'),
+        )
+        for name, options, operation in cases:
+            with self.subTest(case=name):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    f'sub = VM("x = 1", {options})\n'
+                    "try:\n"
+                    f"    {operation}\n"
+                    "except resource_exhausted:\n"
+                    '    print("caught")\n'
+                    'print("alive")\n'
+                )
+                self.assertEqual(vm.run(), "caught\nalive\n")
+                self.assertEqual(vm.snapshot()["state"], "done")
+                self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+
+    def test_target_write_does_not_hide_caller_quota_failure(self):
+        engine = SericiteEngine(SericiteLimits(max_instructions=200))
+        long_path = "/" + "x" * 1000
+        vm = engine.create_root(
+            'sub = VM("x = 1")\n'
+            "try:\n"
+            f'    sub.write_file({long_path!r}, "y")\n'
+            "except resource_exhausted:\n"
+            '    print("must not happen")\n'
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(ctx.exception._resource_vm_id, 0)
+        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
+        self.assertEqual(engine._contexts[1].state, "ready")
+        self.assertNotIn("must not happen", vm.stdout())
+
+    def test_common_ancestor_quota_failure_cannot_be_caught_by_middle_vm(self):
+        engine = SericiteEngine(SericiteLimits(max_instructions=1050))
+        long_path = "/" + "x" * 1000
+        child_source = (
+            'sub = VM("x = 1")\n'
+            "path = long_path()\n"
+            "try:\n"
+            '    sub.write_file(path, "y")\n'
+            "except resource_exhausted:\n"
+            '    print("must not happen")\n'
+        )
+        vm = engine.create_root(
+            f"sub = VM({child_source!r}, "
+            'functions={"long_path": long_path})\nsub.run()\n',
+            functions={"long_path": lambda: long_path},
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(ctx.exception._resource_vm_id, 0)
+        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+        self.assertEqual(engine._contexts[2].state, "ready")
+        self.assertNotIn("must not happen", engine._contexts[1].io.stdout())
+
     def test_terminal_target_read_methods_charge_only_caller(self):
         operations = (
             "sub.snapshot()",

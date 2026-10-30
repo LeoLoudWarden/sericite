@@ -58,6 +58,23 @@ class AccountRouteTests(unittest.TestCase):
             [0, 0, 0],
         )
 
+    def test_charge_records_actual_exhausted_account(self) -> None:
+        self.home.max_instructions = 4
+        with self.assertRaises(SericiteError) as ctx:
+            self.route(self.home, self.caller).charge(work=5)
+        self.assertEqual(ctx.exception._resource_vm_id, self.home.vm_id)
+
+        self.caller.max_total_bytes = 4
+        with self.assertRaises(SericiteError) as ctx:
+            self.route(self.home, self.caller).charge(allocation=5)
+        self.assertEqual(ctx.exception._resource_vm_id, self.caller.vm_id)
+
+    def test_single_account_meter_records_exhausted_account(self) -> None:
+        self.root.max_instructions = 4
+        with self.assertRaises(SericiteError) as ctx:
+            Meter(self.route(self.root)).work(5)
+        self.assertEqual(ctx.exception._resource_vm_id, self.root.vm_id)
+
     def test_unlimited_account_still_accumulates_ledgers(self) -> None:
         self.root.max_instructions = -1
         self.root.max_total_bytes = -1

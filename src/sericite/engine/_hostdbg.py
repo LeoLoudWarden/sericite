@@ -151,7 +151,13 @@ class _EngineHostDebug:
         elif attr == "write_file" and write_signature:
             path = args[0] if args else kwargs["path"]
             text = args[1] if len(args) > 1 else kwargs["text"]
-            self._context(handle).fs.write_file(path, text, permit=permit)
+            target = self._context(handle)
+            try:
+                target.fs.write_file(path, text, permit=permit)
+            except SericiteError as error:
+                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
+                    error._resource_vm_id = target.vm_id
+                raise
             result = None
         elif attr == "exec" and len(args) == 1 and not kwargs:
             result = self._exec_source(handle, args[0])

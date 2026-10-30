@@ -270,12 +270,16 @@ class SnapshotViewTests(unittest.TestCase):
             "    s = s + s\n"
             "    i += 1\n"
             'src = "x = \\"" + s + "\\""\n'
-            "sub = VM(src, max_total_bytes=2048)\n"
+            "try:\n"
+            "    sub = VM(src, max_total_bytes=2048)\n"
+            "except resource_exhausted:\n"
+            '    print("must not happen")\n'
         )
         vm = engine.create_root(source)
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertNotIn("must not happen", vm.stdout())
         self.assertEqual(len(engine._contexts), 1)
         self.assertEqual(vm.snapshot()["child_count"], 0)
         second = engine.create_root("print(1)\n")
