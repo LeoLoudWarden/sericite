@@ -119,6 +119,80 @@ class RootVMTests(unittest.TestCase):
             SericiteEngine().create_root("", functions={"argv": list})
         self.assertEqual(ctx.exception.kind, "type_error")
 
+    def test_engine_and_root_limits_require_sericite_limits(self):
+        for value in (1, {}):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as engine_error:
+                    SericiteEngine(limits=value)
+                self.assertEqual(engine_error.exception.kind, "type_error")
+                self.assertIn("limits", engine_error.exception.message)
+
+                engine = SericiteEngine()
+                with self.assertRaises(SericiteError) as root_error:
+                    engine.create_root("", limits=value)
+                self.assertEqual(root_error.exception.kind, "type_error")
+                self.assertIn("limits", root_error.exception.message)
+
+    def test_root_source_requires_a_string(self):
+        for value in (None, 1):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as raised:
+                    SericiteEngine().create_root(value)
+                self.assertEqual(raised.exception.kind, "type_error")
+                self.assertIn("source", raised.exception.message)
+
+    def test_root_functions_require_a_dict(self):
+        for value in ([1], 1):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as raised:
+                    SericiteEngine().create_root("", functions=value)
+                self.assertEqual(raised.exception.kind, "type_error")
+                self.assertIn("functions", raised.exception.message)
+
+    def test_root_io_callbacks_must_be_callable(self):
+        for parameter in ("input_provider", "output_writer"):
+            with self.subTest(parameter=parameter):
+                with self.assertRaises(SericiteError) as raised:
+                    SericiteEngine().create_root("", **{parameter: 1})
+                self.assertEqual(raised.exception.kind, "type_error")
+                self.assertIn(parameter, raised.exception.message)
+
+    def test_root_inputs_accept_any_iterable_of_strings(self):
+        inputs = (value for value in ("2", "3"))
+        vm = SericiteEngine().create_root(ADD_PROGRAM, inputs=inputs)
+        self.assertEqual(vm.run(), "23\n")
+
+        for value in (1, ["2", 3]):
+            with self.subTest(value=value):
+                with self.assertRaises(SericiteError) as raised:
+                    SericiteEngine().create_root("", inputs=value)
+                self.assertEqual(raised.exception.kind, "type_error")
+                self.assertIn("inputs", raised.exception.message)
+
+    def test_invalid_root_arguments_do_not_register_a_vm(self):
+        cases = (
+            {"source": None},
+            {"limits": 1},
+            {"functions": [1]},
+            {"functions": {"f": 42}},
+            {"inputs": 1},
+            {"input_provider": 1},
+            {"output_writer": 1},
+            {"argv": 1},
+            {"buffer_output": 1},
+        )
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                engine = SericiteEngine()
+                source = kwargs.pop("source", "")
+                with self.assertRaises(SericiteError) as raised:
+                    engine.create_root(source, **kwargs)
+                self.assertEqual(raised.exception.kind, "type_error")
+                self.assertEqual(engine._contexts, {})
+                self.assertEqual(engine._account_routes, {})
+                self.assertEqual(engine._meters, {})
+                self.assertEqual(engine._next_vm_id, 0)
+
 
 class SubVMTests(unittest.TestCase):
     def test_sub_vm_io_isolated(self):
