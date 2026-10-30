@@ -202,13 +202,25 @@ class _EngineHostDebug:
         error = None
         if context.error is not None:
             frames = context.error._trace_for(context.vm_id)
+            original_position = (
+                context.error._trace_vm_id == context.vm_id
+                and context.error.filename == context.filename
+            )
+            line = frames[-1].line if frames else None
+            if not frames and original_position:
+                line = context.error.line
+            column = (
+                context.error.column
+                if original_position and line is not None and line == context.error.line
+                else None
+            )
             if meter is not None:
                 meter.work(len(frames))
             error = {
                 "kind": context.error.kind,
                 "message": context.error.message,
-                "line": context.error.line,
-                "column": context.error.column,
+                "line": line,
+                "column": column,
                 "frames": [
                     {"function": frame.function, "line": frame.line} for frame in frames
                 ],

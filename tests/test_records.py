@@ -965,7 +965,7 @@ class ClosureAndVMTests(unittest.TestCase):
         self.assertNotIn("Secret", out)
         self.assertNotIn("helper", out)
 
-    def test_redacted_error_point_is_not_overwritten_by_ancestor(self):
+    def test_redacted_error_point_preserves_ancestor_snapshot_call_site(self):
         engine = SericiteEngine()
         root = engine.create_root(
             "def helper():\n"
@@ -981,7 +981,7 @@ class ClosureAndVMTests(unittest.TestCase):
         self.assertIsNone(ctx.exception.line)
         self.assertIsNone(VMHandle(engine, 1).snapshot()["error"]["line"])
         root_error = root.snapshot()["error"]
-        self.assertIsNone(root_error["line"])
+        self.assertEqual(root_error["line"], 8)
         self.assertEqual(root_error["frames"][-1], {"function": "<module>", "line": 8})
 
     def test_nested_helper_param_contract_erased_in_child_vm(self):

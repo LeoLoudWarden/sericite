@@ -364,6 +364,30 @@ class TryExceptTests(unittest.TestCase):
             ],
         )
 
+    def test_snapshot_error_position_is_local_to_each_vm(self):
+        engine = SericiteEngine()
+        root = engine.create_root('sub = VM("\\n\\nraise \\"boom\\"")\nsub.run()\n')
+        with self.assertRaises(SericiteError) as ctx:
+            root.run()
+        self.assertEqual(ctx.exception.line, 3)
+        child_error = VMHandle(engine, 1).snapshot()["error"]
+        self.assertEqual(child_error["line"], 3)
+        self.assertEqual(child_error["frames"][-1], {"function": "<module>", "line": 3})
+        root_error = root.snapshot()["error"]
+        self.assertEqual(root_error["line"], 2)
+        self.assertEqual(root_error["frames"][-1], {"function": "<module>", "line": 2})
+
+    def test_parent_snapshot_does_not_keep_child_compile_column(self):
+        engine = SericiteEngine()
+        root = engine.create_root('sub = VM("if True print(\\"bad\\")")\n')
+        with self.assertRaises(SericiteError) as ctx:
+            root.run()
+        self.assertEqual(ctx.exception.kind, "syntax_error")
+        self.assertIsNotNone(ctx.exception.column)
+        root_error = root.snapshot()["error"]
+        self.assertEqual(root_error["line"], 1)
+        self.assertIsNone(root_error["column"])
+
     def test_finally_runs_on_both_paths(self):
         source = (
             "try:\n"
