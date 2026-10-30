@@ -25,8 +25,6 @@ pip install sericite
 
 The distribution is named `sericite`; the import package is `sericite`.
 
-The `examples/`, `demos/`, and `docs/` directories live in the GitHub repository and the source distribution; they are not included in the wheel.
-
 ## Quick start
 
 As a CLI:

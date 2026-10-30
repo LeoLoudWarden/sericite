@@ -50,6 +50,8 @@ _ALLOWED_NODES = {
     ast.Load,
     ast.Store,
     ast.Constant,
+    ast.JoinedStr,
+    ast.FormattedValue,
     ast.List,
     ast.Tuple,
     ast.Dict,

@@ -38,6 +38,7 @@ from ._values import (
     _record_text,
     _stamp_origin,
     _to_host,
+    _to_str,
     _truthy,
     _type_name,
 )
@@ -647,6 +648,23 @@ class _EngineCore:
                 mapping[key] = pairs[position + 1]
             self._meter(context).allocate(arg * 16)
             stack.append(mapping)
+        elif op == isa.FORMAT_VALUE:
+            stack[-1] = _to_str(
+                stack[-1], context.limits.max_string_bytes, meter=self._meter(context)
+            )
+        elif op == isa.BUILD_STRING:
+            parts = stack[len(stack) - arg :] if arg else []
+            if arg:
+                del stack[len(stack) - arg :]
+            size = sum(len(part) for part in parts)
+            if size > context.limits.max_string_bytes:
+                raise SericiteError(
+                    "string size limit exceeded", kind="resource_exhausted"
+                )
+            meter = self._meter(context)
+            meter.allocate(size * 4)
+            meter.work(size // 64)
+            stack.append("".join(parts))
         elif op == isa.LOAD_INDEX:
             index = stack.pop()
             value = stack.pop()
