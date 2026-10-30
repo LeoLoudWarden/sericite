@@ -17,7 +17,6 @@ _UNSUPPORTED_MESSAGES = {
     ast.UAdd: "unary `+` is not supported",
     ast.Is: "`is` is not supported",
     ast.IsNot: "`is not` is not supported",
-    ast.JoinedStr: "f-strings are not supported",
     ast.ListComp: "comprehensions are not supported",
     ast.SetComp: "comprehensions are not supported",
     ast.DictComp: "comprehensions are not supported",
@@ -85,6 +84,11 @@ def _validate(tree: ast.Module, filename: str) -> None:
             )
         ):
             _reject(node, filename, "unsupported constant")
+        if isinstance(node, ast.FormattedValue):
+            if node.conversion != -1:
+                _reject(node, filename, "f-string conversions are not supported yet")
+            if node.format_spec is not None:
+                _reject(node, filename, "f-string format specs are not supported yet")
         if isinstance(node, ast.Name):
             if node.id.startswith("__"):
                 _reject(node, filename, "dunder names are not available")

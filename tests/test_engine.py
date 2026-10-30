@@ -570,7 +570,6 @@ class ValidationTests(unittest.TestCase):
         from sericite.compiler import compile_source
 
         cases = {
-            'f"value"': "f-strings are not supported",
             "[x for x in [1]]": "comprehensions are not supported",
             "with x:\n    pass": "`with` statements are not supported",
             "lambda: 1": "lambda expressions are not supported",

@@ -536,6 +536,15 @@ class _Compiler:
             )
             self.emit(code, op, node.id, line)
             return
+        if isinstance(node, ast.JoinedStr):
+            for value in node.values:
+                if isinstance(value, ast.FormattedValue):
+                    self.compile_expression(value.value, code)
+                    self.emit(code, isa.FORMAT_VALUE, None, value.lineno)
+                else:
+                    self.compile_expression(value, code)
+            self.emit(code, isa.BUILD_STRING, len(node.values), line)
+            return
         if isinstance(node, ast.List):
             for element in node.elts:
                 self.compile_expression(element, code)
