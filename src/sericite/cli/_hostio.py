@@ -4,6 +4,10 @@ import sys
 from ..errors import SericiteError
 
 
+class _StdoutClosed(BaseException):
+    pass
+
+
 def _read_stdin() -> str:
     value = sys.stdin.readline()
     if value:
@@ -21,3 +25,4 @@ def _write_stdout(value: str) -> None:
             os.dup2(devnull_fd, sys.stdout.fileno())
         finally:
             os.close(devnull_fd)
+        raise _StdoutClosed() from None

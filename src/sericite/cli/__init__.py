@@ -3,7 +3,7 @@ from collections.abc import Sequence
 
 from ..engine import SericiteEngine, SericiteError, VMHandle
 from ._diagnostics import _format_error
-from ._hostio import _read_stdin, _write_stdout
+from ._hostio import _read_stdin, _StdoutClosed, _write_stdout
 from ._options import _parse_args
 from ._repl import _repl
 from ._sources import _CombinedSource
@@ -21,6 +21,13 @@ def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except _StdoutClosed:
+        return 0
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     items = args.items
     interactive = args.command is None and not items

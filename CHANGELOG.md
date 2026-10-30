@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Changed
+- CLI 按宿主 IO、源码映射、启动加载、诊断、参数解析和 REPL 拆分为子包，保持 `main()`、`python -m sericite` 与既有私有测试导入兼容。
+
+### Fixed
+- 下游 stdout 关闭现在表示外部消费者结束：CLI 通过统一停止信号立即终止当前 root 或嵌套 VM 执行并返回 0，不再继续跑满配额或在无限配额下永久运行；argparse 与 REPL 的 stdout 入口遵守同一规则。该终止不进入脚本错误体系，且不保证执行 Sericite `finally`。
+
 ## [0.10.3] - 2026-10-30
 
 ### Fixed
