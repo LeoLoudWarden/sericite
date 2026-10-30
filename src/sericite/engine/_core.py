@@ -418,7 +418,7 @@ class _EngineCore:
         return False
 
     def _capture_error(
-        self, context: VMContext, error: SericiteError, line: int
+        self, context: VMContext, error: SericiteError, line: int | None
     ) -> None:
         if context.vm_id in error._traces:
             return
@@ -450,7 +450,7 @@ class _EngineCore:
             )
         error._set_trace(context.vm_id, tuple(trace))
 
-    def _fail(self, context: VMContext, error: SericiteError, line: int) -> None:
+    def _fail(self, context: VMContext, error: SericiteError, line: int | None) -> None:
         try:
             self._capture_error(context, error, line)
         except SericiteError as capture_error:
@@ -481,11 +481,22 @@ class _EngineCore:
     ) -> bool:
         if error.kind in _UNCATCHABLE_KINDS:
             return False
-        if error.kind == "resource_exhausted" and error._resource_vm_id in (
-            None,
-            context.vm_id,
-        ):
-            return False
+        if error.kind == "resource_exhausted":
+            source_id = error._resource_vm_id
+            if source_id is None:
+                return False
+            ancestor: VMContext | None = context
+            while ancestor is not None:
+                if source_id == ancestor.vm_id:
+                    return False
+                ancestor = (
+                    self._contexts.get(ancestor.parent_id)
+                    if ancestor.parent_id is not None
+                    else None
+                )
+            source = self._contexts.get(source_id)
+            if source is None or source.state not in _TERMINAL_STATES:
+                return False
         while len(context.frames) > floor:
             frame = context.frames[-1]
             handler = self._find_handler(frame, error.kind)
@@ -859,7 +870,22 @@ class _EngineCore:
                     result = function.execute(*args, **kwargs)
             except InputRequired:
                 raise
-            except SericiteError:
+            except SericiteError as error:
+                if (
+                    isinstance(home, VMContext)
+                    and home is not context
+                    and function.name.startswith("VM.")
+                    and error.kind == "resource_exhausted"
+                    and error._resource_vm_id == home.vm_id
+                    and home.state not in _TERMINAL_STATES
+                ):
+                    line = (
+                        self._current_instr(home).line
+                        if home.frames
+                        and home.frames[-1].pc < len(home.frames[-1].code.instrs)
+                        else None
+                    )
+                    self._fail(home, error, line)
                 raise
             except TypeError:
                 raise SericiteError(

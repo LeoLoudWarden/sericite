@@ -62,10 +62,10 @@
 8. 新增能力时同步考虑隔离、资源记账、生命周期和调试语义，不只做语法可运行。所有动态消耗必须进入统一 Meter 与 AccountRoute；子 VM 的消耗必须计入祖先。
 9. Sericite 值语义由引擎助手函数定义，不直接继承 Python 运算符的隐式行为（如 bool 不参与算术）。
 10.
-  - a. 当前 VM 自身产生的 `resource_exhausted` 不可被脚本 try/except 捕获——其配额不能被脚本吞掉。
+  - a. 当前 VM 或其任一祖先产生的 `resource_exhausted` 不可被脚本 try/except 捕获——脚本不能吞掉自身或祖先的配额。
   - b. 来自另一台已终止 VM 的 `resource_exhausted` 可被仍存活的父级捕获。
   - c. `internal_error` 始终不可捕获。
-  - d. 跨 VM 资源错误内部记录来源 VM，该标识不得进入脚本可见值。
+  - d. 跨 VM 资源错误内部记录因果路由上实际超限账户所属的 VM，该标识不得进入脚本可见值。
 11. VM 句柄方法白名单只有一个来源（编译器侧定义），引擎侧引用它，两边不得分叉。
 12.
   - a. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界。

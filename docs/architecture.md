@@ -62,10 +62,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10.
-  - a. A `resource_exhausted` originating in the current VM must not be catchable by script `try/except` — a VM must not swallow its own quotas.
+  - a. A `resource_exhausted` originating in the current VM or any of its ancestors must not be catchable by script `try/except` — a VM must not swallow its own or an ancestor's quotas.
   - b. A `resource_exhausted` arriving from another, terminated VM may be caught by a living parent.
   - c. `internal_error` is always uncatchable.
-  - d. A cross-VM resource error records its source VM internally, and that identifier must never enter script-visible values.
+  - d. A cross-VM resource error internally records the VM that owns the actually exhausted account on the causal route, and that identifier must never enter script-visible values.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross.
