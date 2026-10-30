@@ -542,8 +542,16 @@ class _Compiler:
                     self.compile_expression(value.value, code)
                     has_spec = value.format_spec is not None
                     if has_spec:
-                        spec = "".join(part.value for part in value.format_spec.values)
-                        self.emit(code, isa.LOAD_CONST, spec, value.lineno)
+                        if all(
+                            isinstance(part, ast.Constant)
+                            for part in value.format_spec.values
+                        ):
+                            spec = "".join(
+                                part.value for part in value.format_spec.values
+                            )
+                            self.emit(code, isa.LOAD_CONST, spec, value.lineno)
+                        else:
+                            self.compile_expression(value.format_spec, code)
                     self.emit(
                         code,
                         isa.FORMAT_VALUE,

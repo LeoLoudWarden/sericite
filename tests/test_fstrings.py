@@ -1,7 +1,6 @@
 import unittest
 
 from sericite import SericiteEngine, SericiteError, SericiteLimits
-from sericite.compiler import compile_source
 
 
 def run(source):
@@ -113,19 +112,58 @@ class FStringTests(unittest.TestCase):
             "name='world'\nnumber + 1=4\nname = 'world'\nname=world\nname='world'\n",
         )
 
-    def test_dynamic_format_specs_are_rejected_for_now(self):
-        for source in ('f"{value:{width}}"', 'f"{value:>{width}s}"'):
-            with self.subTest(source=source):
-                with self.assertRaises(SericiteError) as ctx:
-                    compile_source(source, "fstring.sericite")
-                self.assertEqual(ctx.exception.kind, "syntax_error")
-                self.assertEqual(
-                    ctx.exception.message,
-                    "dynamic f-string format specs are not supported yet",
-                )
-                self.assertEqual(ctx.exception.filename, "fstring.sericite")
-                self.assertEqual(ctx.exception.line, 1)
-                self.assertIsNotNone(ctx.exception.column)
+    def test_dynamic_width_precision_type_and_debug_form(self):
+        source = (
+            "value = 3.14159\n"
+            "width = 10\n"
+            "precision = 2\n"
+            'kind = "f"\n'
+            'print(f"{value:{width}.{precision}{kind}}")\n'
+            'base = "x"\n'
+            'print(f"{255:{base}}")\n'
+            'name = "hello"\n'
+            'print(f"{name=:>{width}}")\n'
+        )
+        self.assertEqual(run(source), "      3.14\nff\nname=     hello\n")
+
+    def test_dynamic_spec_supports_nested_fstrings_and_expressions(self):
+        source = (
+            "width = 8\n"
+            "print(f\"{'abc':{f'>{width}'}}\")\n"
+            "print(f\"{255:{'#06' + 'x'}}\")\n"
+            "print(f\"{'é':{4!s}}\")\n"
+        )
+        self.assertEqual(run(source), "     abc\n0x00ff\né   \n")
+
+    def test_dynamic_spec_evaluates_once_after_the_target(self):
+        source = (
+            "calls = []\n"
+            "def mark(value):\n"
+            "    calls.append(value)\n"
+            "    return value\n"
+            'result = f"{mark(3.14159):{mark(10)}.{mark(2)}f}"\n'
+            "print(result)\n"
+            "print(calls)\n"
+        )
+        self.assertEqual(run(source), "      3.14\n[3.14159, 10, 2]\n")
+
+    def test_dynamic_spec_error_restores_stack_and_preserves_order(self):
+        source = (
+            "calls = []\n"
+            "def target():\n"
+            '    calls.append("target")\n'
+            "    return 1.0\n"
+            "def bad_spec():\n"
+            '    calls.append("spec")\n'
+            "    return 1 / 0\n"
+            "try:\n"
+            '    text = f"prefix{target():{bad_spec()}d}"\n'
+            "except zero_division:\n"
+            '    text = "caught"\n'
+            "print(text)\n"
+            "print(calls)\n"
+        )
+        self.assertEqual(run(source), "caught\n['target', 'spec']\n")
 
 
 class FStringFormatSpecTests(unittest.TestCase):
@@ -303,6 +341,8 @@ class FStringAccountingTests(unittest.TestCase):
             'result = f"{1.0:.6f}"',
             'result = f"{1:999999999999999999999999d}"',
             'result = f"{1.0:.999999999999999999999999f}"',
+            'width = 6\nresult = f"{1:{width}d}"',
+            'precision = 6\nresult = f"{1.0:.{precision}f}"',
         )
         for source in sources:
             with self.subTest(source=source):
@@ -368,6 +408,41 @@ class FStringAccountingTests(unittest.TestCase):
             counts[width] = work
             self.assertEqual(len(result), width)
             self.assertEqual(allocation, width * 8 + 8)
+        self.assertGreater(counts[1000], counts[10])
+
+    def test_dynamic_spec_construction_and_result_are_metered(self):
+        counts = {}
+        for width in (10, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            vm = engine.create_root(
+                "value = make_value()\n"
+                "width = make_width()\n"
+                "checkpoint()\n"
+                'result = f"{value:{width}d}"\n'
+                "checkpoint()",
+                functions={
+                    "make_value": lambda: 255,
+                    "make_width": lambda width=width: width,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    ),
+                },
+            )
+            vm.run()
+            result = engine._contexts[0].frames[0].locals["result"]
+            work = checkpoints[1][0] - checkpoints[0][0]
+            allocation = checkpoints[1][1] - checkpoints[0][1]
+            counts[width] = work
+            self.assertEqual(len(result), width)
+            spec_length = len(str(width)) + 1
+            expected = len(str(width)) * 4 + spec_length * 4 + width * 8 + 8
+            self.assertEqual(allocation, expected)
         self.assertGreater(counts[1000], counts[10])
 
     def test_child_vm_string_limit_is_enforced(self):
