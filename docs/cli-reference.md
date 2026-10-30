@@ -36,9 +36,11 @@ sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
 | `--capabilities FILE` | Call `configure()` in a trusted Python file to configure the root VM |
 | `--include FILE` | Prepend a source file before the main source or REPL; repeat in the desired order |
 
-`SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag` and a standalone `--`. Use `--` before the entry to end CLI options explicitly or to pass a filename beginning with a dash; that pre-entry separator is consumed by the CLI and does not enter `argv`. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
+`SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag` and a standalone `--`.
 
-Main and included files are decoded as UTF-8, with one optional leading UTF-8 BOM ignored. Stdin source follows the same rule. Only a BOM at the start of the text is removed, so line and column positions are unchanged and any additional BOM remains ordinary source input.
+A `--` before the entry explicitly ends CLI options and can pass a filename beginning with a dash. That pre-entry `--` is consumed by the CLI and does not enter `argv`. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
+
+Main files, includes, and stdin source are decoded as UTF-8, with one optional leading UTF-8 BOM ignored; line and column positions are counted after that BOM is removed.
 
 ```bash
 sericite -c 'print("hello")'
@@ -58,7 +60,7 @@ With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root, runs the
 - Variables, functions, schemas, and the VFS persist across entries, each delivered through the root's `exec()`.
 - A single expression echoes its result with `repr`; other statements produce only their own output.
 - A compilation or runtime error goes to stderr and the session continues. An include or capability startup failure still exits with status 1.
-- EOF exits the REPL normally with status 0. Script `input()` still reads host stdin; EOF raises a catchable `input_error`. If the script does not catch it, the error is printed and the session continues.
+- EOF exits the REPL normally with status 0.
 
 History, completion, advanced line editing, and debugging commands are not included.
 
@@ -181,7 +183,7 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 
 ## 5. Input, output, and exit codes
 
-- In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. EOF raises a catchable `input_error`; an uncaught error in one-shot mode is printed with its traceback and exits with status 1.
+- Script `input()` reads host stdin line by line; EOF raises a catchable `input_error`. If uncaught in one-shot mode, the traceback is printed and the process exits with status 1; if uncaught in the REPL, the error is printed and the session continues.
 - `sericite -` consumes all stdin as source, so runtime `input()` sees the closed stream and raises `input_error`.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
 - If a downstream stdout pipe closes, the CLI discards further output and exits quietly with status 0 instead of turning the host `BrokenPipeError` into a script error.
