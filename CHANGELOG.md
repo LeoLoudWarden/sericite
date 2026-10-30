@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-31
+
 ### Added
 - 新增 `sericite-debugger` 与 `sorting-arena` 两个完整演示：前者展示语句/指令级单步、watchpoint 与递归自调试，后者展示不可信排序代码的隔离裁判、正确性校验与指令数排名。
 
