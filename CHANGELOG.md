@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- 修复列表/字典下标增强赋值在 `if`/`elif`/`else`、`while` 等控制流路径中因求值栈残留触发 `internal_error` 的问题；目标地址仍只求值一次，名称与 record 字段增强赋值语义不变。
+
 ## [0.10.4] - 2026-10-30
 
 ### Changed
