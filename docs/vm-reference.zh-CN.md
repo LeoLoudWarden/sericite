@@ -158,6 +158,8 @@ writer：
 | `max_fs_files` | 1000 | 单 VM 文件数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 单文件 UTF-8 字节上限 |
 
+`max_string_bytes` 因历史原因以此命名，但实际按单字符串的字符数计算；文件和输出配额按 UTF-8 字节计算。
+
 累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示不设上限。
 
 结构性字段必须是非负有限整数；累计字段额外接受 `-1`。除此之外的负数和非整数值在所有字段上都会被拒绝。
@@ -192,5 +194,7 @@ sub.run()                        # 输出 42
 - 函数体在调用方帧栈执行；
 - 世界服务和目标执行由 home/target 与 caller 的联合因果路由约束，共享祖先只计一次；
 - 返回值的所有权进入实际调用方。
+
+被授予函数的参数名构成接收方可见的公开调用签名，可用于关键字参数；错误消息中的定义方参数名仍按脱敏规则隐藏。
 
 授予或转授函数就是授予它可达的世界——包括捕获的 VM 句柄，接收方因此获得对它的 `terminate()`/`dispose()` 权限。只应授予允许子 VM 读取或修改其可达状态的函数。VM 句柄本身不能通过 FFI 传给宿主。机制细节与设计不变量见[架构说明](architecture.zh-CN.md)不变量 13 与第 5.4 节；宿主向 root 授予 Python 函数（FFI）见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5 节。

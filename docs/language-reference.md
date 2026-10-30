@@ -32,6 +32,8 @@ lst = [nan]
 lst == lst                   # True: the same object
 ```
 
+`a = b = value` evaluates `value` once and then binds each name in order; multiple targets with attributes or subscripts are not supported.
+
 Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
 
 Strings and lists support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
@@ -185,7 +187,7 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
 
   Frames are ordered from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call; for a call spanning multiple lines, it does not fall back to the first line of the statement or expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
-Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
+Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record. The `as e` binding is an ordinary binding in the current scope: it remains after the handler, and a nested handler using the same name overwrites it.
 
 Bare `raise` and saved rethrows through `finally` preserve the original frames; a new error raised in a handler or `finally` gets a new trace.
 
