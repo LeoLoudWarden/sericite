@@ -182,4 +182,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 9. Explicitly not supported yet
 
-String, list, and dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slice assignment, tuples, f-strings, `import`, `del`, class field defaults/methods/inheritance.
+String, list, and dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slice assignment, tuples, `import`, `del`, class field defaults/methods/inheritance.

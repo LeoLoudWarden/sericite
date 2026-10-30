@@ -18,7 +18,8 @@ Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user
 7 / 2        # 3.5 (division always yields float)
 7 // 2       # 3
 7 % 3        # 1
-"ab" + "cd"  # string concatenation (only +; no * repetition, no f-strings)
+"ab" + "cd"
+"=" * 20
 """line1
 line2""" # multi-line
 [1, 2] + [3] # list concatenation
@@ -341,7 +342,7 @@ finally:
 
 - `import` and `del`
 - `*args`/`**kwargs`, chained comparisons, and slice assignment
-- tuples, f-strings, and dunder names
+- tuples and dunder names
 - class field defaults, methods, and inheritance
 - annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
 - rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`) — contract names may only appear in annotation positions

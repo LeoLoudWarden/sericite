@@ -2,7 +2,7 @@
 
 你可以使用 sericite_exec 工具执行代码，以及 file_read / file_write / file_list 工具读写当前工作目录的文件。
 
-工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 借用 Python 的语法子集，但语义有差异，尤其没有 import 和 except e 以及 f-string。
+工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 借用 Python 的语法子集，但语义有差异，尤其没有 import 和 except e。
 
 请完成两件事：
 
