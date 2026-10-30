@@ -48,8 +48,8 @@ class _EngineBuiltins:
         if name == "print":
             return _NativeFunction(
                 "print",
-                lambda *values, end="\n", _caller_context=None, _caller_meter=None: (
-                    self._print(home, values, end, _caller_context)
+                lambda *values, sep=" ", end="\n", _caller_context=None, _caller_meter=None: (
+                    self._print(home, values, sep, end, _caller_context)
                 ),
                 home,
                 work=_no_work,
@@ -296,9 +296,14 @@ class _EngineBuiltins:
         self,
         context: VMContext,
         values: tuple[object, ...],
+        sep: object = " ",
         end: object = "\n",
         caller: VMContext | None = None,
     ) -> None:
+        if type(sep) is not str:
+            raise SericiteError(
+                f"print() sep must be str, got {_type_name(sep)}", kind="type_error"
+            )
         if type(end) is not str:
             raise SericiteError(
                 f"print() end must be str, got {_type_name(end)}", kind="type_error"
@@ -312,7 +317,7 @@ class _EngineBuiltins:
         )
         for index, value in enumerate(values):
             if index:
-                renderer._add(" ")
+                renderer._add(sep)
             renderer.render(value)
         renderer._add(end)
         line = renderer.text()
