@@ -200,6 +200,8 @@ Note: bare `except:` and `except ...` only handle **catchable** errors. The catc
 - Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
 - Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
+`input_error` reports a closed input source, not a temporarily empty input queue. The CLI raises it when host stdin reaches EOF, so `except input_error` can be used to finish a read-until-EOF loop. An embedded host provider can explicitly signal closure with `SericiteError(kind="input_error")`. Without such an error, an empty queue suspends the VM as `waiting_input`, and the host or parent can resume it with `feed_input()`.
+
 ```python
 try:
     sub = VM("while True: pass", max_instructions=100)  # isolate an infinite loop behind VM(), with a small quota

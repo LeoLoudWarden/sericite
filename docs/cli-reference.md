@@ -58,7 +58,7 @@ With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root, runs the
 - Variables, functions, schemas, and the VFS persist across entries, each delivered through the root's `exec()`.
 - A single expression echoes its result with `repr`; other statements produce only their own output.
 - A compilation or runtime error goes to stderr and the session continues. An include or capability startup failure still exits with status 1.
-- EOF exits normally with status 0. Script `input()` still reads host stdin; exhausted input is reported as `input_error`.
+- EOF exits the REPL normally with status 0. Script `input()` still reads host stdin; EOF raises a catchable `input_error`. If the script does not catch it, the error is printed and the session continues.
 
 History, completion, advanced line editing, and debugging commands are not included.
 
@@ -181,8 +181,8 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 
 ## 5. Input, output, and exit codes
 
-- In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. Requesting more input after EOF is reported as `input_error`.
-- `sericite -` consumes all stdin as source, so that stdin cannot also supply runtime input.
+- In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. EOF raises a catchable `input_error`; an uncaught error in one-shot mode is printed with its traceback and exits with status 1.
+- `sericite -` consumes all stdin as source, so runtime `input()` sees the closed stream and raises `input_error`.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
 - If a downstream stdout pipe closes, the CLI discards further output and exits quietly with status 0 instead of turning the host `BrokenPipeError` into a script error.
 - Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error.

@@ -69,7 +69,7 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 推荐工作流：运行前预置文件与输入，运行后读取结果。
 
-输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
+输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。这不同于输入源显式以 `input_error` 报告关闭；后者走普通的可捕获错误路径，CLI stdin EOF 就采用该错误。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
 子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的配额错误仍不可捕获。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
 

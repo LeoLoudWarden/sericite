@@ -69,7 +69,7 @@ print(sub.read_file("/result.txt"))      # retrieve the file it wrote
 
 The recommended workflow is: preset files and inputs before execution, then read results afterward.
 
-Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
+Running out of queued input with no further provider is ordinary suspension (`waiting_input`), not an exception. This is distinct from an input source explicitly reporting closure with `input_error`, which follows the normal catchable-error path; CLI stdin EOF uses that error. On failure, host-side `run()` raises `SericiteError` to the host; in-script `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
 After a child enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's quota errors remain uncatchable. For the full script-visible rules see the [language reference](language-reference.md) §5.
 

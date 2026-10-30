@@ -49,6 +49,60 @@ class CliTests(unittest.TestCase):
         result = self.run_cli(PROJECT_ROOT / "examples" / "root.sericite")
         self.assertEqual(result.returncode, 1)
         self.assertIn("input_error", result.stderr)
+        self.assertIn("Traceback (most recent call last):", result.stderr)
+
+    def test_stdin_eof_is_catchable_and_supports_read_until_eof(self):
+        result = self.run_cli(
+            "-c",
+            "lines = []\n"
+            "while True:\n"
+            "    try:\n"
+            "        lines.append(input())\n"
+            "    except input_error:\n"
+            "        break\n"
+            "print(lines)",
+            stdin="a\nb\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['a', 'b']\n")
+        self.assertEqual(result.stderr, "")
+
+    def test_blank_line_and_stdin_source_eof_are_distinct(self):
+        result = self.run_cli("-c", "print(repr(input()))", stdin="\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "''\n")
+
+        result = self.run_cli(
+            "-",
+            stdin=("try:\n    input()\nexcept input_error as e:\n    print(e.kind)\n"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "input_error\n")
+
+    def test_repl_uncaught_stdin_eof_prints_error_and_continues(self):
+        result = self.run_cli(stdin="input()\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, ">>> >>> ")
+        self.assertEqual(
+            result.stderr,
+            "<stdin>:1: input_error: input required\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 1, in <module>\n',
+        )
+
+    def test_writer_input_at_eof_is_an_error_not_a_suspension(self):
+        result = self.run_cli(
+            "-c",
+            "def writer(text):\n"
+            "    input()\n"
+            'sub = VM("print(1)", output_writer=writer)\n'
+            "try:\n"
+            "    sub.run()\n"
+            "except input_error:\n"
+            '    print("writer input_error")',
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "writer input_error\n")
 
     def test_help_and_version(self):
         for flag in ("-h", "--help"):
@@ -271,14 +325,20 @@ class CliTests(unittest.TestCase):
             '  File "<stdin>", line 2, in <module>\n',
         )
 
-    def test_repl_input_required_uses_waiting_function_delivery(self):
+    def test_repl_input_error_uses_input_function_delivery(self):
         result = self.run_cli(
             stdin=(
                 "def f():\n    x = 1\n    value = input()\n    return value\n\nf()\n"
             )
         )
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stderr, "<stdin>:3: input_error: input required\n")
+        self.assertEqual(
+            result.stderr,
+            "<stdin>:3: input_error: input required\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 1, in <module>\n'
+            '  File "<stdin>", line 3, in f\n',
+        )
 
     def test_cli_maps_foreign_frames_to_unknown_source(self):
         from sericite import SericiteEngine, SericiteError

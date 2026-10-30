@@ -75,12 +75,11 @@ class _ReplSourceMap:
         return None
 
 
-_CURRENT_ERROR_SOURCE = object()
-
-
-def _read_stdin() -> str | None:
+def _read_stdin() -> str:
     value = sys.stdin.readline()
-    return value if value else None
+    if value:
+        return value
+    raise SericiteError("input required", kind="input_error")
 
 
 def _write_stdout(value: str) -> None:
@@ -172,7 +171,6 @@ def _format_error(
     *,
     line_offset: int = 0,
     source_map: dict[int, tuple[_CombinedSource, int]] | _ReplSourceMap | None = None,
-    error_source_id: int | None | object = _CURRENT_ERROR_SOURCE,
 ) -> str:
     def current_location(line: int | None) -> tuple[str, int | None]:
         mapped_line = None if line is None else max(1, line - line_offset)
@@ -192,10 +190,7 @@ def _format_error(
     frame_sources = error._frame_sources
     if root_source:
         if not error.frames and error._trace_vm_id is None:
-            if error_source_id is _CURRENT_ERROR_SOURCE:
-                filename, line = current_location(error.line)
-            else:
-                filename, line = location(error.line, error_source_id)
+            filename, line = current_location(error.line)
         else:
             source_id = (
                 frame_sources[-1]
@@ -269,43 +264,11 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _report_input_required(
-    root: VMHandle,
-    source: _CombinedSource,
-    *,
-    line_offset: int = 0,
-    source_map: dict[int, tuple[_CombinedSource, int]] | _ReplSourceMap | None = None,
-) -> None:
-    snapshot = root.snapshot()
-    if snapshot["state"] != "waiting_input":
-        return
-    source_id = root._current_source_id()
-    error = SericiteError(
-        "input required",
-        kind="input_error",
-        filename="<sericite:vm_0>",
-        line=snapshot["next_line"],
-    )
-    print(
-        _format_error(
-            error,
-            source,
-            line_offset=line_offset,
-            source_map=source_map,
-            error_source_id=source_id,
-        ),
-        file=sys.stderr,
-    )
-
-
 def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
     try:
         root.run()
     except SericiteError as exc:
         print(_format_error(exc, source), file=sys.stderr)
-        return False
-    if root.snapshot()["state"] == "waiting_input":
-        _report_input_required(root, source)
         return False
     return True
 
@@ -368,9 +331,6 @@ def _repl(root: VMHandle, startup_source: _CombinedSource) -> int:
                 file=sys.stderr,
             )
             continue
-        _report_input_required(
-            root, source, line_offset=line_offset, source_map=source_map
-        )
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

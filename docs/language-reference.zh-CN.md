@@ -200,6 +200,8 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
 - 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
+`input_error` 表示输入源已经关闭，而不是输入队列暂时为空。CLI 在宿主 stdin 到达 EOF 时抛出该错误，因此可以用 `except input_error` 结束“读到 EOF 为止”的循环。嵌入式宿主 provider 也可以显式抛出 `SericiteError(kind="input_error")` 来报告关闭。没有这类错误时，空队列使 VM 进入 `waiting_input`，宿主或父级可以用 `feed_input()` 继续提供输入并恢复执行。
+
 ```python
 try:
     sub = VM("while True: pass", max_instructions=100)  # 在 VM() 里隔离死循环，配额设小
