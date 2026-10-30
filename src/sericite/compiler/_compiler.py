@@ -36,18 +36,22 @@ class _Compiler:
         self._finally_stack: list[tuple[list[ast.stmt], list[tuple[int, int]]]] = []
         self._function_depth = 0
         self._tmp_counter = 0
-        # Compile-time label table (diagnostics only): name -> label text, pushed/popped with the function scope.
-        self._label_stack: list[dict[str, str]] = [{}]
+        # Compile-time diagnostic labels, pushed/popped with the function scope.
+        self._label_stack: list[dict[str, isa._DiagnosticLabel]] = [{}]
 
-    def _set_labels(self, labels: dict[str, str]) -> None:
+    def _set_labels(self, labels: dict[str, isa._DiagnosticLabel]) -> None:
         self._label_stack[-1] = labels
 
     @staticmethod
-    def _without_labels(labels: dict[str, str], names: set[str]) -> dict[str, str]:
+    def _without_labels(
+        labels: dict[str, isa._DiagnosticLabel], names: set[str]
+    ) -> dict[str, isa._DiagnosticLabel]:
         return {name: label for name, label in labels.items() if name not in names}
 
     @staticmethod
-    def _merge_labels(environments: list[dict[str, str]]) -> dict[str, str]:
+    def _merge_labels(
+        environments: list[dict[str, isa._DiagnosticLabel]],
+    ) -> dict[str, isa._DiagnosticLabel]:
         first, *rest = environments
         return {
             name: label
@@ -57,7 +61,7 @@ class _Compiler:
 
     def _propagate_label(self, name: str, value: ast.AST) -> None:
         labels = self._label_stack[-1]
-        source: str | None = None
+        source: isa._DiagnosticLabel | None = None
         if isinstance(value, ast.Name):
             source = labels.get(value.id)
         elif isinstance(value, ast.Call) and isinstance(value.func, ast.Name):
@@ -67,10 +71,15 @@ class _Compiler:
         else:
             labels[name] = source
 
-    def _attr_hint(self, value: ast.AST) -> str | None:
+    def _annotation_label(self, annotation: ast.AST) -> isa._DiagnosticLabel:
+        return isa._DiagnosticLabel(ast.unparse(annotation))
+
+    def _attr_hints(self, value: ast.AST, attr: str) -> tuple[str | None, str | None]:
         if isinstance(value, ast.Name):
-            return self._label_stack[-1].get(value.id)
-        return None
+            label = self._label_stack[-1].get(value.id)
+            if label is not None:
+                return label.text, dict(label.fields).get(attr)
+        return None, None
 
     def _store_name(self, code: isa.CodeUnit, name: str, line: int) -> None:
         op = isa.STORE_DEREF if name in code.cell_names else isa.STORE_NAME
@@ -94,8 +103,16 @@ class _Compiler:
         finally:
             self._finally_stack[keep:] = saved
 
-    def emit(self, code: isa.CodeUnit, op: str, arg: object, line: int) -> int:
-        code.instrs.append(isa.Instr(op=op, arg=arg, line=line))
+    def emit(
+        self,
+        code: isa.CodeUnit,
+        op: str,
+        arg: object,
+        line: int,
+        *,
+        label: isa._DiagnosticLabel | None = None,
+    ) -> int:
+        code.instrs.append(isa.Instr(op=op, arg=arg, line=line, label=label))
         return len(code.instrs) - 1
 
     def compile_body(self, body: list[ast.stmt], code: isa.CodeUnit) -> None:
@@ -124,7 +141,7 @@ class _Compiler:
                 self.emit(
                     code,
                     isa.STORE_ATTR,
-                    (last.attr, self._attr_hint(last.value)),
+                    (last.attr, *self._attr_hints(last.value, last.attr)),
                     line,
                 )
             else:
@@ -154,7 +171,7 @@ class _Compiler:
             self.emit(code, isa.STORE_NAME, target_name, line)
             self.emit(code, isa.LOAD_NAME, target_name, line)
             if isinstance(target, ast.Attribute):
-                attr = (target.attr, self._attr_hint(target.value))
+                attr = (target.attr, *self._attr_hints(target.value, target.attr))
                 self.emit(code, isa.LOAD_ATTR, attr, line)
                 self.compile_expression(node.value, code)
                 self.emit(code, isa.BINARY_OP, op, line)
@@ -176,10 +193,10 @@ class _Compiler:
             self.emit(code, isa.STORE_INDEX, None, line)
             return
         if isinstance(node, ast.AnnAssign):
-            label = ast.unparse(node.annotation)
+            label = self._annotation_label(node.annotation)
             self.compile_expression(node.value, code)
             self.compile_expression(node.annotation, code)
-            self.emit(code, isa.CHECK_ANNOT, label, line)
+            self.emit(code, isa.CHECK_ANNOT, label.text, line)
             assert isinstance(node.target, ast.Name)
             self._store_name(code, node.target.id, line)
             self._label_stack[-1][node.target.id] = label
@@ -276,9 +293,9 @@ class _Compiler:
             finally_stack, self._finally_stack = self._finally_stack, []
             self._label_stack.append(
                 {
-                    argument.arg: label
-                    for argument, label in zip(node.args.args, param_labels)
-                    if label is not None
+                    argument.arg: self._annotation_label(argument.annotation)
+                    for argument in node.args.args
+                    if argument.annotation is not None
                 }
             )
             try:
@@ -349,19 +366,26 @@ class _Compiler:
             return
         if isinstance(node, ast.ClassDef):
             names: list[str] = []
+            field_labels: list[tuple[str, str | None]] = []
             for statement in node.body:
                 if isinstance(statement, ast.Pass):
                     continue
                 if isinstance(statement, ast.Expr):
-                    names.append(statement.value.id)  # type: ignore[union-attr]
+                    name = statement.value.id  # type: ignore[union-attr]
+                    label = None
                     self.emit(code, isa.LOAD_NAME, "any", statement.lineno)
                 else:
                     assert isinstance(statement, ast.AnnAssign)
-                    names.append(statement.target.id)  # type: ignore[union-attr]
+                    name = statement.target.id  # type: ignore[union-attr]
+                    label = ast.unparse(statement.annotation)
                     self.compile_expression(statement.annotation, code)
+                names.append(name)
+                field_labels.append((name, label))
             self.emit(code, isa.MAKE_SCHEMA, tuple(names), line)
             self._store_name(code, node.name, line)
-            self._label_stack[-1][node.name] = node.name
+            self._label_stack[-1][node.name] = isa._DiagnosticLabel(
+                node.name, tuple(field_labels)
+            )
             return
         raise SericiteError(
             f"unsupported statement: {type(node).__name__}",
@@ -577,11 +601,16 @@ class _Compiler:
             self.emit(
                 code,
                 isa.LOAD_ATTR,
-                (node.attr, self._attr_hint(node.value)),
+                (node.attr, *self._attr_hints(node.value, node.attr)),
                 line,
             )
             return
         if isinstance(node, ast.Call):
+            label = (
+                self._label_stack[-1].get(node.func.id)
+                if isinstance(node.func, ast.Name)
+                else None
+            )
             self.compile_expression(node.func, code)
             for argument in node.args:
                 self.compile_expression(argument, code)
@@ -593,9 +622,10 @@ class _Compiler:
                     isa.CALL_KW,
                     (len(node.args), tuple(kw.arg for kw in node.keywords)),
                     line,
+                    label=label,
                 )
             else:
-                self.emit(code, isa.CALL, len(node.args), line)
+                self.emit(code, isa.CALL, len(node.args), line, label=label)
             return
         raise SericiteError(
             f"unsupported expression: {type(node).__name__}",

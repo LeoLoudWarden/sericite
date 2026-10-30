@@ -538,6 +538,107 @@ class LabelTests(unittest.TestCase):
         self.assertIn("record {x: int}", exc.message)
         self.assertNotIn("record T", exc.message)
 
+    def test_constructor_errors_use_local_schema_label(self):
+        cases = {
+            "P()": "P() missing field(s): x",
+            "P(1, 2)": "P() takes 1 positional argument(s), got 2",
+            "P(x=1, z=2)": "P() got unexpected field 'z'",
+            "P(1, x=2)": "P() got multiple values for field 'x'",
+        }
+        for call, message in cases.items():
+            with self.subTest(call=call):
+                exc = run_error(f"class P:\n    x: int\n{call}\n")
+                self.assertEqual(exc.kind, "contract_error")
+                self.assertEqual(exc.message, message)
+
+    def test_constructor_field_contract_uses_annotation_label(self):
+        exc = run_error(
+            "class Inner:\n"
+            "    n: int\n"
+            "class Outer:\n"
+            "    inner: Inner\n"
+            'Outer({"n": 1})\n'
+        )
+        self.assertEqual(exc.message, "field inner: expected Inner {n: int}, got dict")
+
+    def test_field_write_contract_labels_follow_value_provenance(self):
+        prefix = "class Inner:\n    n: int\nclass Outer:\n    inner: Inner\n"
+        cases = (
+            (
+                'o = Outer(Inner(1))\no.inner = {"n": 1}\n',
+                "field inner: expected Inner {n: int}, got dict",
+            ),
+            (
+                (
+                    'def update(o: Outer):\n    o.inner = {"n": 1}\n'
+                    "update(Outer(Inner(1)))\n"
+                ),
+                "field inner: expected {n: int}, got dict",
+            ),
+        )
+        for source, message in cases:
+            with self.subTest(source=source):
+                exc = run_error(prefix + source)
+                self.assertEqual(exc.message, message)
+
+    def test_annotation_schema_does_not_label_actual_field_contract(self):
+        exc = run_error(
+            "class ExpectedInner:\n"
+            "    n: int\n"
+            "class ActualInner:\n"
+            "    n: int\n"
+            "class ExpectedOuter:\n"
+            "    inner: ExpectedInner\n"
+            "class ActualOuter:\n"
+            "    inner: ActualInner\n"
+            "def update(o: ExpectedOuter):\n"
+            '    o.inner = {"n": 1}\n'
+            "update(ActualOuter(ActualInner(1)))\n"
+        )
+        self.assertEqual(exc.message, "field inner: expected {n: int}, got dict")
+
+    def test_constructor_labels_degrade_conservatively(self):
+        exc = run_error(
+            "class P:\n    x: int\n"
+            "class Q:\n    x: int\n"
+            "S = P\n"
+            "if True:\n"
+            "    S = Q\n"
+            "S()\n"
+        )
+        self.assertEqual(exc.message, "schema() missing field(s): x")
+
+    def test_foreign_constructor_and_field_labels_are_redacted(self):
+        source = (
+            "class SecretInner:\n"
+            "    n: int\n"
+            "class SecretOuter:\n"
+            "    inner: SecretInner\n"
+            "def missing():\n"
+            "    return SecretOuter()\n"
+            "def invalid():\n"
+            '    return SecretOuter({"n": 1})\n'
+            "sub = VM(\n"
+            '    "try:\\n"\n'
+            '    "    missing()\\n"\n'
+            '    "except contract_error as e:\\n"\n'
+            '    "    print(e.message)\\n"\n'
+            '    "try:\\n"\n'
+            '    "    invalid()\\n"\n'
+            '    "except contract_error as e:\\n"\n'
+            '    "    print(e.message)",\n'
+            "    functions={'missing': missing, 'invalid': invalid})\n"
+            "print(sub.run(), end='')"
+        )
+        out = run(source)
+        self.assertEqual(
+            out,
+            "schema() missing field(s): inner\n"
+            "field inner: expected {n: int}, got dict\n",
+        )
+        self.assertNotIn("SecretInner", out)
+        self.assertNotIn("SecretOuter", out)
+
     def test_param_label_in_body_error(self):
         exc = run_error(
             "class Point:\n    x: int\ndef f(p: Point):\n    return p.y\nf(Point(1))\n"

@@ -692,17 +692,18 @@ class _EngineCore:
             else:
                 stack.pop()
         elif op == isa.LOAD_ATTR:
-            attr, hint = arg
+            attr, hint, _ = arg
             if frame.code.origin_vm != context.vm_id:
                 hint = None
             stack.append(self._load_attr(context, stack.pop(), attr, hint))
         elif op == isa.STORE_ATTR:
-            attr, hint = arg
+            attr, hint, contract_label = arg
             if frame.code.origin_vm != context.vm_id:
                 hint = None
+                contract_label = None
             target = stack.pop()
             value = stack.pop()
-            self._store_attr(context, target, attr, value, hint)
+            self._store_attr(context, target, attr, value, hint, contract_label)
         elif op == isa.MAKE_SCHEMA:
             names = arg
             count = len(names)
@@ -879,7 +880,14 @@ class _EngineCore:
             )
             return
         if isinstance(function, SericiteSchema):
-            record = self._construct_record(context, function, args, kwargs)
+            label = (
+                frame.code.instrs[frame.pc].label
+                if frame.code.origin_vm == context.vm_id
+                else None
+            )
+            record = self._construct_record(
+                context, function, args, kwargs, label=label
+            )
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(record)
@@ -1073,11 +1081,14 @@ class _EngineCore:
         schema: SericiteSchema,
         args: tuple[object, ...],
         kwargs: dict[str, object],
+        label: isa._DiagnosticLabel | None = None,
     ) -> SericiteRecord:
         fields = schema.fields
+        constructor = f"{label.text if label is not None else 'schema'}()"
+        field_labels = dict(label.fields) if label is not None else {}
         if len(args) > len(fields):
             raise SericiteError(
-                f"schema() takes {len(fields)} positional argument(s), got {len(args)}",
+                f"{constructor} takes {len(fields)} positional argument(s), got {len(args)}",
                 kind="contract_error",
             )
         values: dict[str, object] = {}
@@ -1086,12 +1097,12 @@ class _EngineCore:
         for key, value in kwargs.items():
             if key in values:
                 raise SericiteError(
-                    f"schema() got multiple values for field '{key}'",
+                    f"{constructor} got multiple values for field '{key}'",
                     kind="contract_error",
                 )
             if key not in schema.field_map:
                 raise SericiteError(
-                    f"schema() got unexpected field '{key}'",
+                    f"{constructor} got unexpected field '{key}'",
                     kind="contract_error",
                 )
             values[key] = value
@@ -1099,7 +1110,7 @@ class _EngineCore:
         if missing:
             self._meter(context).work(sum(len(name) for name in missing))
             raise SericiteError(
-                f"schema() missing field(s): {', '.join(missing)}",
+                f"{constructor} missing field(s): {', '.join(missing)}",
                 kind="contract_error",
             )
         for name, contract in fields:
@@ -1107,7 +1118,11 @@ class _EngineCore:
             self._meter(context).work(_contract_cost(contract))
             if not _contract_holds(value, contract):
                 raise _contract_violation(
-                    f"field {name}", None, contract, value, meter=self._meter(context)
+                    f"field {name}",
+                    field_labels.get(name),
+                    contract,
+                    value,
+                    meter=self._meter(context),
                 )
         self._meter(context).allocate(64 + len(fields) * 16)
         return SericiteRecord(schema, {name: values[name] for name, _ in fields})
@@ -1119,6 +1134,7 @@ class _EngineCore:
         attr: str,
         value: object,
         hint: str | None,
+        contract_label: str | None,
     ) -> None:
         if not isinstance(target, SericiteRecord):
             raise SericiteError(
@@ -1136,7 +1152,11 @@ class _EngineCore:
         self._meter(context).work(_contract_cost(contract))
         if not _contract_holds(value, contract):
             raise _contract_violation(
-                f"field {attr}", None, contract, value, meter=self._meter(context)
+                f"field {attr}",
+                contract_label,
+                contract,
+                value,
+                meter=self._meter(context),
             )
         target.fields[attr] = value
 

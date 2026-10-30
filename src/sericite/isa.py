@@ -36,12 +36,19 @@ RETURN = "RETURN"
 JUMP_OPS = {JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE_KEEP, JUMP_IF_FALSE_KEEP}
 
 
+@dataclass(frozen=True)
+class _DiagnosticLabel:
+    text: str
+    fields: tuple[tuple[str, str | None], ...] = ()
+
+
 @dataclass
 class Instr:
     op: str
     arg: object = None
     line: int = 0
     stmt_start: bool = False
+    label: _DiagnosticLabel | None = None
 
 
 @dataclass
