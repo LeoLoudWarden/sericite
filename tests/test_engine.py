@@ -538,6 +538,58 @@ class ValidationTests(unittest.TestCase):
             with self.assertRaises(SericiteError, msg=source):
                 engine.create_root(source)
 
+    def test_unsupported_operators_have_expression_locations_and_messages(self):
+        from sericite.compiler import compile_source
+
+        cases = {
+            "2 ** 3": "`**` is not supported",
+            "1 is 1": "`is` is not supported",
+            "1 is not 2": "`is not` is not supported",
+            "1 @ 2": "`@` is not supported",
+            "~1": "`~` is not supported",
+            "+1": "unary `+` is not supported",
+            "1 << 2": "`<<` is not supported",
+            "1 >> 2": "`>>` is not supported",
+            "1 & 2": "`&` is not supported",
+            "1 | 2": "`|` is not supported",
+            "1 ^ 2": "`^` is not supported",
+        }
+        for expression, message in cases.items():
+            with self.subTest(expression=expression):
+                source = f"value = {expression}\n"
+                with self.assertRaises(SericiteError) as ctx:
+                    compile_source(source, "operators.sericite")
+                error = ctx.exception
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertEqual(error.message, message)
+                self.assertEqual(error.filename, "operators.sericite")
+                self.assertEqual(error.line, 1)
+                self.assertEqual(error.column, source.index(expression) + 1)
+
+    def test_unsupported_syntax_uses_user_facing_messages(self):
+        from sericite.compiler import compile_source
+
+        cases = {
+            'f"value"': "f-strings are not supported",
+            "[x for x in [1]]": "comprehensions are not supported",
+            "with x:\n    pass": "`with` statements are not supported",
+            "lambda: 1": "lambda expressions are not supported",
+            "assert True": "`assert` statements are not supported",
+            "match x:\n    case 1:\n        pass": "`match` statements are not supported",
+            "async def f():\n    pass": "async functions are not supported",
+            "async def f():\n    await g()": "async functions are not supported",
+        }
+        for source, message in cases.items():
+            with self.subTest(source=source):
+                with self.assertRaises(SericiteError) as ctx:
+                    compile_source(source, "syntax.sericite")
+                error = ctx.exception
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertEqual(error.message, message)
+                self.assertEqual(error.filename, "syntax.sericite")
+                self.assertEqual(error.line, 1)
+                self.assertIsNotNone(error.column)
+
     def test_dunder_names_rejected(self):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError):

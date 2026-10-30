@@ -5,6 +5,45 @@ import ast
 from ..errors import CATCHABLE_ERROR_KINDS, UNCATCHABLE_ERROR_KINDS, SericiteError
 from ._rules import _ALLOWED_NODES, _CONTRACT_ONLY_NAMES, RESERVED_NAMES
 
+_UNSUPPORTED_MESSAGES = {
+    ast.Pow: "`**` is not supported",
+    ast.MatMult: "`@` is not supported",
+    ast.LShift: "`<<` is not supported",
+    ast.RShift: "`>>` is not supported",
+    ast.BitAnd: "`&` is not supported",
+    ast.BitOr: "`|` is not supported",
+    ast.BitXor: "`^` is not supported",
+    ast.Invert: "`~` is not supported",
+    ast.UAdd: "unary `+` is not supported",
+    ast.Is: "`is` is not supported",
+    ast.IsNot: "`is not` is not supported",
+    ast.JoinedStr: "f-strings are not supported",
+    ast.ListComp: "comprehensions are not supported",
+    ast.SetComp: "comprehensions are not supported",
+    ast.DictComp: "comprehensions are not supported",
+    ast.GeneratorExp: "comprehensions are not supported",
+    ast.With: "`with` statements are not supported",
+    ast.AsyncWith: "`with` statements are not supported",
+    ast.Lambda: "lambda expressions are not supported",
+    ast.Assert: "`assert` statements are not supported",
+    ast.Match: "`match` statements are not supported",
+    ast.AsyncFunctionDef: "async functions are not supported",
+    ast.Await: "`await` expressions are not supported",
+    ast.Yield: "`yield` expressions are not supported",
+    ast.YieldFrom: "`yield` expressions are not supported",
+    ast.Import: "`import` statements are not supported",
+    ast.ImportFrom: "`import` statements are not supported",
+    ast.Delete: "`del` statements are not supported",
+}
+
+
+def _reject_unsupported(
+    node: ast.AST, parents: dict[ast.AST, ast.AST], filename: str
+) -> None:
+    location = node if hasattr(node, "lineno") else parents.get(node, node)
+    message = _UNSUPPORTED_MESSAGES.get(type(node), "this syntax is not supported")
+    _reject(location, filename, message)
+
 
 def _is_annotation_name(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     """Whether the name *is* the annotation expression itself. Reserved names hidden inside sub-expressions are rejected."""
@@ -28,7 +67,7 @@ def _validate(tree: ast.Module, filename: str) -> None:
             parents[child] = parent
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_NODES:
-            _reject(node, filename, f"unsupported syntax: {type(node).__name__}")
+            _reject_unsupported(node, parents, filename)
         if (
             isinstance(node, ast.Constant)
             and type(node.value)
@@ -163,7 +202,7 @@ def _validate(tree: ast.Module, filename: str) -> None:
         if isinstance(node, ast.Tuple):
             parent = parents.get(node)
             if not isinstance(parent, ast.ExceptHandler) or parent.type is not node:
-                _reject(node, filename, "unsupported syntax: Tuple")
+                _reject(node, filename, "tuples are not supported")
         if isinstance(node, ast.ExceptHandler) and node.type is not None:
             filter_node = node.type
             if isinstance(filter_node, ast.Constant) and filter_node.value is Ellipsis:
