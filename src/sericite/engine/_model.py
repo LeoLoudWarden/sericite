@@ -86,6 +86,7 @@ class _Cell:
 class Frame:
     code: isa.CodeUnit
     pc: int = 0
+    call_line: int | None = None
     stack: list[object] = field(default_factory=list)
     locals: dict[str, object] = field(default_factory=dict)
     cells: dict[str, _Cell] = field(default_factory=dict)
@@ -247,6 +248,7 @@ class VMContext:
     io: VirtualIO
     fs: VirtualFileSystem
     limits: SericiteLimits
+    next_source_id: int = 1
     frames: list[Frame] = field(default_factory=list)
     granted: dict[str, object] = field(default_factory=dict)
     output_writer: object = None
@@ -303,6 +305,15 @@ class VMHandle:
 
     def snapshot(self) -> dict[str, object]:
         return self._engine._host_snapshot(self._engine._context(self))
+
+    def _current_source_id(self) -> int | None:
+        context = self._engine._context(self)
+        if not context.frames:
+            return None
+        frame = context.frames[-1]
+        if frame.code.origin_vm != context.vm_id:
+            return None
+        return frame.code.source_id
 
     def stdout(self) -> str:
         return self._engine._context(self).io.stdout()

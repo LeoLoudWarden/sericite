@@ -61,6 +61,7 @@ class SericiteError(Exception):
         self._line_bound = line is not None
         self._resource_vm_id: int | None = None
         self._traces: dict[int, tuple[SericiteFrame, ...]] = {}
+        self._trace_sources: dict[int, tuple[int | None, ...]] = {}
         self._trace_vm_id: int | None = None
 
     @property
@@ -69,11 +70,23 @@ class SericiteError(Exception):
             return ()
         return self._traces[self._trace_vm_id]
 
+    @property
+    def _frame_sources(self) -> tuple[int | None, ...]:
+        if self._trace_vm_id is None:
+            return ()
+        return self._trace_sources.get(self._trace_vm_id, ())
+
     def _trace_for(self, vm_id: int) -> tuple[SericiteFrame, ...]:
         return self._traces.get(vm_id, ())
 
-    def _set_trace(self, vm_id: int, frames: tuple[SericiteFrame, ...]) -> None:
+    def _set_trace(
+        self,
+        vm_id: int,
+        frames: tuple[SericiteFrame, ...],
+        sources: tuple[int | None, ...] = (),
+    ) -> None:
         self._traces[vm_id] = frames
+        self._trace_sources[vm_id] = sources
         if self._trace_vm_id is None:
             self._trace_vm_id = vm_id
 

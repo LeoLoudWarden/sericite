@@ -148,6 +148,138 @@ class CliTests(unittest.TestCase):
         self.assertIn("syntax_error", result.stderr)
         self.assertIn("<stdin>:2: zero_division", result.stderr)
 
+    def test_repl_traceback_preserves_function_delivery_lines(self):
+        result = self.run_cli(stdin="def f():\n    x = 1\n    return 1 / 0\n\nf()\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stderr,
+            "<stdin>:3: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 1, in <module>\n'
+            '  File "<stdin>", line 3, in f\n',
+        )
+
+    def test_repl_multiline_expression_offsets_only_its_own_frames(self):
+        result = self.run_cli(stdin="def f():\n    return 1 / 0\n\n(\nf()\n)\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stderr,
+            "<stdin>:2: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 2, in <module>\n'
+            '  File "<stdin>", line 2, in f\n',
+        )
+
+    def test_repl_compile_failure_does_not_desynchronize_source_ids(self):
+        result = self.run_cli(
+            stdin="def f():\n    return 1 / 0\n\nimport os\n(\nf()\n)\n"
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("syntax_error", result.stderr)
+        self.assertIn(
+            "<stdin>:2: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 2, in <module>\n'
+            '  File "<stdin>", line 2, in f\n',
+            result.stderr,
+        )
+
+    def test_repl_traceback_maps_include_function_to_include_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            include = self.write(
+                Path(tmp), "bad_rt.sericite", "def g():\n    return 1 / 0\n"
+            )
+            result = self.run_cli("--include", include, stdin="g()\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stderr,
+            f"{include}:2: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 1, in <module>\n'
+            f'  File "{include}", line 2, in g\n',
+        )
+
+    def test_repl_current_multiline_expression_keeps_its_own_location(self):
+        result = self.run_cli(stdin="(\n1 / 0\n)\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stderr,
+            "<stdin>:2: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 2, in <module>\n',
+        )
+
+    def test_repl_input_required_uses_waiting_function_delivery(self):
+        result = self.run_cli(
+            stdin=(
+                "def f():\n    x = 1\n    value = input()\n    return value\n\nf()\n"
+            )
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "<stdin>:3: input_error: input required\n")
+
+    def test_cli_maps_foreign_frames_to_unknown_source(self):
+        from sericite import SericiteEngine, SericiteError
+        from sericite.cli import _CombinedSource, _format_error
+
+        engine = SericiteEngine()
+        root = engine.create_root("public()\n")
+        donor = engine.create_root("def secret():\n    return missing\n")
+        donor.run()
+        engine._contexts[0].granted["public"] = (
+            engine._contexts[1].frames[0].locals["secret"]
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            root.run()
+        self.assertEqual(ctx.exception._frame_sources, (0, None))
+        source = _CombinedSource([("<stdin>", "public()")])
+        self.assertEqual(
+            _format_error(ctx.exception, source, source_map={0: (source, 0)}),
+            "<sericite>: name_error: name is not defined\n"
+            "Traceback (most recent call last):\n"
+            '  File "<stdin>", line 1, in <module>\n'
+            '  File "<sericite>", line ?, in function',
+        )
+
+    def test_error_mapping_uses_unknown_location_for_missing_source(self):
+        from sericite import SericiteEngine, SericiteError
+        from sericite.cli import _CombinedSource, _format_error
+
+        vm = SericiteEngine().create_root("1 / 0\n")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        formatted = _format_error(
+            ctx.exception,
+            _CombinedSource([("<stdin>", "1 / 0")]),
+            source_map={},
+        )
+        self.assertEqual(
+            formatted,
+            "<sericite>: zero_division: division by zero\n"
+            "Traceback (most recent call last):\n"
+            '  File "<sericite>", line ?, in <module>',
+        )
+
+    def test_repl_source_map_releases_previous_delivery_text(self):
+        import gc
+        import weakref
+
+        from sericite.cli import _CombinedSource, _ReplSourceMap
+
+        sources = _ReplSourceMap(_CombinedSource([]))
+        previous = _CombinedSource([("<stdin>", "def f():\n    return 1 / 0")])
+        previous_ref = weakref.ref(previous)
+        sources.add(previous, 0)
+        sources.add(_CombinedSource([("<stdin>", "f()")]), 1)
+        del previous
+        gc.collect()
+        self.assertIsNone(previous_ref())
+        historical = sources.get(1)
+        self.assertIsNotNone(historical)
+        source, offset = historical
+        self.assertEqual(offset, 0)
+        self.assertEqual(source.location(2), ("<stdin>", 2))
+
     def test_repl_uses_include_capabilities_files_and_empty_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

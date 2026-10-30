@@ -273,12 +273,14 @@ class _EngineCore:
             raise SericiteError(
                 "cannot exec into a terminated VM", kind="runtime_error"
             )
+        source_id = context.next_source_id
+        context.next_source_id += 1
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
             raise SericiteError(
                 "source too large", kind="syntax_error", filename=context.filename
             )
         code = compile_source(source, context.filename)
-        _stamp_origin(code, context.vm_id)
+        _stamp_origin(code, context.vm_id, source_id)
         self._meter(context).allocate(_const_bytes(code))
         module_locals = context.frames[0].locals if context.frames else {}
         context.frames = [Frame(code=code, locals=module_locals)]
@@ -435,20 +437,21 @@ class _EngineCore:
             error._set_trace(context.vm_id, ())
             return
         trace = []
+        sources = []
         last = len(frames) - 1
         for index, frame in enumerate(frames):
-            if frame.code.origin_vm != context.vm_id:
+            visible = frame.code.origin_vm == context.vm_id
+            if not visible:
                 frame_line = None
             elif index == last:
                 frame_line = line
-            elif 0 <= frame.pc < len(frame.code.instrs):
-                frame_line = frame.code.instrs[frame.pc].line
             else:
-                frame_line = None
+                frame_line = frame.call_line
             trace.append(
                 SericiteFrame(frame.display_name or frame.code.name, frame_line)
             )
-        error._set_trace(context.vm_id, tuple(trace))
+            sources.append(frame.code.source_id if visible else None)
+        error._set_trace(context.vm_id, tuple(trace), tuple(sources))
 
     def _fail(self, context: VMContext, error: SericiteError, line: int | None) -> None:
         try:
@@ -803,6 +806,7 @@ class _EngineCore:
         kw_names: tuple[str, ...],
     ) -> None:
         stack = frame.stack
+        frame.call_line = frame.code.instrs[frame.pc].line
         base = len(stack) - argc - len(kw_names)
         function = stack[base - 1]
         args = tuple(stack[base : base + argc])

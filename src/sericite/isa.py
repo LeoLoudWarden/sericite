@@ -68,5 +68,6 @@ class CodeUnit:
     return_label: str | None = None
     # ID of the VM that compiled this code unit; labels/definition-side names are visible only to that VM (invariant 16).
     origin_vm: int = -1
+    source_id: int | None = None
     instrs: list[Instr] = field(default_factory=list)
     handlers: list[Handler] = field(default_factory=list)

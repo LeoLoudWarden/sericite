@@ -332,6 +332,73 @@ class SnapshotViewTests(unittest.TestCase):
             all(isinstance(frame, SericiteFrame) for frame in ctx.exception.frames)
         )
 
+    def test_traceback_uses_call_line_in_multiline_expressions(self):
+        cases = {
+            "assignment": (
+                ("def f():\n    return 1 / 0\n\nx = (\n    f()\n)\n"),
+                5,
+            ),
+            "print_argument": (
+                ('def f():\n    return 1 / 0\n\nprint(\n    "before",\n    f(),\n)\n'),
+                6,
+            ),
+        }
+        for name, (source, call_line) in cases.items():
+            with self.subTest(name=name):
+                vm = SericiteEngine().create_root(source)
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.line, 2)
+                self.assertEqual(
+                    [(frame.function, frame.line) for frame in ctx.exception.frames],
+                    [("<module>", call_line), ("f", 2)],
+                )
+
+    def test_traceback_uses_each_call_line_across_nested_calls(self):
+        vm = SericiteEngine().create_root(
+            "def inner():\n"
+            "    return 1 / 0\n\n"
+            "def middle():\n"
+            "    return inner()\n\n"
+            "def outer():\n"
+            "    return middle(\n"
+            "    )\n\n"
+            "result = outer(\n"
+            ")\n"
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.line, 2)
+        self.assertEqual(
+            [(frame.function, frame.line) for frame in ctx.exception.frames],
+            [("<module>", 11), ("outer", 8), ("middle", 5), ("inner", 2)],
+        )
+
+    def test_native_and_host_errors_keep_the_call_site_line(self):
+        def boom():
+            raise ValueError("secret")
+
+        cases = {
+            "native": (SericiteEngine().create_root("value = len(\n    1,\n)\n"), None),
+            "host": (
+                SericiteEngine().create_root(
+                    "value = boom(\n)\n", functions={"boom": boom}
+                ),
+                "host_error",
+            ),
+        }
+        for name, (vm, kind) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                if kind is not None:
+                    self.assertEqual(ctx.exception.kind, kind)
+                self.assertEqual(ctx.exception.line, 1)
+                self.assertEqual(
+                    [(frame.function, frame.line) for frame in ctx.exception.frames],
+                    [("<module>", 1)],
+                )
+
     def test_trace_capture_preserves_internal_error_on_quota_failure(self):
         engine = SericiteEngine(limits=SericiteLimits(max_total_bytes=0))
         engine.create_root("pass\n")
