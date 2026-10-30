@@ -67,16 +67,18 @@ out = sub.run()
 print(sub.read_file("/result.txt"))       # 取回它写的文件
 ```
 
-输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；但父 VM 自身或祖先的配额错误仍不可捕获（完整规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
+推荐工作流：运行前预置文件与输入，运行后读取结果。
 
-终态 VM 的句柄操作按是否驱动 target 分两类计费：
+输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
-- 只读操作（`snapshot`、`step`、`step_instruction`、VFS 读取等）只计入调用方，不再被 target 已耗尽的账号阻断；终态单步只返回快照，不会重新驱动 target；
-- 写入或驱动操作（`write_file`、`feed_input`、带输入的 `run`、`exec` 等）仍由 target 与 caller 联合计量，可能被已耗尽的 target 拒绝。
+子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的配额错误仍不可捕获。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
 
-如果这类操作耗尽了 target 自身的配额，尚未终止的 target 会进入 `resource_exhausted`，仍存活的 caller 可以捕获该错误。caller 或共同祖先的配额失败仍不可捕获，也不会被错误归因给 target。
+终态 VM 仍可被操作，但两类方法的行为不同：
 
-推荐工作流仍是运行前预置文件与输入、运行后读取结果。
+- 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、VFS 读取等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照；
+- 写入或驱动方法（`write_file`、`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
+
+计费模型（哪些操作由谁计量）见[架构说明](architecture.zh-CN.md)第 5.4 节。
 
 ### 输出转发与缓冲
 
@@ -123,7 +125,7 @@ writer：
 
 复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 句柄或宿主对象。
 
-`error.frames` 是该 VM 的调用栈，按最外层到错误点排列；每项含 `function`（字符串）与 `line`（整数或 `None`），`line` 为 `None` 表示该帧定义在别的 VM（脱敏）。
+`error.frames` 是该 VM 的调用栈。每项是 `{"function": str, "line": int | None}`；栈顺序与行号脱敏规则同脚本异常 record，见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 在宿主侧（`VMHandle` 上）调用这些方法时，返回的字典是上述安全视图的严格超集，额外带有宿主专属诊断字段：
 

@@ -102,7 +102,17 @@ Error diagnostics mark positions by source of origin:
 - a command string appears as `<command>` and stdin source as `<stdin>`;
 - nested VMs retain `<sericite:vm_N>`.
 
-Runtime errors append `Traceback (most recent call last):` followed by each frame's function, filename, and line. Every root frame is mapped independently using the source rules above. Frames defined in another VM do not disclose their source lines and display `line ?`. Errors rejected before VM execution begins have no frames and retain the single-line diagnostic.
+Runtime errors append a traceback after the one-line summary. For example, `sericite --include runtime.sericite -c 'outer()'` prints:
+
+```text
+/path/runtime.sericite:2: name_error: name 'missing' is not defined
+Traceback (most recent call last):
+  File "<command>", line 1, in <module>
+  File "/path/runtime.sericite", line 5, in outer
+  File "/path/runtime.sericite", line 2, in inner
+```
+
+Every root frame is mapped using the source rules above (`<command>` in the example is the `-c` source). Frames defined in another VM do not disclose their source lines and display `line ?` (redaction rules are in the [language reference](language-reference.md) §5). Errors rejected before VM execution begins have no frames and retain the single-line diagnostic.
 
 ## 4. Capabilities: trusted Python startup configuration
 
@@ -137,7 +147,7 @@ It returns a dict. Every key is optional; an empty dict is equivalent to no conf
 - Startup fails on unknown keys, a missing or non-callable `configure()`, a non-dict return, or invalid field types.
 - The engine still validates grant names in `functions`.
 - `files` uses the public VM handle and remains subject to file-count, per-file-byte, and other limits.
-- A trusted long-running root may set the five cumulative quota fields to `-1`; structural quotas remain finite. See the [security model](security.md) §3 for the resource-safety implications.
+- A trusted long-running root may set cumulative quotas to `-1`; structural quotas remain finite. See the [security model](security.md) §3 for the resource-safety implications.
 
 See the [Sericite-PY reference](sericite-py-reference.md) for the FFI rules and the [VM reference](vm-reference.md) §5 for quota fields and unlimited-inheritance rules; they are not duplicated here.
 

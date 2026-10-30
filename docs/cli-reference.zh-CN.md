@@ -102,7 +102,17 @@ sericite --include math_utils.sericite -c 'print(double(21))'
 - 命令字符串显示为 `<command>`，stdin 源码显示为 `<stdin>`；
 - 嵌套 VM 的错误仍使用 `<sericite:vm_N>`。
 
-运行期错误在单行错误摘要后追加 `Traceback (most recent call last):` 和逐帧函数名、文件名与行号；每个 root 帧分别按上述来源规则映射。其他 VM 的定义侧帧不披露行号，显示为 `line ?`。尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
+运行期错误在单行摘要后追加调用栈。例如 `sericite --include runtime.sericite -c 'outer()'` 的输出：
+
+```text
+/path/runtime.sericite:2: name_error: name 'missing' is not defined
+Traceback (most recent call last):
+  File "<command>", line 1, in <module>
+  File "/path/runtime.sericite", line 5, in outer
+  File "/path/runtime.sericite", line 2, in inner
+```
+
+每个 root 帧按上述来源规则映射（示例中的 `<command>` 是 `-c` 源码）；其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
 
 ## 4. capabilities：可信 Python 启动配置
 
@@ -137,7 +147,7 @@ def configure():
 - 未知键、缺少可调用的 `configure()`、返回非 dict 或字段类型错误都会使启动失败。
 - `functions` 的授予名仍由引擎校验。
 - `files` 通过公开 VM 句柄写入，仍受文件数、单文件字节等限制。
-- 可信的长期 root 可以把五项累计配额设为 `-1`；结构性配额仍保持有限。资源安全含义见[安全模型](security.zh-CN.md)第 3 节。
+- 可信的长期 root 可以把累计配额设为 `-1`；结构性配额仍保持有限。资源安全含义见[安全模型](security.zh-CN.md)第 3 节。
 
 FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，配额字段与无限配额的继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节，不在此复制。
 

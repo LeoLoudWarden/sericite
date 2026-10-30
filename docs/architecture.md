@@ -57,8 +57,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - b. Host `RecursionError` becomes `resource_exhausted`, `OverflowError` becomes `conversion_error`, and raw host exceptions never enter scripts.
   - c. `SericiteError.filename` embeds the engine-local vm_id and is host-only. Script-facing error surfaces — the value bound by `except kind as e`, the snapshot `error` view, and message text — must contain no leak channel.
   - d. Capture call frames before exception unwinding and store them per VM. Same-VM rethrows preserve the original trace; cross-VM propagation neither joins nor overwrites another layer's trace.
-  - e. Frame names follow invariant 16's sanitization; lines from code defined in another VM are redacted to `None`, and the single-point `error.line` uses the same sanitized error-site frame. A corrupted caller `pc` degrades to an unknown line rather than raising a diagnostic-side exception.
-  - f. Trace capture, snapshot formatting, and script record materialization are metered. An ordinary error that exhausts quotas during diagnostic construction may become the current VM's `resource_exhausted`. Preserve an original `resource_exhausted`, `internal_error`, or `host_error` and degrade to an empty trace instead of recursively replacing it.
+  - e. Frame names follow invariant 16's sanitization; lines from code defined in another VM are redacted to `None`, and the error site's `error.line` uses the same sanitized error-site frame.
+  - f. A corrupted caller `pc` degrades to an unknown line rather than raising a diagnostic-side exception.
+  - g. Trace capture, snapshot formatting, and script record materialization are metered.
+  - h. When diagnostic construction exhausts quotas: an ordinary error may become the current VM's `resource_exhausted`; if the original error is already `resource_exhausted`, `internal_error`, or `host_error`, preserve it and degrade to an empty trace instead of recursively replacing it.
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10.
@@ -119,7 +121,8 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 
 - An AccountRoute is constructed from caller, home, and target when a call begins; every instruction in that execution scope uses it.
 - Shared ancestors are charged once per causal charge, with no special cross-sibling delta mirroring.
-- VM-method execution is normally jointly constrained by target and caller; result ownership enters only the actual caller's route. The exception is read-only handle operations on a terminal target: they execute no target code and are charged only to the caller. Write and driving operations do not use this exception.
+- VM-method execution is normally jointly constrained by target and caller; result ownership enters only the actual caller's route.
+- Exception: read-only handle operations on a terminal target execute no target code and are charged only to the caller; write and driving operations do not use this exception.
 - A child VM created through a granted function is an empty world attached causally under its initiator, with quotas tightened elementwise across home and caller.
 
 ### 5.5 Checklist for new language features
@@ -170,12 +173,12 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 - Host callback execution time and memory are self-policed by the host and are not metered. Engine-side FFI argument/result copying is charged per node, and host return structures are also bounded by a node budget and depth limit.
 - The total memory ledger is approximate (strings counted as chars ×4, list slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
-- `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules.
+- `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules (invariant 10).
 - Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
 - A VM's execution context is retained after reaching a terminal state for debug snapshots and further `exec` deliveries; release it with `dispose()` (contract in the [VM reference](vm-reference.md) §3).
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
-- Cross-VM calls charge shared ancestors once, and read-only handle operations on a terminal target are charged only to the caller; the full charging rules are in section 5.4.
+- Cross-VM calls charge shared ancestors once; the full charging rules are in section 5.4.
 
 ## 9. Explicitly not supported yet
 
