@@ -16,6 +16,11 @@ def _is_annotation_name(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     return isinstance(parent, ast.FunctionDef) and parent.returns is node
 
 
+def _reject_none_annotation(annotation: ast.expr | None, filename: str) -> None:
+    if isinstance(annotation, ast.Constant) and annotation.value is None:
+        _reject(annotation, filename, "None is not a contract; omit the annotation")
+
+
 def _validate(tree: ast.Module, filename: str) -> None:
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
@@ -124,6 +129,7 @@ def _validate(tree: ast.Module, filename: str) -> None:
                     )
                 seen.add(field_name)
         if isinstance(node, ast.AnnAssign):
+            _reject_none_annotation(node.annotation, filename)
             parent = parents.get(node)
             if not isinstance(parent, ast.ClassDef):
                 if not isinstance(node.target, ast.Name):
@@ -138,6 +144,18 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         filename,
                         "annotated assignment requires a value",
                     )
+        if isinstance(node, ast.Call):
+            seen_keywords: set[str] = set()
+            for keyword in node.keywords:
+                if keyword.arg is None:
+                    continue
+                if keyword.arg in seen_keywords:
+                    _reject(
+                        keyword,
+                        filename,
+                        f"duplicate keyword argument '{keyword.arg}'",
+                    )
+                seen_keywords.add(keyword.arg)
         if isinstance(node, ast.keyword) and node.arg is None:
             _reject(node, filename, "** arguments are not supported")
         if isinstance(node, ast.Dict) and any(key is None for key in node.keys):
@@ -195,6 +213,7 @@ def _validate(tree: ast.Module, filename: str) -> None:
                     filename,
                     f"builtin '{node.name}' cannot be redefined",
                 )
+            _reject_none_annotation(node.returns, filename)
             args = node.args
             if (
                 args.kw_defaults
@@ -208,6 +227,16 @@ def _validate(tree: ast.Module, filename: str) -> None:
                     filename,
                     "only positional parameters with optional defaults are supported",
                 )
+            seen_params: set[str] = set()
+            for argument in args.args:
+                _reject_none_annotation(argument.annotation, filename)
+                if argument.arg in seen_params:
+                    _reject(
+                        argument,
+                        filename,
+                        f"duplicate parameter '{argument.arg}'",
+                    )
+                seen_params.add(argument.arg)
         if isinstance(node, ast.For) and not isinstance(node.target, ast.Name):
             _reject(node, filename, "for target must be a name")
         if isinstance(node, ast.Raise) and node.cause is not None:

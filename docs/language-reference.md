@@ -150,7 +150,7 @@ def double(x):
 
 This is equivalent to defining `double`, then rebinding it with `double = trace(double)`. Decorator expressions are evaluated from top to bottom; stacked decorators are applied from bottom to top.
 
-Not supported: variadic arguments (`*args`), keyword-only parameters.
+Not supported: variadic arguments (`*args`), keyword-only parameters. Duplicate parameter names and duplicate keyword arguments at any call, including record construction, are rejected at compile time with `syntax_error`. Supplying both a positional and a keyword value for one parameter remains a runtime `arity_error`.
 
 ## 5. Exceptions
 
@@ -264,6 +264,8 @@ A class body only allows field declarations, in two forms: `x` (contract `any`, 
 - `int`/`float`/`str`/`bool`/`list`/`dict`, `any`, or another schema (nested constraint);
 - `any`/`bool`/`list`/`dict` are annotation-only contract names: they cannot be called or assigned;
 - `int`/`float`/`str` remain conversion builtins.
+
+`None` is a value, not a contract. An explicit `None` annotation is rejected with `syntax_error` in parameter, return, field, and annotated-assignment positions; omit the annotation when no contract check is intended.
 
 Record semantics:
 

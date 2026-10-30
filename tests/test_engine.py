@@ -453,6 +453,87 @@ class ValidationTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "attribute_error")
 
+    def test_duplicate_parameters_rejected_at_compile_time(self):
+        cases = {
+            "simple": ("def f(x, x):\n    return x\n", 1),
+            "default": ("def f(x, x=1):\n    return x\n", 1),
+            "nested": (
+                "def outer():\n    def inner(x, y, x):\n        return x\n",
+                2,
+            ),
+        }
+        for name, (source, line) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                error = ctx.exception
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertIn("duplicate parameter 'x'", error.message)
+                self.assertEqual(error.line, line)
+                self.assertEqual(
+                    error.column, source.splitlines()[line - 1].rindex("x") + 1
+                )
+
+    def test_duplicate_keywords_rejected_for_functions_and_records(self):
+        cases = {
+            "function": (
+                "def f(x):\n    return x\nf(x=1, x=2)\n",
+                3,
+                "x=2",
+            ),
+            "record": ("class P:\n    x: int\nP(x=1, x=2)\n", 3, "x=2"),
+        }
+        for name, (source, line, marker) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                error = ctx.exception
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertIn("duplicate keyword argument 'x'", error.message)
+                self.assertEqual(error.line, line)
+                self.assertEqual(
+                    error.column, source.splitlines()[line - 1].index(marker) + 1
+                )
+
+    def test_explicit_none_annotations_rejected_at_compile_time(self):
+        cases = {
+            "parameter": ("def f(x: None):\n    return x\n", 1),
+            "return": ("def f() -> None:\n    return 1\n", 1),
+            "field": ("class P:\n    x: None\n", 2),
+            "assignment": ("x: None = 1\n", 1),
+        }
+        for name, (source, line) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                error = ctx.exception
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertEqual(
+                    error.message, "None is not a contract; omit the annotation"
+                )
+                self.assertEqual(error.line, line)
+                self.assertEqual(
+                    error.column, source.splitlines()[line - 1].index("None") + 1
+                )
+
+    def test_none_values_and_omitted_annotations_remain_valid(self):
+        output = (
+            SericiteEngine()
+            .create_root(
+                "def identity(x):\n"
+                "    return x\n"
+                "def default(x=None):\n"
+                "    return x\n"
+                "def nothing():\n"
+                "    return None\n"
+                "class P:\n"
+                "    x\n"
+                "print(identity(1), identity(None), default(), nothing(), P(None).x)\n"
+            )
+            .run()
+        )
+        self.assertEqual(output, "1 None None None None\n")
+
     def test_runtime_error_reported(self):
         engine = SericiteEngine()
         vm = engine.create_root("x = missing\n")

@@ -150,7 +150,7 @@ def double(x):
 
 这等价于先定义 `double`，再执行 `double = trace(double)` 重新绑定。装饰器表达式从上到下求值；堆叠装饰器从下往上应用。
 
-不支持：可变参数（`*args`）、仅关键字参数。
+不支持：可变参数（`*args`）、仅关键字参数。重复参数名，以及函数调用或 record 构造中的重复关键字实参，均在编译期报 `syntax_error`；同一参数同时收到位置值和关键字值仍在运行期报 `arity_error`。
 
 ## 5. 异常
 
@@ -264,6 +264,8 @@ class 体只允许字段声明，两种形式：`x`（契约 any，任意值）�
 - `int`/`float`/`str`/`bool`/`list`/`dict`、`any`，或另一个 schema（嵌套约束）；
 - `any`/`bool`/`list`/`dict` 是仅注解位的契约名：不可调用、不可赋值；
 - `int`/`float`/`str` 同时仍是转换内建。
+
+`None` 是值，不是契约。参数、返回、字段和带值注解赋值中的显式 `None` 注解统一报 `syntax_error`；不需要契约检查时应省略注解。
 
 record 的语义边界：
 
