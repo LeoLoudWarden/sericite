@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-30
+
 ### Changed
 - CLI 按宿主 IO、源码映射、启动加载、诊断、参数解析和 REPL 拆分为子包，保持 `main()`、`python -m sericite` 与既有私有测试导入兼容。
 
