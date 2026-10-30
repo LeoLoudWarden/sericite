@@ -36,7 +36,9 @@ sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
 | `--capabilities FILE` | Call `configure()` in a trusted Python file to configure the root VM |
 | `--include FILE` | Prepend a source file before the main source or REPL; repeat in the desired order |
 
-`SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag`. Use `--` before the entry to end CLI options explicitly or to pass a filename beginning with a dash. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
+`SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag` and a standalone `--`. Use `--` before the entry to end CLI options explicitly or to pass a filename beginning with a dash; that pre-entry separator is consumed by the CLI and does not enter `argv`. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
+
+Main and included files are decoded as UTF-8, with one optional leading UTF-8 BOM ignored. Stdin source follows the same rule. Only a BOM at the start of the text is removed, so line and column positions are unchanged and any additional BOM remains ordinary source input.
 
 ```bash
 sericite -c 'print("hello")'
@@ -182,11 +184,12 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 - In file, `-c`, and REPL modes, script `input()` reads host stdin line by line. Requesting more input after EOF is reported as `input_error`.
 - `sericite -` consumes all stdin as source, so that stdin cannot also supply runtime input.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
+- If a downstream stdout pipe closes, the CLI discards further output and exits quietly with status 0 instead of turning the host `BrokenPipeError` into a script error.
 - Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error.
 
 | Exit code | Meaning |
 |---:|---|
-| 0 | Root completed normally, or the REPL ended with EOF |
+| 0 | Root completed normally, the REPL ended with EOF, or the downstream stdout pipe closed |
 | 1 | File/configuration loading or validation failed, one-shot execution or REPL startup failed, or one-shot input was exhausted (`input_error`) |
 | 2 | Command-line usage error |
 

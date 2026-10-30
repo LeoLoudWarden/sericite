@@ -72,17 +72,33 @@ class CliTests(unittest.TestCase):
                 f"['{script}', 'first', '', '--flag', '世界']\n",
             )
 
+            result = self.run_cli(script, "--", "a")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, f"['{script}', '--', 'a']\n")
+
+            result = self.run_cli("--", script, "a")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, f"['{script}', 'a']\n")
+
         result = self.run_cli("-c", "print(argv)", "first", "--flag", "世界")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "['-c', 'first', '--flag', '世界']\n")
+
+        result = self.run_cli("-c", "print(argv)", "--", "a")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-c', '--', 'a']\n")
+
+        result = self.run_cli("--command=print(argv)", "--", "--flag")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "['-c', '--', '--flag']\n")
 
         result = self.run_cli("-", "argument", stdin="print(argv)\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "['-', 'argument']\n")
 
-        result = self.run_cli("-c", "print(argv)", "--", "--include", "literal")
+        result = self.run_cli("-", "--", "a", stdin="print(argv)\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "['-c', '--include', 'literal']\n")
+        self.assertEqual(result.stdout, "['-', '--', 'a']\n")
 
         result = self.run_cli("-c", "print(argv)", "--version", "--include")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -90,6 +106,52 @@ class CliTests(unittest.TestCase):
 
         result = self.run_cli("--unknown")
         self.assertEqual(result.returncode, 2)
+
+    def test_utf8_bom_is_accepted_for_file_include_and_stdin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            main = self.write(directory, "main.sericite", '\ufeffprint("main")\n')
+            result = self.run_cli(main)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "main\n")
+
+            include = self.write(directory, "base.sericite", "\ufeffvalue = 42\n")
+            result = self.run_cli("--include", include, "-c", "print(value)")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "42\n")
+
+        result = self.run_cli("-", stdin='\ufeffprint("stdin")\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "stdin\n")
+
+    def test_utf8_bom_preserves_positions_and_other_decoding_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            invalid = self.write(
+                directory, "invalid.sericite", '\ufeffif True print("bad")\n'
+            )
+            result = self.run_cli(invalid)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(f"{invalid}:1:9: syntax_error", result.stderr)
+
+            include = self.write(directory, "runtime.sericite", "\ufeff\n1 / 0\n")
+            result = self.run_cli("--include", include, "-c", "pass")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(f"{include}:2: zero_division", result.stderr)
+
+            double_bom = self.write(
+                directory, "double.sericite", '\ufeff\ufeffprint("bad")\n'
+            )
+            result = self.run_cli(double_bom)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("invalid non-printable character U+FEFF", result.stderr)
+
+            undecodable = directory / "undecodable.sericite"
+            undecodable.write_bytes(b"\xff")
+            result = self.run_cli(undecodable)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("unable to read source", result.stderr)
+            self.assertNotIn("internal_error", result.stderr)
 
     def test_repl_echoes_expressions_and_preserves_state(self):
         result = self.run_cli(stdin='x = 40\nx + 2\n"hello"\n["x", 1]\nNone\nargv\n')
@@ -555,6 +617,32 @@ class CliStreamingTests(unittest.TestCase):
             raise
         finally:
             reader.join(timeout=1)
+
+    def test_closed_stdout_pipe_exits_quietly(self):
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "sericite",
+                "-c",
+                "for i in range(1000):\n    print(i)",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        try:
+            process.stdout.close()
+            returncode = process.wait(timeout=10)
+            errors = process.stderr.read()
+            self.assertEqual(returncode, 0, errors)
+            self.assertEqual(errors, "")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stderr.close()
 
 
 if __name__ == "__main__":
