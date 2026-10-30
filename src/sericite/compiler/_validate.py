@@ -87,8 +87,15 @@ def _validate(tree: ast.Module, filename: str) -> None:
         if isinstance(node, ast.FormattedValue):
             if node.conversion not in (-1, 97, 114, 115):
                 _reject(node, filename, "unsupported f-string conversion")
-            if node.format_spec is not None:
-                _reject(node, filename, "f-string format specs are not supported yet")
+            if node.format_spec is not None and any(
+                isinstance(value, ast.FormattedValue)
+                for value in node.format_spec.values
+            ):
+                _reject(
+                    node,
+                    filename,
+                    "dynamic f-string format specs are not supported yet",
+                )
         if isinstance(node, ast.Name):
             if node.id.startswith("__"):
                 _reject(node, filename, "dunder names are not available")
