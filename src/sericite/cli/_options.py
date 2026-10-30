@@ -3,10 +3,19 @@ import sys
 from collections.abc import Sequence
 
 from .. import __version__
+from ._hostio import _write_stdout
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    def _print_message(self, message, file=None):
+        if message and file is sys.stdout:
+            _write_stdout(message)
+        else:
+            super()._print_message(message, file)
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="sericite",
         description="Sericite language runtime (Sericite-PY reference implementation)",
         epilog=(

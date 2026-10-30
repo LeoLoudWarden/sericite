@@ -186,7 +186,7 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 - Script `input()` reads host stdin line by line; EOF raises a catchable `input_error`. If uncaught in one-shot mode, the traceback is printed and the process exits with status 1; if uncaught in the REPL, the error is printed and the session continues.
 - `sericite -` consumes all stdin as source, so runtime `input()` sees the closed stream and raises `input_error`.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
-- If a downstream stdout pipe closes, the CLI discards further output and exits quietly with status 0 instead of turning the host `BrokenPipeError` into a script error.
+- If a downstream stdout pipe closes, the external output consumer has ended: the CLI stops the current execution, including nested VM output forwarding, discards further output, and exits quietly with status 0. This is external CLI termination, not a Sericite script error; Sericite `finally` blocks are not guaranteed to run.
 - Compile/runtime errors go to stderr without discarding root output already produced. Configuration errors also go only to stderr. One-shot mode exits after an error; the REPL continues after an entry error.
 
 | Exit code | Meaning |

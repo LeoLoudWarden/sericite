@@ -704,6 +704,121 @@ class CliStreamingTests(unittest.TestCase):
                 process.wait()
             process.stderr.close()
 
+    def close_stdout_after_output(self, args, *, lines=3, timeout=3):
+        process = subprocess.Popen(
+            [sys.executable, "-m", "sericite", *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        try:
+            for _ in range(lines):
+                if process.stdout.readline() == "":
+                    self.fail(
+                        f"CLI produced no expected output: {process.stderr.read()}"
+                    )
+            process.stdout.close()
+            returncode = process.wait(timeout=timeout)
+            errors = process.stderr.read()
+            return returncode, errors
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdout.close()
+            process.stderr.close()
+
+    def test_pipe_closure_stops_root_with_default_and_unlimited_quotas(self):
+        source = "i = 0\nwhile True:\n    print(i)\n    i += 1"
+        returncode, errors = self.close_stdout_after_output(["-c", source])
+        self.assertEqual(returncode, 0, errors)
+        self.assertEqual(errors, "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            capabilities = Path(tmp) / "unlimited.py"
+            capabilities.write_text(
+                "from sericite import SericiteLimits\n"
+                "def configure():\n"
+                "    return {'limits': SericiteLimits("
+                "max_instructions=-1, max_output_bytes=-1)}\n",
+                encoding="utf-8",
+            )
+            returncode, errors = self.close_stdout_after_output(
+                ["--capabilities", str(capabilities), "-c", source], timeout=2
+            )
+        self.assertEqual(returncode, 0, errors)
+        self.assertEqual(errors, "")
+
+    def test_pipe_closure_stops_nested_vm_output(self):
+        source = (
+            "def forward(text):\n"
+            '    print(text, end="")\n'
+            "sub = VM("
+            "'i = 0\\nwhile True:\\n    print(i)\\n    i += 1', "
+            "output_writer=forward, buffer_output=False, "
+            "max_instructions=-1, max_output_bytes=-1)\n"
+            "sub.run()"
+        )
+        returncode, errors = self.close_stdout_after_output(["-c", source], timeout=2)
+        self.assertEqual(returncode, 0, errors)
+        self.assertEqual(errors, "")
+
+    def test_pipe_closure_skips_remaining_script_and_finally(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            capabilities = Path(tmp) / "mark.py"
+            capabilities.write_text(
+                "import sys\n"
+                "def mark(message):\n"
+                "    print(message, file=sys.stderr, flush=True)\n"
+                "def configure():\n"
+                "    return {'functions': {'mark': mark}}\n",
+                encoding="utf-8",
+            )
+            source = (
+                "i = 0\n"
+                "try:\n"
+                "    while i < 50000:\n"
+                "        print(i)\n"
+                "        i += 1\n"
+                "finally:\n"
+                '    mark("finally")\n'
+                'mark("finished")'
+            )
+            returncode, errors = self.close_stdout_after_output(
+                ["--capabilities", str(capabilities), "-c", source]
+            )
+        self.assertEqual(returncode, 0, errors)
+        self.assertEqual(errors, "")
+
+    def test_frontend_stdout_closure_returns_zero(self):
+        from io import StringIO
+        from unittest.mock import patch
+
+        from sericite.cli import main
+
+        class ClosedStdout:
+            def __init__(self, sink):
+                self.sink = sink
+
+            def write(self, value):
+                raise BrokenPipeError
+
+            def flush(self):
+                pass
+
+            def fileno(self):
+                return self.sink.fileno()
+
+        for args in (["--help"], ["--version"], []):
+            with (
+                self.subTest(args=args),
+                tempfile.TemporaryFile() as sink,
+                patch("sys.stdout", ClosedStdout(sink)),
+                patch("sys.stdin", StringIO("")),
+            ):
+                self.assertEqual(main(args), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
