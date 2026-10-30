@@ -70,7 +70,7 @@ def norm_path(path):
     if not path or path == ".":
         return "/"
     if path[0] != "/":
-        path = "/" + path
+        path = f"/{path}"
     return path
 
 
@@ -78,12 +78,12 @@ def workspace_path(path):
     path = norm_path(path)
     if path == "/":
         return "/workspace"
-    return "/workspace" + path
+    return f"/workspace{path}"
 
 
 def seed_tree(sub, prefix="/"):
     for name in list_dir(workspace_path(prefix)):
-        path = prefix.rstrip("/") + "/" + name
+        path = f"{prefix.rstrip('/')}/{name}"
         try:
             text = read_file(workspace_path(path))
         except is_directory:
@@ -94,8 +94,8 @@ def seed_tree(sub, prefix="/"):
 
 def print_live_line(line):
     if len(line) > MAX_LIVE_LINE_CHARS:
-        line = line[:MAX_LIVE_LINE_CHARS] + " …"
-    print("vm 1  " + line)
+        line = f"{line[:MAX_LIVE_LINE_CHARS]} …"
+    print(f"vm 1  {line}")
 
 
 def layer_1_output(text):
@@ -107,7 +107,7 @@ def layer_1_output(text):
         if len(live["tail"]) > LIVE_TAIL_LINES:
             live["tail"].pop(0)
         if VERBOSE:
-            print("vm 1  " + line)
+            print(f"vm 1  {line}")
         elif live["shown"] < MAX_LIVE_LINES:
             print_live_line(line)
             live["shown"] += 1
@@ -129,17 +129,14 @@ seed_tree(sub)
 
 
 def exec_error(kind, message):
-    return "(" + kind + ": " + message + ")"
+    return f"({kind}: {message})"
 
 
 def finish_live_output():
     if not VERBOSE and live["folded"]:
         print(
-            "vm 1  … display folded · "
-            + str(live["chars"])
-            + " chars / "
-            + str(live["lines"])
-            + " lines total"
+            f"vm 1  … display folded · {live['chars']} chars / "
+            f"{live['lines']} lines total"
         )
         for line in live["tail"]:
             print_live_line(line)
@@ -150,33 +147,25 @@ def truncate_output(output):
     total = len(output)
     if exec_feedback["truncations"] == 1:
         print(
-            "root  ↳ output truncated · "
-            + str(total)
-            + " chars · suggested write_file + file_read"
+            f"root  ↳ output truncated · {total} chars · "
+            "suggested write_file + file_read"
         )
         advice = (
-            "提示：本次输出共 "
-            + str(total)
-            + " 字符，仅返回前 "
-            + str(MAX_RESULT_CHARS)
-            + " 字符。处理大文本时，请用 write_file 将完整内容写入当前工作区，"
-            + "再使用 file_read 工具读取。"
+            f"提示：本次输出共 {total} 字符，仅返回前 {MAX_RESULT_CHARS} 字符。"
+            "处理大文本时，请用 write_file 将完整内容写入当前工作区，"
+            "再使用 file_read 工具读取。"
         )
     else:
         print(
-            "root  ↳ output truncated again · "
-            + str(total)
-            + " chars · use write_file + file_read"
+            f"root  ↳ output truncated again · {total} chars · "
+            "use write_file + file_read"
         )
         advice = (
-            "再次截断：本次输出共 "
-            + str(total)
-            + " 字符，仍只返回前 "
-            + str(MAX_RESULT_CHARS)
-            + " 字符。请不要重复打印或重跑大段输出；请用 write_file 写入当前工作区，"
-            + "再改用 file_read 工具。"
+            f"再次截断：本次输出共 {total} 字符，仍只返回前 {MAX_RESULT_CHARS} 字符。"
+            "请不要重复打印或重跑大段输出；请用 write_file 写入当前工作区，"
+            "再改用 file_read 工具。"
         )
-    return output[:MAX_RESULT_CHARS] + "\n\n[" + advice + "]"
+    return f"{output[:MAX_RESULT_CHARS]}\n\n[{advice}]"
 
 
 def execute_code(code):
@@ -206,7 +195,7 @@ def dispatch_tool(name, args):
         try:
             return sub.read_file(path)
         except file_not_found:
-            return "(no such file: " + path + ")"
+            return f"(no such file: {path})"
     if name == "file_write":
         sub.write_file(norm_path(args["path"]), args["content"])
         return "(written)"
@@ -215,34 +204,27 @@ def dispatch_tool(name, args):
         try:
             return "\n".join(sub.list_dir(path)) or "(empty)"
         except file_not_found:
-            return "(no such file: " + path + ")"
-    return "(unknown tool: " + name + ")"
+            return f"(no such file: {path})"
+    return f"(unknown tool: {name})"
 
 
 def tool_summary(name, args):
     if name == "sericite_exec":
         code = args.get("code", "")
-        return name + " · " + str(len(code.splitlines())) + " lines"
+        return f"{name} · {len(code.splitlines())} lines"
     path = norm_path(args.get("path", ""))
     if name == "file_write":
-        return (
-            name
-            + " "
-            + path
-            + " · "
-            + str(len(args.get("content", "")))
-            + " chars"
-        )
-    return name + " " + path
+        return f"{name} {path} · {len(args.get('content', ''))} chars"
+    return f"{name} {path}"
 
 
 def print_tool_result(name, result):
     if result[:1] == "(":
-        print("root  ↳ " + result)
+        print(f"root  ↳ {result}")
     elif name == "file_read":
-        print("root  ↳ " + str(len(result)) + " chars · full result sent to model")
+        print(f"root  ↳ {len(result)} chars · full result sent to model")
     elif name == "file_list":
-        print("root  ↳ " + str(len(result.splitlines())) + " entries")
+        print(f"root  ↳ {len(result.splitlines())} entries")
 
 
 messages = [
@@ -252,7 +234,7 @@ messages = [
 final = "(达到最大轮数)"
 rounds = 0
 while rounds < MAX_ROUNDS:
-    print("\n── outer round " + str(rounds + 1) + " ─────────────────")
+    print(f"\n── outer round {rounds + 1} ─────────────────")
     resp = llm_chat({"messages": messages, "tools": TOOLS})
     messages.append(resp["assistant_message"])
     calls = resp["tool_calls"]
@@ -260,18 +242,18 @@ while rounds < MAX_ROUNDS:
         final = resp["content"]
         break
     if resp["content"]:
-        print("model  " + resp["content"])
+        print(f"model  {resp['content']}")
     for call in calls:
         call_args = call["args"]
         if VERBOSE:
-            print("root  " + call["name"])
+            print(f"root  {call['name']}")
             for k in call_args.keys():
-                print("root  arg " + k + " = " + repr(call_args[k]))
+                print(f"root  arg {k} = {call_args[k]!r}")
         else:
-            print("root  " + tool_summary(call["name"], call_args))
+            print(f"root  {tool_summary(call['name'], call_args)}")
         result = dispatch_tool(call["name"], call_args)
         if VERBOSE:
-            print("root  result = " + repr(result))
+            print(f"root  result = {result!r}")
         else:
             print_tool_result(call["name"], result)
         messages.append(

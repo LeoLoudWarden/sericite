@@ -117,33 +117,6 @@ def run_case(source, input_text):
     return result
 
 
-def pad_right(text, width):
-    while len(text) < width:
-        text = text + " "
-    return text
-
-
-def pad_left(text, width):
-    while len(text) < width:
-        text = " " + text
-    return text
-
-
-def format_number(number):
-    digits = str(number)
-    result = ""
-    group = 0
-    index = len(digits) - 1
-    while index >= 0:
-        if group == 3:
-            result = "," + result
-            group = 0
-        result = digits[index] + result
-        group = group + 1
-        index = index - 1
-    return result
-
-
 def contestant_name(filename):
     return filename[3:len(filename) - 9]
 
@@ -179,21 +152,16 @@ print("│  SERICITE / SORTING ARENA                                            
 print("│  Untrusted code in. Correct answers and instruction counts out.      │")
 print("╰──────────────────────────────────────────────────────────────────────╯")
 print(
-    "  "
-    + str(len(entries))
-    + " submissions · "
-    + str(len(CASES))
-    + " test cases · "
-    + format_number(CASE_INSTRUCTION_LIMIT)
-    + "-instruction ceiling per case"
+    f"  {len(entries)} submissions · {len(CASES)} test cases · "
+    f"{CASE_INSTRUCTION_LIMIT:,}-instruction ceiling per case"
 )
 print("  Every submission gets a fresh VM. No network, host files, or shared state.")
 print("  Fresh random cases from Python random_int · granted to the judge only")
 
 for filename in entries:
-    source = read_file("/entries/" + filename)
+    source = read_file(f"/entries/{filename}")
     name = contestant_name(filename)
-    print("\n  " + name)
+    print(f"\n  {name}")
     print("  " + "────────────────────────────────────────────────────────────────")
     total = 0
     accepted = True
@@ -204,29 +172,20 @@ for filename in entries:
             accepted = False
             failure = result["error"]
             print(
-                "    × "
-                + pad_right(case["name"], 16)
-                + failure
-                + " · "
-                + error_note(failure)
+                f"    × {case['name']:16}{failure} · {error_note(failure)}"
             )
             break
         if result["output"].split() != case["expected"]:
             accepted = False
             failure = "wrong_answer"
-            print("    × " + pad_right(case["name"], 16) + "wrong answer")
+            print(f"    × {case['name']:16}wrong answer")
             break
         total = total + result["instructions"]
-        print(
-            "    ✓ "
-            + pad_right(case["name"], 16)
-            + pad_left(format_number(result["instructions"]), 9)
-            + " instructions"
-        )
+        print(f"    ✓ {case['name']:16}{result['instructions']:9,} instructions")
     result = {"name": name, "instructions": total, "error": failure}
     if accepted:
         insert_ranked(qualified, result)
-        print("    → qualified · " + format_number(total) + " instructions total")
+        print(f"    → qualified · {total:,} instructions total")
     else:
         rejected.append(result)
 
@@ -234,19 +193,9 @@ print("\n╭─ FINAL STANDINGS ────────────────
 print("  RANK  CONTESTANT                  TOTAL INSTRUCTIONS")
 rank = 1
 for result in qualified:
-    print(
-        "  "
-        + pad_right(str(rank), 6)
-        + pad_right(result["name"], 24)
-        + format_number(result["instructions"])
-    )
+    print(f"  {rank:<6}{result['name']:24}{result['instructions']:,}")
     rank = rank + 1
 for result in rejected:
-    print(
-        "  "
-        + pad_right("DQ", 6)
-        + pad_right(result["name"], 24)
-        + result["error"]
-    )
+    print(f"  {'DQ':6}{result['name']:24}{result['error']}")
 print("╰──────────────────────────────────────────────────────────────────────╯")
 print("  The arena survived every submission. The scoreboard only counts correct code.")
