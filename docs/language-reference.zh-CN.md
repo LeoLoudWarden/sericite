@@ -190,7 +190,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
   - `function`：函数名字符串；
   - `line`：源码行号整数，或 `None`（该帧定义在别的 VM，已脱敏）。
 
-  栈从最外层调用排列到实际错误点，最后一帧是错误点。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
+  栈从最外层调用排列到实际错误点，最后一帧是错误点。每个等待被调函数返回的调用方帧都指向真实的 `CALL` 指令，包括多行表达式中的调用。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
 
 裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。
 

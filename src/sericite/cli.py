@@ -47,6 +47,36 @@ class _CombinedSource:
         return part.name, line - part.start_line + 1
 
 
+class _ReplSourceMap:
+    """Keep only startup and current sources; retained functions come from unshifted statement deliveries."""
+
+    def __init__(self, startup: _CombinedSource) -> None:
+        self._startup = (startup, 0)
+        self._current = self._startup
+        self._current_id = 0
+        self._next_id = 1
+        self._stdin = _CombinedSource([("<stdin>", "")])
+
+    def add(self, source: _CombinedSource, line_offset: int) -> int:
+        source_id = self._next_id
+        self._next_id += 1
+        self._current_id = source_id
+        self._current = (source, line_offset)
+        return source_id
+
+    def get(self, source_id: int | None) -> tuple[_CombinedSource, int] | None:
+        if source_id == 0:
+            return self._startup
+        if source_id == self._current_id:
+            return self._current
+        if type(source_id) is int and 0 < source_id < self._next_id:
+            return self._stdin, 0
+        return None
+
+
+_CURRENT_ERROR_SOURCE = object()
+
+
 def _read_stdin() -> str | None:
     value = sys.stdin.readline()
     return value if value else None
@@ -129,14 +159,42 @@ def _load_capabilities(path: str) -> dict:
 
 
 def _format_error(
-    error: SericiteError, source: _CombinedSource, *, line_offset: int = 0
+    error: SericiteError,
+    source: _CombinedSource,
+    *,
+    line_offset: int = 0,
+    source_map: dict[int, tuple[_CombinedSource, int]] | _ReplSourceMap | None = None,
+    error_source_id: int | None | object = _CURRENT_ERROR_SOURCE,
 ) -> str:
+    def current_location(line: int | None) -> tuple[str, int | None]:
+        mapped_line = None if line is None else max(1, line - line_offset)
+        return source.location(mapped_line)
+
+    def location(line: int | None, source_id: int | None) -> tuple[str, int | None]:
+        if source_map is None:
+            return current_location(line)
+        entry = source_map.get(source_id)
+        if entry is None:
+            return "<sericite>", None
+        mapped_source, offset = entry
+        mapped_line = None if line is None else max(1, line - offset)
+        return mapped_source.location(mapped_line)
+
     root_source = error.filename in (None, "<sericite>", "<sericite:vm_0>")
+    frame_sources = error._frame_sources
     if root_source:
-        error_line = error.line
-        if error_line is not None:
-            error_line = max(1, error_line - line_offset)
-        filename, line = source.location(error_line)
+        if not error.frames and error._trace_vm_id is None:
+            if error_source_id is _CURRENT_ERROR_SOURCE:
+                filename, line = current_location(error.line)
+            else:
+                filename, line = location(error.line, error_source_id)
+        else:
+            source_id = (
+                frame_sources[-1]
+                if error.frames and len(frame_sources) == len(error.frames)
+                else None
+            )
+            filename, line = location(error.line, source_id)
         text = str(
             SericiteError(
                 error.message,
@@ -151,12 +209,10 @@ def _format_error(
     if not error.frames:
         return text
     lines = [text, "Traceback (most recent call last):"]
-    for frame in error.frames:
+    for index, frame in enumerate(error.frames):
         if root_source:
-            frame_line = (
-                None if frame.line is None else max(1, frame.line - line_offset)
-            )
-            filename, line = source.location(frame_line)
+            source_id = frame_sources[index] if index < len(frame_sources) else None
+            filename, line = location(frame.line, source_id)
         else:
             filename, line = error.filename, frame.line
         shown_line = "?" if line is None else line
@@ -206,18 +262,32 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _report_input_required(
-    root: VMHandle, source: _CombinedSource, *, line_offset: int = 0
+    root: VMHandle,
+    source: _CombinedSource,
+    *,
+    line_offset: int = 0,
+    source_map: dict[int, tuple[_CombinedSource, int]] | _ReplSourceMap | None = None,
 ) -> None:
     snapshot = root.snapshot()
     if snapshot["state"] != "waiting_input":
         return
+    source_id = root._current_source_id()
     error = SericiteError(
         "input required",
         kind="input_error",
         filename="<sericite:vm_0>",
         line=snapshot["next_line"],
     )
-    print(_format_error(error, source, line_offset=line_offset), file=sys.stderr)
+    print(
+        _format_error(
+            error,
+            source,
+            line_offset=line_offset,
+            source_map=source_map,
+            error_source_id=source_id,
+        ),
+        file=sys.stderr,
+    )
 
 
 def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
@@ -246,7 +316,8 @@ def _expression_delivery(source: str) -> tuple[str, int]:
     return source, 0
 
 
-def _repl(root: VMHandle) -> int:
+def _repl(root: VMHandle, startup_source: _CombinedSource) -> int:
+    source_map = _ReplSourceMap(startup_source)
     buffer: list[str] = []
     while True:
         _write_stdout("... " if buffer else ">>> ")
@@ -278,12 +349,20 @@ def _repl(root: VMHandle) -> int:
             continue
         delivery, line_offset = _expression_delivery(source_text)
         source = _CombinedSource([("<stdin>", source_text)])
+        source_map.add(source, line_offset)
         try:
             root.exec(delivery)
         except SericiteError as exc:
-            print(_format_error(exc, source, line_offset=line_offset), file=sys.stderr)
+            print(
+                _format_error(
+                    exc, source, line_offset=line_offset, source_map=source_map
+                ),
+                file=sys.stderr,
+            )
             continue
-        _report_input_required(root, source, line_offset=line_offset)
+        _report_input_required(
+            root, source, line_offset=line_offset, source_map=source_map
+        )
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -362,5 +441,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not _run_root(root, source):
         return 1
     if interactive:
-        return _repl(root)
+        return _repl(root, source)
     return 0

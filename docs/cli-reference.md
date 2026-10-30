@@ -112,7 +112,7 @@ Traceback (most recent call last):
   File "/path/runtime.sericite", line 2, in inner
 ```
 
-Every root frame is mapped using the source rules above (`<command>` in the example is the `-c` source). Frames defined in another VM do not disclose their source lines and display `line ?` (redaction rules are in the [language reference](language-reference.md) §5). Errors rejected before VM execution begins have no frames and retain the single-line diagnostic.
+Every root frame is mapped using the source rules above (`<command>` in the example is the `-c` source). In the REPL, each frame maps through the entry that defined its code: expression-wrapper offsets apply only to that entry, and functions from includes retain the include filename and local line. If a frame's source is unavailable, the CLI displays `<sericite>` and `line ?` rather than guessing. Frames defined in another VM do not disclose their source lines and display `line ?` (redaction rules are in the [language reference](language-reference.md) §5). Errors rejected before VM execution begins have no frames and retain the single-line diagnostic.
 
 ## 4. Capabilities: trusted Python startup configuration
 

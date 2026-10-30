@@ -190,7 +190,7 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
   - `function`: the function name string;
   - `line`: the source line integer, or `None` (a frame defined in another VM, redacted).
 
-  Frames are ordered from the outermost call to the failure; the last frame is the error site. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
+  Frames are ordered from the outermost call to the failure; the last frame is the error site. Every suspended caller frame identifies its actual `CALL` instruction, including a call inside a multiline expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
 Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record.
 

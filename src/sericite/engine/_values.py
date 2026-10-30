@@ -205,8 +205,8 @@ def _min_limits(a: SericiteLimits, b: SericiteLimits) -> SericiteLimits:
     )
 
 
-def _stamp_origin(code: isa.CodeUnit, vm_id: int) -> None:
-    """Stamp a CodeUnit tree with the id of the VM that compiled it: the basis for label and definition-name visibility."""
+def _stamp_origin(code: isa.CodeUnit, vm_id: int, source_id: int = 0) -> None:
+    """Stamp a CodeUnit tree with its defining VM and source delivery."""
     seen: set[int] = set()
     units = [code]
     while units:
@@ -215,6 +215,7 @@ def _stamp_origin(code: isa.CodeUnit, vm_id: int) -> None:
             continue
         seen.add(id(unit))
         unit.origin_vm = vm_id
+        unit.source_id = source_id
         for instr in unit.instrs:
             if instr.op == isa.MAKE_FUNCTION:
                 units.append(instr.arg[0])
