@@ -49,6 +49,8 @@ s[2:99]     # "cdef"：越界按截断处理，不报错
 - 字典键只允许 `str/int/float/bool/None`，缺键读取报 `key_error`。
 - 字符串支持整数索引读取与切片，但不能写；列表支持索引读写与切片。
 
+NaN 的标量比较遵循 IEEE 规则：`n == n` 与所有大小比较均为 False，`n != n` 为 True。嵌套的 NaN 也按同样的元素语义比较，但容器或 record 与自身比较时仍保留 identity 快路径。list 成员检查使用元素相等性；dict 查找保留 Python 的 identity-or-equality 键行为。
+
 ## 3. 控制流
 
 ```python

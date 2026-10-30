@@ -300,6 +300,35 @@ class EqualityTests(unittest.TestCase):
         out = run("class P:\n    x: int\na = P(1)\nb = P(1)\nprint(a == b)\n")
         self.assertEqual(out, "True\n")
 
+    def test_nan_scalar_comparisons(self):
+        out = run('n = float("nan")\nprint(n == n, n != n, n <= n, n >= n)\n')
+        self.assertEqual(out, "False True False False\n")
+
+    def test_nan_containers_membership_and_dict_keys(self):
+        out = run(
+            'n = float("nan")\n'
+            "a = [n]\n"
+            "b = a\n"
+            "c = [n]\n"
+            'd = {n: "value"}\n'
+            "print(a == b, a == c, n in a, n in c)\n"
+            "print(n in d, d[n])\n"
+        )
+        self.assertEqual(out, "True False False False\nTrue value\n")
+
+    def test_nan_record_fields_and_ordinary_scalar_equality(self):
+        out = run(
+            "class P:\n"
+            "    value\n"
+            'n = float("nan")\n'
+            "a = P(n)\n"
+            "b = a\n"
+            "c = P(n)\n"
+            "print(a == b, a == c)\n"
+            'print(1 == 1.0, 1 == True, "1" == "1", True == True)\n'
+        )
+        self.assertEqual(out, "True False\nTrue False True True\n")
+
     def test_same_shape_different_schema_objects_are_equal(self):
         out = run("class P:\n    x: int\nclass Q:\n    x: int\nprint(P(1) == Q(1))\n")
         self.assertEqual(out, "True\n")
@@ -628,6 +657,74 @@ class ClosureAndVMTests(unittest.TestCase):
             "print(pair[1](c), pair[1](c))\n"
         )
         self.assertEqual(out, "1 2\n")
+
+    def test_name_error_keeps_visible_name_in_same_vm(self):
+        out = run(
+            "try:\n"
+            "    print(missing_visible_name)\n"
+            "except name_error as e:\n"
+            "    print(e.message)\n"
+        )
+        self.assertEqual(out, "name 'missing_visible_name' is not defined\n")
+
+    def test_foreign_name_errors_hide_definition_side_names(self):
+        source = (
+            "def module_error():\n"
+            "    return missing_module_secret\n"
+            "def local_error():\n"
+            "    if False:\n"
+            "        local_secret = 1\n"
+            "    return local_secret\n"
+            "def make_closure():\n"
+            "    def read():\n"
+            "        return closure_secret\n"
+            "    return read\n"
+            "    closure_secret = 1\n"
+            "closure_error = make_closure()\n"
+            "def nested_helper():\n"
+            "    return missing_nested_secret\n"
+            "def nested_error():\n"
+            "    return nested_helper()\n"
+            'sub = VM("""\n'
+            "for f in [module, local, closure, nested]:\n"
+            "    try:\n"
+            "        f()\n"
+            "    except name_error as e:\n"
+            "        print(e.kind, e.message)\n"
+            "        for frame in e.frames:\n"
+            "            print(frame.function)\n"
+            '""", functions={\n'
+            '    "module": module_error,\n'
+            '    "local": local_error,\n'
+            '    "closure": closure_error,\n'
+            '    "nested": nested_error,\n'
+            "})\n"
+            'print(sub.run(), end="")\n'
+        )
+        out = run(source)
+        self.assertEqual(
+            out,
+            "name_error name is not defined\n"
+            "<module>\nmodule\n"
+            "name_error name is not defined\n"
+            "<module>\nlocal\n"
+            "name_error name is not defined\n"
+            "<module>\nclosure\n"
+            "name_error name is not defined\n"
+            "<module>\nnested\nfunction\n",
+        )
+        for secret in (
+            "missing_module_secret",
+            "local_secret",
+            "closure_secret",
+            "missing_nested_secret",
+            "nested_helper",
+            "module_error",
+            "local_error",
+            "closure_error",
+            "nested_error",
+        ):
+            self.assertNotIn(secret, out)
 
     def test_granted_function_keeps_contracts_across_vms(self):
         source = (
