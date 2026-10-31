@@ -23,20 +23,40 @@ MAX_FETCH_CHARS = 500_000
 LOG_LLM = False
 LOG_LLM_FULL_JSON = False
 WAIT_LOG_INTERVAL = 15
+TERMINAL_STYLES = {
+    "root": "\x1b[1;94m",
+    "model": "\x1b[1;95m",
+    "vm": "\x1b[1;92m",
+    "round": "\x1b[1;96m",
+    "final": "\x1b[1;93m",
+    "llm": "\x1b[1;91m",
+}
+
+
+def _terminal_style(text: str, color: str, stream) -> str:
+    if not stream.isatty() or "NO_COLOR" in os.environ:
+        return text
+    return f"{TERMINAL_STYLES[color]}{text}\x1b[0m"
+
+
+def terminal_style(text: str, color: str) -> str:
+    return _terminal_style(text, color, sys.stdout)
 
 
 def _log_line(message: str) -> None:
     if LOG_LLM:
-        print(f"[llm_chat] {message}", file=sys.stderr, flush=True)
+        _log_warning(message)
 
 
 def _log_warning(message: str) -> None:
-    print(f"[llm_chat] {message}", file=sys.stderr, flush=True)
+    prefix = _terminal_style("LLM     │ ", "llm", sys.stderr)
+    print(f"{prefix}{message}", file=sys.stderr, flush=True)
 
 
 def _log_json(label: str, payload) -> None:
     if LOG_LLM and LOG_LLM_FULL_JSON:
-        print(f"\n[llm_chat] {label}", file=sys.stderr, flush=True)
+        print(file=sys.stderr, flush=True)
+        _log_warning(label)
         print(
             json.dumps(payload, ensure_ascii=False, indent=2),
             file=sys.stderr,
@@ -142,10 +162,7 @@ def make_llm_chat(api_url: str, api_key: str, model: str):
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError:
-            print(
-                f"[llm_chat error] {resp.status_code}: {resp.text[:500]}",
-                file=sys.stderr,
-            )
+            _log_warning(f"HTTP {resp.status_code}: {resp.text[:500]}")
             raise SericiteError(
                 f"llm_chat: HTTP {resp.status_code}", kind="runtime_error"
             ) from None
@@ -191,7 +208,7 @@ def make_http_get():
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError:
-            print(f"[http_get error] {resp.status_code}: {url}", file=sys.stderr)
+            _log_warning(f"http_get: HTTP {resp.status_code}: {url}")
             raise SericiteError(
                 f"http_get: HTTP {resp.status_code}", kind="runtime_error"
             ) from None
@@ -215,6 +232,7 @@ def configure():
         "functions": {
             "llm_chat": make_llm_chat(_normalize_api_url(api_url), api_key, model),
             "http_get": make_http_get(),
+            "terminal_style": terminal_style,
         },
         "files": {
             "/control/prompt_outer.txt": (BASE_DIR / "prompt_outer.txt").read_text(

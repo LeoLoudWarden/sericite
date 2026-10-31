@@ -87,6 +87,8 @@ for k in {"c": 3, "a": 1}:
     print("key:", k)
 """
 
+OUTER_FINAL = "外层收尾：练习完成，内层会话也跑完了。"
+
 
 def _tool_call(index: int, name: str, args: dict) -> dict:
     return {
@@ -152,7 +154,7 @@ class Handler(BaseHTTPRequestHandler):
             return _reply(
                 tool_calls=[_tool_call(4, "sericite_exec", {"code": MIDDLE_CODE})]
             )
-        return _reply(content="外层收尾：练习完成，内层会话也跑完了。")
+        return _reply(content=OUTER_FINAL)
 
     def _inner_reply(self) -> dict:
         type(self).inner_turn += 1

@@ -27,7 +27,7 @@ def print_help():
 
 
 def render_source(snapshot, source_lines):
-    print("├─ SOURCE ───────────────────────────────────────────────────────────┤")
+    print(f"├─ {'SOURCE ':─<67}")
     focus = snapshot["next_line"]
     marker = ">"
     if focus == None and snapshot["error"] != None:
@@ -60,7 +60,7 @@ def render_source(snapshot, source_lines):
 
 
 def render(snapshot, source_lines):
-    print("\n╭─ CHILD VM ───────────────────────────────────────────────────────────╮")
+    print(f"\n╭─ {'CHILD VM ':─<67}")
     print(
         f"│ state {snapshot['state']} · instructions "
         f"{snapshot['instruction_count']} · last "
@@ -72,13 +72,13 @@ def render(snapshot, source_lines):
         watch = "off"
     print(f"│ target {len(source)} chars · watch {watch}")
     render_source(snapshot, source_lines)
-    print("├─ LOCALS · current frame ───────────────────────────────────────────┤")
+    print(f"├─ {'LOCALS · current frame ':─<67}")
     locals_view = snapshot["locals"]
     if len(locals_view) == 0:
         print("│ (empty)")
     for name in locals_view:
         print(f"│ {name} = {compact(locals_view[name])}")
-    print("├─ CHILD STDOUT · tail ──────────────────────────────────────────────┤")
+    print(f"├─ {'CHILD STDOUT · tail ':─<67}")
     output_lines = snapshot["stdout"].splitlines()
     if len(output_lines) == 0:
         print("│ (empty)")
@@ -88,11 +88,11 @@ def render(snapshot, source_lines):
     for line in output_lines[start:]:
         print(f"│ {line}")
     if snapshot["error"] != None:
-        print("├─ ERROR · safe snapshot ────────────────────────────────────────────┤")
+        print(f"├─ {'ERROR · safe snapshot ':─<67}")
         print(f"│ {snapshot['error']['kind']}: {snapshot['error']['message']}")
         for frame in snapshot["error"]["frames"]:
             print(f"│ {frame['function']}:{line_number(frame['line'])}")
-    print("╰──────────────────────────────────────────────────────────────────────╯")
+    print(f"{'╰':─<70}")
 
 
 def note_watch(before, after):
@@ -204,9 +204,9 @@ else:
             "before_value": None,
             "after_value": None,
         }
-        print("╭─ SERICITE DEBUGGER ────────────────────────────────────────────────╮")
-        print("│ One Sericite program debugging another.                           │")
-        print("╰──────────────────────────────────────────────────────────────────────╯")
+        print(f"╭─ {'SERICITE DEBUGGER ':─<67}")
+        print("│ One Sericite program debugging another.")
+        print(f"{'╰':─<70}")
         print_help()
         snapshot = sub.snapshot()
         render(snapshot, source_lines)

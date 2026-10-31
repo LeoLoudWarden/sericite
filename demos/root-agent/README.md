@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md)
 
-This demo is a multi-layer LLM application driven by a root Sericite program. **Root runs the outer LLM session**: it builds messages/tools, reads the outer prompt, sends requests, and dispatches tools. Python only supplies two host functions, `llm_chat` / `http_get`, plus the initial root VFS files through `configure()`.
+This demo is a multi-layer LLM application driven by a root Sericite program. **Root runs the outer LLM session**: it builds messages/tools, reads the outer prompt, sends requests, and dispatches tools. Python supplies the model communication functions `llm_chat` / `http_get`, a `terminal_style` display helper, and the initial root VFS files through `configure()`.
 
 ## Runtime structure
 
@@ -55,7 +55,7 @@ The stub follows a fixed script as the outer and inner models, covering the comp
 
 ## Live display and logs
 
-Default stdout shows only the execution story: one heading per outer round, compact tool summaries, and live `vm 1` output. It does not dump file contents or source, or print a second copy of the output returned by `sericite_exec`. Display summaries never truncate the actual tool arguments or results sent to the model.
+Default stdout shows only the execution story: one heading per outer round, compact tool summaries, and live `VM 1` output. It does not dump file contents or source, or print a second copy of the output returned by `sericite_exec`. Display summaries never truncate the actual tool arguments or results sent to the model.
 
 ### Tool-result truncation
 
@@ -68,10 +68,11 @@ Default stdout shows only the execution story: one heading per outer round, comp
 
 - Root `print()` output is forwarded live by the CLI.
 - The first-level VM forwards its own output through root with an `output_writer`, so model-generated progress appears during execution.
-- By default, output is printed as readable lines with a `vm 1` prefix.
+- `ROOT`, `MODEL`, `VM 1`, `ROUND`, and `FINAL` use a consistent eight-column prefix and vertical separator instead of boxes that long lines would break; multiline content is prefixed line by line.
+- In an interactive terminal, each source has a distinct bold color. Redirection disables color automatically, and `NO_COLOR` disables it explicitly.
 - Each `sericite_exec` shows at most its first `MAX_LIVE_LINES` (8) lines; when folding occurs, it ends with a size summary and the last `LIVE_TAIL_LINES` (3) lines.
-- Lines longer than `MAX_LIVE_LINE_CHARS` (240) characters are shortened.
-- Append `--verbose` after `agent.sericite` to show complete output and full tool arguments/results; tool arguments and results use `repr`.
+- `MODEL` responses, the `FINAL` response, and root result text are always shown in full. Folding applies only to live VM output, where lines longer than `MAX_LIVE_LINE_CHARS` (240) characters are also shortened by default.
+- Append `--verbose` after `agent.sericite` to show full tool arguments/results and disable live-output folding; tool arguments and results use `repr`.
 - Neither display path changes the raw tool results sent back to the model.
 - The first-level VM keeps stdout buffered because `sub.exec()` still returns that text as the `sericite_exec` tool result; see the [VM reference](../../docs/vm-reference.md) §4 for buffering semantics.
 
@@ -99,6 +100,8 @@ Set `LOG_LLM = True` to print one summary line per call, containing:
 
 Set `LOG_LLM_FULL_JSON = True` as well to include complete request/response JSON. Logs flush immediately and never record Authorization headers or API keys.
 
+Diagnostic lines use the same fixed-width prefix style as stdout, for example `LLM     │ call #18 still waiting · 15s`. The prefix is bold red when stderr is an interactive terminal; redirection or `NO_COLOR` disables color.
+
 Slow requests and network problems remain visible even when low-level logging is off:
 
 - a waiting notice appears every 15 seconds for the first minute, then once per minute;
@@ -110,7 +113,7 @@ Full JSON contains prompts, model-generated code, and tool results; review it be
 ## Files and responsibilities
 
 - `agent.sericite`: the only Sericite application body, namely the root environment. It implements the outer session loop, dispatches four model tools (`sericite_exec` / `file_read` / `file_write` / `file_list`), and maintains the `/control` versus `/workspace` boundary.
-- `capabilities.py`: trusted host adapter. It loads the environment, performs HTTP requests and protocol normalization, and returns `functions`, a demo-specific instruction budget, and initial root VFS files through `configure()`. It has no application session loop.
+- `capabilities.py`: trusted host adapter. It loads the environment, performs HTTP requests and protocol normalization, handles terminal colors, and returns `functions`, a demo-specific instruction budget, and initial root VFS files through `configure()`. It has no application session loop.
 - `prompt_outer.txt` / `prompt_inner.txt`: prompts for the two model sessions. The outer prompt stays in root control; the inner prompt is seeded into the model workspace and is not told to grant recursive capabilities onward.
 - `mock_server.py`: local OpenAI-compatible stub.
 - `.env.example`: environment template.

@@ -127,7 +127,7 @@ The outer debugger eventually sees the tail of the inner debugger's isolated std
 
 ```text
 │ │ hello Sericite
-│ ╰──────────────────────────────────────────────────────────────────────╯
+│ ╰─────────────────────────────────────────────────────────────────────
 │ session ended · done
 session ended · done
 ```
