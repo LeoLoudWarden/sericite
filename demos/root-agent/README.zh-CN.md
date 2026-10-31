@@ -51,7 +51,7 @@ API_URL=http://127.0.0.1:8399/v1/chat/completions API_KEY=mock API_MODEL=mock \
   demos/root-agent/agent.sericite
 ```
 
-桩按固定脚本扮演外层和内部模型，覆盖“root → 子 VM 内部会话 → 更深 VM 练习”的完整链。它证明链路可重复运行，不证明任意真实模型都能生成等价代码。`tests/test_demos.py` 会在临时端口自动执行这条链。
+桩按固定脚本扮演外层和内部模型，覆盖"root → 子 VM 内部会话 → 更深 VM 练习"的完整链。它证明链路可重复运行，不证明任意真实模型都能生成等价代码。`tests/test_demos.py` 会在临时端口自动执行这条链。
 
 ## 实时展示与日志
 

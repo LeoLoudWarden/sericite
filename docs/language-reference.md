@@ -22,6 +22,7 @@ Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user
 "=" * 20
 """line1
 line2""" # multi-line
+f"{1/3:.2f}" # f-string
 [1, 2] + [3] # list concatenation
 not x        # logical not; and / or short-circuit
 1 < 2        # comparison: == != < <= > >= (no chaining like a < b < c)
