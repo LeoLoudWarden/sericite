@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-这个 demo 是一个由 root Sericite 程序驱动的多层 LLM 应用。**root 自己运行外层 LLM 会话**：构建 messages/tools、读取外层提示词、发送请求并分发工具。Python 只通过 `configure()` 提供两个宿主函数 `llm_chat` / `http_get`，以及 root VFS 的初始文件。
+这个 demo 是一个由 root Sericite 程序驱动的多层 LLM 应用。**root 自己运行外层 LLM 会话**：构建 messages/tools、读取外层提示词、发送请求并分发工具。Python 通过 `configure()` 提供模型通信函数 `llm_chat` / `http_get`、终端着色辅助函数 `terminal_style`，以及 root VFS 的初始文件。
 
 ## 运行结构
 
@@ -55,7 +55,7 @@ API_URL=http://127.0.0.1:8399/v1/chat/completions API_KEY=mock API_MODEL=mock \
 
 ## 实时展示与日志
 
-默认 stdout 只展示执行过程：每个外层轮次一个标题、紧凑的工具摘要，以及带 `vm 1` 前缀的实时输出。它不倾倒文件内容或源码，也不重复打印 `sericite_exec` 返回的同一段输出；展示摘要不会截断实际发给模型的工具参数或结果。
+默认 stdout 只展示执行过程：每个外层轮次一个标题、紧凑的工具摘要，以及带 `VM 1` 前缀的实时输出。它不倾倒文件内容或源码，也不重复打印 `sericite_exec` 返回的同一段输出；展示摘要不会截断实际发给模型的工具参数或结果。
 
 ### 工具结果截断
 
@@ -68,10 +68,11 @@ API_URL=http://127.0.0.1:8399/v1/chat/completions API_KEY=mock API_MODEL=mock \
 
 - root 的 `print()` 由 CLI 实时转发到 stdout。
 - 第一层 VM 通过 `output_writer` 把自己的输出经 root 转发，模型生成的进度在执行期间即可见。
-- 默认按可读行显示，并加 `vm 1` 前缀。
+- `ROOT`、`MODEL`、`VM 1`、`ROUND`、`FINAL` 使用统一的 8 列前缀和竖线分隔，不使用会受长行影响的线框；多行内容逐行添加前缀。
+- 在交互终端中，不同来源的前缀以不同颜色粗体显示；stdout 重定向时自动禁用颜色，设置 `NO_COLOR` 也可禁用。
 - 每次 `sericite_exec` 最多直播前 `MAX_LIVE_LINES`（8）行；发生折叠时，末尾给出总量摘要和最后 `LIVE_TAIL_LINES`（3）行。
-- 单行超过 `MAX_LIVE_LINE_CHARS`（240）字符会缩短。
-- 在 `agent.sericite` 后追加 `--verbose` 可显示完整输出和工具参数/结果；工具参数和结果使用 `repr`。
+- `MODEL` 正文、`FINAL` 最终回答和 root 结果文本始终完整显示。折叠只作用于 VM 实时输出；默认展示中只有这类实时输出的单行超过 `MAX_LIVE_LINE_CHARS`（240）字符才会缩短。
+- 在 `agent.sericite` 后追加 `--verbose` 可显示完整工具参数/结果并关闭实时输出折叠；工具参数和结果使用 `repr`。
 - 两种展示都不改变传回模型的原始工具结果。
 - 第一层 stdout 仍保留缓冲，因为 `sub.exec()` 还要把同一段文本作为 `sericite_exec` 的工具结果返回；缓冲语义见 [虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
 
@@ -99,6 +100,8 @@ LOG_LLM_FULL_JSON = False
 
 再把 `LOG_LLM_FULL_JSON` 改为 `True`，可额外输出完整的请求/响应 JSON。日志立即 flush，且不会记录 Authorization 头或 API key。
 
+诊断行使用与 stdout 一致的固定宽度前缀，例如 `LLM     │ call #18 still waiting · 15s`。stderr 是交互终端时前缀显示为粗体红色；重定向或设置 `NO_COLOR` 时不带颜色。
+
 即使关闭底层日志，慢请求和网络问题仍然可见：
 
 - 第一分钟每 15 秒显示一次等待提示，之后每分钟一次；
@@ -110,7 +113,7 @@ LOG_LLM_FULL_JSON = False
 ## 文件与职责
 
 - `agent.sericite`：唯一的 Sericite 应用主体，即 root 环境。它实现外层会话循环、四个模型工具（`sericite_exec` / `file_read` / `file_write` / `file_list`）的分发，以及 `/control` 与 `/workspace` 的边界。
-- `capabilities.py`：可信宿主适配层。它读取环境、发起 HTTP 请求并规整协议，通过 `configure()` 返回 `functions`、demo 专用指令预算和 root VFS 初始文件。它不包含应用会话循环。
+- `capabilities.py`：可信宿主适配层。它读取环境、发起 HTTP 请求并规整协议、处理终端颜色，通过 `configure()` 返回 `functions`、demo 专用指令预算和 root VFS 初始文件。它不包含应用会话循环。
 - `prompt_outer.txt` / `prompt_inner.txt`：两层模型提示词。外层提示词只放 root 控制区；内层提示词预置到模型工作区，且不被告知继续授予递归能力。
 - `mock_server.py`：本地 OpenAI 兼容桩。
 - `.env.example`：环境变量模板。
