@@ -4,7 +4,7 @@
 
 This is an interactive debugger written in Sericite. It accepts **Sericite source code, that program's input, and its target argv**, creates a child VM from the source, and drives it by statement or instruction; it does not load preset target files.
 
-Any source can be the target, including this debugger itself. The complete self-reference form is **D(D(P))**; see “Self-reference” below for the walkthrough.
+Any source can be the target, including this debugger itself. The complete self-reference form is **D(D(P))**; see "Self-reference" below for the walkthrough.
 
 ## Input protocol
 

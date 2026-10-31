@@ -46,7 +46,7 @@
 - 修复命令入口后的首个 `--` 被误删的问题；文件、命令和 stdin 模式现在都将入口后的分隔符保留在脚本 `argv` 中，入口前用于结束 CLI 选项的分隔符仍由解析器消费。
 - 主源文件、include 和 stdin 源码现在接受文本开头的一个 UTF-8 BOM，去除后不改变诊断行列号；额外 BOM 和非法 UTF-8 仍按原有错误路径报告。
 - 下游 stdout 管道关闭时，CLI 改为丢弃后续输出并安静退出 0，不再产生脚本 `internal_error`、退出码 120 或解释器退出阶段的 BrokenPipe 诊断；正常实时 flush 行为不变。
-- CLI stdin EOF 现在抛出真实、可捕获的 `input_error`，支持“读到 EOF 为止”的循环；未捕获时使用真实调用栈，REPL 打印后继续。嵌入 provider 的 `None`/`EOFError`/`StopIteration` 暂停契约及子 VM 的 `feed_input()` 恢复行为不变，并移除原先仅用于显示的合成输入错误双轨。
+- CLI stdin EOF 现在抛出真实、可捕获的 `input_error`，支持"读到 EOF 为止"的循环；未捕获时使用真实调用栈，REPL 打印后继续。嵌入 provider 的 `None`/`EOFError`/`StopIteration` 暂停契约及子 VM 的 `feed_input()` 恢复行为不变，并移除原先仅用于显示的合成输入错误双轨。
 
 ## [0.10.2] - 2026-10-30
 
