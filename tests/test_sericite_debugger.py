@@ -56,7 +56,15 @@ class SericiteDebuggerDemoTests(unittest.TestCase):
     def run_debugger(
         self, source, debugger_input="", target_input=None, target_args=None
     ):
-        command = [sys.executable, "-m", "sericite", str(DEBUGGER), source]
+        command = [
+            sys.executable,
+            "-X",
+            "utf8",
+            "-m",
+            "sericite",
+            str(DEBUGGER),
+            source,
+        ]
         if target_input is not None or target_args:
             command.append(target_input or "")
         if target_args:
@@ -66,6 +74,7 @@ class SericiteDebuggerDemoTests(unittest.TestCase):
             input=debugger_input,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
             timeout=60,
             check=False,

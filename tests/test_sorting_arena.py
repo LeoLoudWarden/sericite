@@ -12,6 +12,8 @@ class SortingArenaDemoTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
+                "-X",
+                "utf8",
                 "-m",
                 "sericite",
                 "--capabilities",
@@ -20,6 +22,7 @@ class SortingArenaDemoTests(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
             timeout=60,
             check=False,

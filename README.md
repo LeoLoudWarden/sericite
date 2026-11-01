@@ -37,6 +37,8 @@ sericite                       # start the REPL; EOF exits
 sericite -c 'print(argv)' first second
 ```
 
+In a non-UTF-8 Windows environment, set `$env:PYTHONUTF8 = "1"` in PowerShell before running the commands above.
+
 For source reuse and root-application capabilities:
 
 ```bash

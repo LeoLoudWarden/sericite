@@ -183,6 +183,8 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 
 ## 5. 输入、输出与退出码
 
+CLI 标准流沿用 Python 宿主环境的编码，不主动重新配置。Windows 等非 UTF-8 环境可在当前 PowerShell 会话设置 `$env:PYTHONUTF8 = "1"`，随后以 UTF-8 标准流运行相同的 CLI 命令。该设置只配置宿主环境；源文件仍按第 2 节的 UTF-8 合同读取，嵌入 API 的字符串、虚拟 IO 与回调接口不变。
+
 - 脚本 `input()` 从宿主 stdin 逐行读取；EOF 抛出可捕获的 `input_error`。一次性模式下未捕获时打印调用栈并以 1 退出；REPL 中未捕获时打印错误并继续会话。
 - `sericite -` 会消费全部 stdin 作为源码，因此运行时 `input()` 会遇到已关闭的输入流并抛出 `input_error`。
 - root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。

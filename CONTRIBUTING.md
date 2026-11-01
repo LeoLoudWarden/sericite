@@ -20,6 +20,8 @@ uv run python -m unittest discover -s tests
 
 lint 与格式检查由 CI 强制执行（ruff，配置见 `pyproject.toml`）。仓库采用 `src/` 布局，直接运行 `python -m unittest` 前需要先安装本项目（`uv sync` 会自动处理）。
 
+CI 只在 Ubuntu 上运行。CLI 测试的子进程统一使用 `-X utf8` 和显式 UTF-8 管道，避免依赖开发者终端的 locale；在 Windows 等其他系统本地验证时仍运行上述同一组命令，不维护单独的测试流程。
+
 ## 发版
 
 1. 更新 `src/sericite/__init__.py` 的 `__version__`。

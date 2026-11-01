@@ -183,6 +183,8 @@ A capability file cannot take over the session loop or VM driving. Use the Pytho
 
 ## 5. Input, output, and exit codes
 
+The CLI standard streams inherit the host Python environment's encoding rather than being reconfigured. In a non-UTF-8 environment such as Windows, you can set `$env:PYTHONUTF8 = "1"` in the current PowerShell session and then run the same CLI commands with UTF-8 standard streams. This setting only configures the host environment: source files still follow the UTF-8 contract in §2, and the embedding API's strings, virtual IO, and callback interfaces are unchanged.
+
 - Script `input()` reads host stdin line by line; EOF raises a catchable `input_error`. If uncaught in one-shot mode, the traceback is printed and the process exits with status 1; if uncaught in the REPL, the error is printed and the session continues.
 - `sericite -` consumes all stdin as source, so runtime `input()` sees the closed stream and raises `input_error`.
 - Every root `print()` writes immediately to host stdout and flushes, including unterminated output with `end=""`; there is no need to wait for program exit. The CLI does not retain a duplicate root stdout buffer. Child output remains explicit: a parent obtains it through APIs such as `sub.run()` (see the [VM reference](vm-reference.md) §4 for output forwarding).
