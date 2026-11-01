@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-01
+
+### Fixed
+- Windows 下游 stdout 以 `OSError(EINVAL)` 报告关闭时，CLI 现在与 `BrokenPipeError` 一样停止执行并安静退出 0；其他宿主 IO 异常处理不变。
+- CLI 测试的子进程统一使用 UTF-8，普通子进程调用增加超时；修正非 UTF-8 环境下的 BOM 输入及 Windows 路径 argv 断言。
+
+### Docs
+- 说明非 UTF-8 终端可通过 `PYTHONUTF8=1` 使用相同的 CLI 命令与标准流合同；嵌入式虚拟 IO 与回调接口不变，CI 继续只在 Ubuntu 上运行。
+
 ## [0.11.0] - 2026-10-31
 
 ### Added

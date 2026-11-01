@@ -43,6 +43,8 @@ class RootAgentDemoTests(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
+                "-X",
+                "utf8",
                 "-m",
                 "sericite",
                 "--capabilities",
@@ -52,6 +54,7 @@ class RootAgentDemoTests(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
             env=env,
             timeout=60,

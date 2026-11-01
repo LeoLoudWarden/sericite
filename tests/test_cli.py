@@ -14,11 +14,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 class CliTests(unittest.TestCase):
     def run_cli(self, *args: object, stdin: str = "") -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, "-m", "sericite", *(str(arg) for arg in args)],
+            [
+                sys.executable,
+                "-X",
+                "utf8",
+                "-m",
+                "sericite",
+                *(str(arg) for arg in args),
+            ],
             input=stdin,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
+            timeout=30,
             check=False,
         )
 
@@ -123,16 +132,16 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 result.stdout,
-                f"['{script}', 'first', '', '--flag', '世界']\n",
+                f"{[str(script), 'first', '', '--flag', '世界']!r}\n",
             )
 
             result = self.run_cli(script, "--", "a")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, f"['{script}', '--', 'a']\n")
+            self.assertEqual(result.stdout, f"{[str(script), '--', 'a']!r}\n")
 
             result = self.run_cli("--", script, "a")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, f"['{script}', 'a']\n")
+            self.assertEqual(result.stdout, f"{[str(script), 'a']!r}\n")
 
         result = self.run_cli("-c", "print(argv)", "first", "--flag", "世界")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -650,6 +659,8 @@ class CliStreamingTests(unittest.TestCase):
         process = subprocess.Popen(
             [
                 sys.executable,
+                "-X",
+                "utf8",
                 "-m",
                 "sericite",
                 "-c",
@@ -659,6 +670,7 @@ class CliStreamingTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
         )
         try:
@@ -682,6 +694,8 @@ class CliStreamingTests(unittest.TestCase):
         process = subprocess.Popen(
             [
                 sys.executable,
+                "-X",
+                "utf8",
                 "-m",
                 "sericite",
                 "-c",
@@ -690,6 +704,7 @@ class CliStreamingTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
         )
         try:
@@ -706,10 +721,11 @@ class CliStreamingTests(unittest.TestCase):
 
     def close_stdout_after_output(self, args, *, lines=3, timeout=3):
         process = subprocess.Popen(
-            [sys.executable, "-m", "sericite", *args],
+            [sys.executable, "-X", "utf8", "-m", "sericite", *args],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             cwd=PROJECT_ROOT,
         )
         try:
@@ -818,6 +834,53 @@ class CliStreamingTests(unittest.TestCase):
                 patch("sys.stdin", StringIO("")),
             ):
                 self.assertEqual(main(args), 0)
+
+    def test_windows_einvalid_stdout_closure_returns_zero(self):
+        import errno
+        from unittest.mock import patch
+
+        from sericite.cli import main
+
+        class ClosedStdout:
+            def __init__(self, sink):
+                self.sink = sink
+
+            def write(self, value):
+                raise OSError(errno.EINVAL, "Invalid argument")
+
+            def flush(self):
+                pass
+
+            def fileno(self):
+                return self.sink.fileno()
+
+        with (
+            tempfile.TemporaryFile() as sink,
+            patch("sys.stdout", ClosedStdout(sink)),
+            patch("sericite.cli._hostio.sys.platform", "win32"),
+        ):
+            self.assertEqual(main(["--version"]), 0)
+
+    def test_windows_stdout_other_os_errors_are_not_silenced(self):
+        import errno
+        from unittest.mock import patch
+
+        from sericite.cli import main
+
+        class FailingStdout:
+            def write(self, value):
+                raise OSError(errno.EIO, "I/O error")
+
+            def flush(self):
+                pass
+
+        with (
+            patch("sys.stdout", FailingStdout()),
+            patch("sericite.cli._hostio.sys.platform", "win32"),
+            self.assertRaises(OSError) as caught,
+        ):
+            main(["--version"])
+        self.assertEqual(caught.exception.errno, errno.EIO)
 
 
 if __name__ == "__main__":

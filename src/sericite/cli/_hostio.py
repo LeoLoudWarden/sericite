@@ -1,3 +1,4 @@
+import errno
 import os
 import sys
 
@@ -19,7 +20,11 @@ def _write_stdout(value: str) -> None:
     try:
         sys.stdout.write(value)
         sys.stdout.flush()
-    except BrokenPipeError:
+    except OSError as exc:
+        if not isinstance(exc, BrokenPipeError) and (
+            sys.platform != "win32" or exc.errno != errno.EINVAL
+        ):
+            raise
         devnull_fd = os.open(os.devnull, os.O_WRONLY)
         try:
             os.dup2(devnull_fd, sys.stdout.fileno())
