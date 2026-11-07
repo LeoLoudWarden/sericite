@@ -144,15 +144,15 @@ When adding an opcode, native, VM method, or cross-boundary channel, answer thes
 
 ## 6. Measured performance
 
-Latest recorded runs use an Intel i3-9100 on Linux x86_64 with CPython 3.13.13 (2026-10-26). All values are medians.
+Latest recorded runs use an Intel i3-9100 on Linux x86_64 with CPython 3.13.13 (2026-11-08). All values are medians.
 
 | Operation | Measured cost | Reproduction |
 |---|---:|---|
-| Create a child VM inside a script | ~88 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| Create and run a root VM from the host | ~61 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| Execute a representative counting loop with `run()` | ~0.82 µs/instruction | [instruction.py](../benchmarks/instruction.py) |
-| Drive the same loop with `step_instruction()` | ~2.60 µs/instruction (3.19× `run()`) | [debugging.py](../benchmarks/debugging.py) |
-| Drive the same loop with `step()` | ~6.32 µs/step call (~1.40 µs/instruction) | [debugging.py](../benchmarks/debugging.py) |
+| Create a child VM inside a script | ~105 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| Create and run a root VM from the host | ~73 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| Execute a representative counting loop with `run()` | ~0.93 µs/instruction | [instruction.py](../benchmarks/instruction.py) |
+| Drive the same loop with `step_instruction()` | ~3.67 µs/instruction (3.89× `run()`) | [debugging.py](../benchmarks/debugging.py) |
+| Drive the same loop with `step()` | ~7.84 µs/step call (~1.74 µs/instruction) | [debugging.py](../benchmarks/debugging.py) |
 
 Caveats:
 

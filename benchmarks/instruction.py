@@ -18,7 +18,7 @@ Recorded run (2026-10-23, Intel i3-9100, CPython 3.13.13, Linux x86_64;
 
     run                ~0.65 µs/instruction
 
-For the current cross-benchmark table (2026-10-26), see docs/architecture.md §6.
+For the current cross-benchmark table (2026-11-08), see docs/architecture.md §6.
 """
 
 from __future__ import annotations

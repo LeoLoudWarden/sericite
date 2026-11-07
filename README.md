@@ -79,7 +79,7 @@ A VM is a cheap, self-contained workspace:
 - its parent can preset files, feed input, single-step it statement by statement or instruction by instruction, snapshot its state, or terminate it;
 - it can create its own child VMs — isolation is recursive, because untrusted code is.
 
-Cheap is measured, not just claimed: in the current Python prototype, creating a child VM from inside a script costs ~0.088 ms — the same order as spawning a thread, one to two orders of magnitude below a process. More measurements and reproduction scripts are in the [architecture notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) §6 and [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks).
+Cheap is measured, not just claimed: in the current Python prototype, creating a child VM from inside a script costs ~0.105 ms — the same order as spawning a thread, one to two orders of magnitude below a process. More measurements and reproduction scripts are in the [architecture notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) §6 and [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks).
 
 ## Records: type names are compile-time error labels
 
