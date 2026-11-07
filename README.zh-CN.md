@@ -79,7 +79,7 @@ print(vm.run(), end="")    # 42
 - 父级可以预置文件、喂输入、逐语句或逐指令单步、查看快照、随时终止；
 - 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
 
-廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.088 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
+廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.105 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
 
 ## record：类型名只是编译期的报错标签
 

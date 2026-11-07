@@ -144,15 +144,15 @@
 
 ## 6. 实测性能
 
-以下最近一次实测均使用 Intel i3-9100、Linux x86_64、CPython 3.13.13（2026-10-26）。所有数值均为多轮测试的中位数。
+以下最近一次实测均使用 Intel i3-9100、Linux x86_64、CPython 3.13.13（2026-11-08）。所有数值均为多轮测试的中位数。
 
 | 操作 | 实测成本 | 复现脚本 |
 |---|---:|---|
-| 脚本内创建子 VM | ~88 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| 宿主侧创建并运行 root VM | ~61 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
-| 用 `run()` 执行代表性计数循环 | ~0.82 µs/指令 | [instruction.py](../benchmarks/instruction.py) |
-| 用 `step_instruction()` 执行同一循环 | ~2.60 µs/指令（`run()` 的 3.19 倍） | [debugging.py](../benchmarks/debugging.py) |
-| 用 `step()` 执行同一循环 | ~6.32 µs/次调用（约 1.40 µs/指令） | [debugging.py](../benchmarks/debugging.py) |
+| 脚本内创建子 VM | ~105 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| 宿主侧创建并运行 root VM | ~73 µs/VM | [vm_creation.py](../benchmarks/vm_creation.py) |
+| 用 `run()` 执行代表性计数循环 | ~0.93 µs/指令 | [instruction.py](../benchmarks/instruction.py) |
+| 用 `step_instruction()` 执行同一循环 | ~3.67 µs/指令（`run()` 的 3.89 倍） | [debugging.py](../benchmarks/debugging.py) |
+| 用 `step()` 执行同一循环 | ~7.84 µs/次调用（约 1.74 µs/指令） | [debugging.py](../benchmarks/debugging.py) |
 
 补充限定：
 
