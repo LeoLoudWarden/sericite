@@ -84,6 +84,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. Only structure crosses VMs: records/schemas carry no names, and schema equality compares the structure of field sets and contracts; class names, annotation names, and other labels are compile-time, scope-local diagnostic data that expires at scope exit.
   - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear. Foreign `name_error` uses a generic undefined-name message without the definition-side local, closure, or module variable name;
   - c. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values. Design rationale is in [design](design.md) §3.4; script-visible semantics in the [language reference](language-reference.md) §7.
+17.
+  - a. The engine's VM index and permanent accounting structures must not own a `VMContext`; handles and execution environments retain it, and live descendants retain their ancestors' accounting chain through their routes.
+  - b. An unreachable context is eventually unregistered by Python GC through a finalizer; self-references and cross-VM cycles must not become permanent leaks. Finalizers must not execute scripts, FFI, or output writers.
+  - c. `dispose()` can unregister a target subtree in any state; a running target stops after the current instruction exits safely, without executing the target script's `finally` blocks.
 
 ## 4. Script interface
 
@@ -98,7 +102,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 ### 5.1 Basic rules
 
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
-- The cumulative quota fields accept `-1` for no local cap; structural fields always remain finite.
+- Only cumulative quota fields accept `-1` for no local cap; the live-count fields `max_total_vms` and `max_descendant_vms`, like other structural fields, always remain finite.
 - Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any finite ring fails. Unlimited accounts still accumulate their ledgers.
 - The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
@@ -123,6 +127,8 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 - Shared ancestors are charged once per causal charge, with no special cross-sibling delta mirroring.
 - VM-method execution is normally jointly constrained by target and caller; result ownership enters only the actual caller's route.
 - Exception: read-only handle operations on a terminal target execute no target code and are charged only to the caller; write and driving operations do not use this exception.
+- `dispose()` is another caller-only management operation: traversal, unregistration, and temporary-container costs are prepaid from the live subtree size, never charged to the target being destroyed. Internal nodes do not each update every ancestor during a cascade; the whole subtree is unregistered first, then external ancestor counts are refunded once.
+- Calling an escaped function or native whose home has been disposed is rejected with `runtime_error`. A missing accounting ancestor instead means an internal invariant is broken and must raise an explicit `internal_error`; a missing node must never be treated as the end of a route.
 - A child VM created through a granted function is an empty world attached causally under its initiator, with quotas tightened elementwise across home and caller.
 
 ### 5.5 Checklist for new language features
@@ -176,7 +182,7 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 - `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules (invariant 10).
 - Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
-- A VM's execution context is retained after reaching a terminal state for debug snapshots and further `exec` deliveries; release it with `dispose()` (contract in the [VM reference](vm-reference.md) §3).
+- Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in the [VM reference](vm-reference.md) §3).
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
 - Cross-VM calls charge shared ancestors once; the full charging rules are in section 5.4.
 

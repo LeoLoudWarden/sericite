@@ -31,15 +31,22 @@ VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhau
 
 `terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作——`done`/`error` 等终态 VM 仍可被 `exec` 投递。
 
-VM 终态后，引擎仍保留上下文供调试和后续 `exec` 投递，直到显式 `dispose()`。
+VM 上下文是资源，VM 句柄是指向它的能力值。只要句柄或授予环境仍可达，上下文就会保留；终态 VM 因此仍能用于调试快照和后续 `exec` 投递。
 
-`dispose()` 只能释放已终态且没有存活后代的 VM，因此必须按子先父后的顺序操作。它会：
+当一台 VM 及其所有可达对象构成不可达的引用岛时（包括经授予函数形成的自引用或跨 VM 循环），垃圾回收会最终自动销毁它。自动回收不保证在某个语句或作用域边界立即发生；需要确定释放时点时仍应显式调用 `dispose()`。
 
-- 删除该 VM 的帧、IO/VFS、授予环境与计费路由；
+`dispose()` 可以销毁任意状态的 VM，包括正在运行或等待输入的 VM；它会终止并注销目标及其所有存活后代，不要求子先父后。它会：
+
+- 立即释放目标及其所有存活后代占用的 `max_total_vms` 槽位；
+- 让正在运行的目标在当前指令安全退出后停止，不执行目标脚本的 `finally`；
 - 幂等——重复释放是空操作；
 - 使句柄失效——已释放句柄上的其他方法以 `runtime_error` 失败。
 
-释放不退还配额：`vm_id` 永不复用，父级账本、`child_count`、`max_child_vms` 与引擎累计的 `max_total_vms` 均不变。
+函数的 home 是它所属世界所在的那台 VM。该 VM 被销毁后，从它逃逸到其他子树的函数——包括授予给它的宿主函数——也会失效；调用时以可捕获的 `runtime_error` 失败，不会暴露宿主内部错误。授予语义见第 6 节；内部规则见[架构说明](architecture.zh-CN.md)第 5.4 节。
+
+脚本内 `dispose()` 只计入实际 caller、不计入待销毁 target，配额不足时在变更前失败；完整计费模型见[架构说明](architecture.zh-CN.md)第 5.4 节。
+
+`vm_id` 永不复用，父级的累计指令/内存账本与 `child_count` 也不会退还。
 
 ## 4. 驱动方法
 
@@ -53,7 +60,7 @@ VM 终态后，引擎仍保留上下文供调试和后续 `exec` 投递，直到
 | `snapshot() -> dict` | 返回当前安全快照，不推进执行 |
 | `stdout() -> str` | 返回当前 stdout |
 | `terminate()` | 终止 VM；生效状态与空操作语义见第 3 节 |
-| `dispose()` | 显式释放已终态且没有存活后代的 VM；见第 3 节 |
+| `dispose()` | 强制销毁任意状态的 VM 及其存活后代；见第 3 节 |
 | `read_file(path) -> str` | 读取该 VM 的文本文件 |
 | `write_file(path, text)` | 写入该 VM 的文本文件 |
 | `list_dir(path) -> list[str]` | 列出目录的直接子项并排序 |
@@ -147,22 +154,24 @@ writer：
 | `max_instructions` | 1,000,000 | 指令及折算工作量上限 |
 | `max_output_bytes` | 1,048,576 | stdout 的 UTF-8 字节上限 |
 | `max_frames` | 100 | 调用帧上限 |
-| `max_child_vms` | 100 | 单个 VM 累计创建的直接子 VM 上限 |
 | `max_list_size` | 100,000 | 单列表槽位上限 |
 | `max_dict_size` | 100,000 | 单字典项数上限 |
 | `max_string_bytes` | 1,048,576 | 单字符串上限 |
 | `max_int_bits` | 4096 | 整数位宽上限 |
 | `max_total_bytes` | 67,108,864 | 近似内存总账高水位 |
-| `max_total_vms` | 1000 | 引擎累计成功创建的 VM 数上限，包括已释放 VM |
+| `max_total_vms` | 1000 | 引擎同时存活且尚未销毁的 VM 数上限，包括 root；销毁后释放槽位 |
+| `max_descendant_vms` | 1000 | 单台 VM 的整棵子树中同时存活的后代数上限，不含自身；销毁后释放槽位 |
 | `max_vm_depth` | 8 | VM 嵌套深度上限 |
 | `max_fs_files` | 1000 | 单 VM 文件数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 单文件 UTF-8 字节上限 |
 
 `max_string_bytes` 因历史原因以此命名，但实际按单字符串的字符数计算；文件和输出配额按 UTF-8 字节计算。
 
-累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes`、`max_child_vms`、`max_total_vms` 接受用 `-1` 表示不设上限。
+只有累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes` 接受用 `-1` 表示不设上限。包括存活数量字段 `max_total_vms`、`max_descendant_vms` 在内的其余字段都是结构性配额，必须是非负有限整数；所有字段都拒绝其他负数和非整数值。
 
-结构性字段必须是非负有限整数；累计字段额外接受 `-1`。除此之外的负数和非整数值在所有字段上都会被拒绝。
+创建 VM 时会检查所有祖先的 `max_descendant_vms`，因此无论按何种树形结构创建子 VM，都无法绕过某一层限制。不可信子 VM 达到自己的后代上限后以 `resource_exhausted` 终止，仍存活的父级可以捕获；`max_total_vms` 继续作为整个引擎的全局防线。
+
+直接子级配额 `max_child_vms` 已移除。需要禁止某台 VM 创建任何后代时，将它自己的 `max_descendant_vms` 设为 `0`；这不影响父级创建该 VM。
 
 脚本内创建子 VM 时，`VM()` 的配额关键字参数与上表一一对应，只能收紧不能放宽。请求值与继承上限合并时：
 

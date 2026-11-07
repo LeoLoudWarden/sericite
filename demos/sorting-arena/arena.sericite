@@ -90,7 +90,7 @@ def run_case(source, input_text):
         max_instructions=CASE_INSTRUCTION_LIMIT,
         max_output_bytes=CASE_OUTPUT_LIMIT,
         max_frames=64,
-        max_child_vms=0,
+        max_descendant_vms=0,
         max_list_size=4096,
         max_dict_size=256,
         max_string_bytes=8192,
@@ -112,7 +112,6 @@ def run_case(source, input_text):
     except ... as e:
         result["error"] = e.kind
     finally:
-        sub.terminate()
         sub.dispose()
     return result
 

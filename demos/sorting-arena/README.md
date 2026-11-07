@@ -76,7 +76,7 @@ The main per-case limits are (see `run_case()` in `arena.sericite` for the full 
 |---|---:|---|
 | `max_instructions` | 120,000 | Bounds the instruction count of an infinite loop |
 | `max_output_bytes` | 512 | Stops output floods |
-| `max_child_vms` | 0 | Prevents entries from spawning VMs |
+| `max_descendant_vms` | 0 | Prevents entries from creating any descendant VMs |
 | `max_frames` | 64 | Bounds call depth |
 | `max_total_bytes` | 1 MiB (approximate accounting) | Bounds memory growth |
 

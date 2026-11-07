@@ -339,6 +339,8 @@ finally:
     sub.dispose()
 ```
 
+VM 可以被自动回收，但使用 `dispose()` 手动清理是更好的做法。
+
 ## 9. 明确不能写（编译期直接拒绝）
 
 - `import` 与 `del`

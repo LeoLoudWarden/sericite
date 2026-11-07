@@ -17,6 +17,12 @@ from ._values import _MAX_RENDER_NODES, _estimate_size, _schema_repr
 
 
 class _EngineHostDebug:
+    def _dispose_shape(self, handle: VMHandle) -> tuple[int, int]:
+        target = handle._engine._contexts.get(handle._vm_id)
+        if target is None:
+            return 0, 0
+        return target.live_descendant_count + 1, len(target.ancestor_ids)
+
     def _vm_method_work(
         self,
         handle: VMHandle,
@@ -25,7 +31,8 @@ class _EngineHostDebug:
         kwargs: dict[str, object],
     ) -> int:
         if attr == "dispose":
-            return 0
+            size, ancestor_depth = self._dispose_shape(handle)
+            return 2 * size + ancestor_depth
         fs = self._context(handle).fs
         if attr == "exec":
             source = args[0] if args else kwargs.get("source")
@@ -65,7 +72,8 @@ class _EngineHostDebug:
         kwargs: dict[str, object],
     ) -> int | AllocationPermit:
         if attr == "dispose":
-            return 0
+            size, _ = self._dispose_shape(handle)
+            return 32 * size
         context = kwargs["_caller_context"]
         target = self._context(handle)
         if attr == "run":

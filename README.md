@@ -75,7 +75,7 @@ A VM is a cheap, self-contained workspace:
 
 - it cannot see its parent's variables, files, or handles, and cannot tell how deep it is nested;
 - it has its own empty in-memory filesystem (text only — structurally unable to touch the real disk);
-- resource quotas (instructions, memory, output, child VMs, nesting depth, …) can only be tightened, never loosened, and a child's consumption is charged to all its ancestors;
+- resource quotas (instructions, memory, output, live VM count, live descendant count, nesting depth, …) can only be tightened, never loosened, and a child's consumption is charged to all its ancestors;
 - its parent can preset files, feed input, single-step it statement by statement or instruction by instruction, snapshot its state, or terminate it;
 - it can create its own child VMs — isolation is recursive, because untrusted code is.
 

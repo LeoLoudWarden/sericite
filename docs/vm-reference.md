@@ -31,15 +31,22 @@ VM states are `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, a
 
 `terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op — terminal VMs such as `done`/`error` still accept `exec` deliveries.
 
-Terminal VM contexts remain available for debugging and further `exec` deliveries until explicitly disposed.
+A VM context is a resource; a VM handle is a capability value referring to it. The context remains alive while a handle or granted environment is reachable, so terminal VMs remain available for debug snapshots and further `exec` deliveries.
 
-`dispose()` releases a terminal VM with no live children, so contexts are released child-first. It:
+Once a VM and everything reachable from it become an unreachable reference island (including self-references and cross-VM cycles formed through granted functions), garbage collection eventually destroys it automatically. Automatic collection is not guaranteed to happen at a particular statement or scope boundary; call `dispose()` when deterministic release is required.
 
-- removes the VM's frames, IO/VFS, grants, and accounting routes;
+`dispose()` accepts a VM in any state, including running or waiting for input. It terminates and unregisters the target and all live descendants, with no child-first requirement. It:
+
+- immediately releases the `max_total_vms` slots held by the target and all its live descendants;
+- stops a running target after the current instruction exits safely, without executing the target script's `finally` blocks;
 - is idempotent — repeated disposal is a no-op;
 - invalidates the handle — any other method on a disposed handle fails with `runtime_error`.
 
-Disposal does not refund quotas: VM IDs are never reused, and the parent's ledgers, `child_count`, `max_child_vms`, and the engine's cumulative `max_total_vms` are unchanged.
+A function's home is the VM whose world it lives in. After that VM is destroyed, functions that escaped from it to other subtrees become invalid too — including host functions granted into it — and calling them fails with a catchable `runtime_error`, never a raw host-internal error. Granting semantics are in §6; the internal rule is in the [architecture notes](architecture.md) §5.4.
+
+In-script `dispose()` is charged to the caller, never the target being destroyed, and fails before mutation when the caller's quota is insufficient; the full charging model is in the [architecture notes](architecture.md) §5.4.
+
+VM IDs are never reused, and the parent's cumulative instruction/memory ledgers and `child_count` are not refunded.
 
 ## 4. Driving methods
 
@@ -53,7 +60,7 @@ Disposal does not refund quotas: VM IDs are never reused, and the parent's ledge
 | `snapshot() -> dict` | Return a safe snapshot without advancing execution |
 | `stdout() -> str` | Return current stdout |
 | `terminate()` | Terminate the VM; effective states and no-op semantics are in section 3 |
-| `dispose()` | Explicitly release a terminal VM with no live children; see section 3 |
+| `dispose()` | Forcibly destroy a VM in any state and all live descendants; see section 3 |
 | `read_file(path) -> str` | Read a text file from this VM |
 | `write_file(path, text)` | Write a text file into this VM |
 | `list_dir(path) -> list[str]` | Return sorted direct children of a directory |
@@ -147,22 +154,24 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_instructions` | 1,000,000 | Instruction and discounted-work limit |
 | `max_output_bytes` | 1,048,576 | stdout bytes in UTF-8 |
 | `max_frames` | 100 | Call-frame limit |
-| `max_child_vms` | 100 | Cumulative direct children per VM |
 | `max_list_size` | 100,000 | Slots per list |
 | `max_dict_size` | 100,000 | Entries per dict |
 | `max_string_bytes` | 1,048,576 | Size per string |
 | `max_int_bits` | 4096 | Integer bit width |
 | `max_total_bytes` | 67,108,864 | Approximate memory high-water mark |
-| `max_total_vms` | 1000 | Cumulative successful VMs per engine, including disposed VMs |
+| `max_total_vms` | 1000 | Live, not-yet-disposed VMs per engine, including roots; disposal releases a slot |
+| `max_descendant_vms` | 1000 | Live descendants throughout a VM's whole subtree, excluding itself; disposal releases a slot |
 | `max_vm_depth` | 8 | VM nesting depth |
 | `max_fs_files` | 1000 | Files per VM |
 | `max_fs_file_bytes` | 1,048,576 | UTF-8 bytes per file |
 
 Despite its historical name, `max_string_bytes` limits characters per string; file and output quotas are measured in UTF-8 bytes.
 
-The cumulative fields `max_instructions`, `max_output_bytes`, `max_total_bytes`, `max_child_vms`, and `max_total_vms` accept `-1` for no local cap.
+Only the cumulative fields `max_instructions`, `max_output_bytes`, and `max_total_bytes` accept `-1` for no local cap. Every other field, including the live-count quotas `max_total_vms` and `max_descendant_vms`, is structural and must be a non-negative finite integer; every field rejects other negative values and non-integer values.
 
-All structural fields must be non-negative finite integers. Cumulative fields additionally accept `-1`; any other negative value, and any non-integer value, is rejected for every field.
+Creation checks `max_descendant_vms` on every ancestor, so a tree of child VMs cannot bypass a cap at any layer. An untrusted child reaching its own descendant limit terminates with `resource_exhausted`, which a surviving parent can catch; `max_total_vms` remains the engine-wide backstop.
+
+The direct-child quota `max_child_vms` has been removed. To prevent a VM from creating any descendants, set that VM's own `max_descendant_vms` to `0`; this does not prevent its parent from creating it.
 
 When a script creates a child VM, the `VM()` quota keyword arguments correspond one-to-one with this table and can only tighten it. Combining a request with the inherited ceiling:
 
