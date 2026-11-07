@@ -339,6 +339,8 @@ finally:
     sub.dispose()
 ```
 
+VMs can be garbage-collected automatically, but using `dispose()` for explicit cleanup is the better practice.
+
 ## 9. Explicitly not writable (rejected at compile time)
 
 - `import` and `del`

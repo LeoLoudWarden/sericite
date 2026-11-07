@@ -186,7 +186,6 @@ else:
             max_instructions=20000,
             max_output_bytes=65536,
             max_frames=100,
-            max_child_vms=16,
             max_string_bytes=262144,
             max_total_bytes=16777216,
         )
@@ -260,10 +259,4 @@ else:
                 render(snapshot, source_lines)
             print(f"session ended · {snapshot['state']}")
         finally:
-            state = sub.snapshot()["state"]
-            if state == "ready" or state == "waiting_input":
-                sub.terminate()
-            try:
-                sub.dispose()
-            except runtime_error:
-                pass
+            sub.dispose()

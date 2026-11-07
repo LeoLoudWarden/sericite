@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -21,13 +22,13 @@ _VM_OPTIONS = {
     "max_instructions",
     "max_output_bytes",
     "max_frames",
-    "max_child_vms",
     "max_list_size",
     "max_dict_size",
     "max_string_bytes",
     "max_int_bits",
     "max_total_bytes",
     "max_total_vms",
+    "max_descendant_vms",
     "max_vm_depth",
     "max_fs_files",
     "max_fs_file_bytes",
@@ -35,9 +36,7 @@ _VM_OPTIONS = {
 _CUMULATIVE_VM_OPTIONS = {
     "max_instructions",
     "max_output_bytes",
-    "max_child_vms",
     "max_total_bytes",
-    "max_total_vms",
 }
 
 
@@ -46,13 +45,13 @@ class SericiteLimits:
     max_instructions: int = 1_000_000
     max_output_bytes: int = 1_048_576
     max_frames: int = 100
-    max_child_vms: int = 100
     max_list_size: int = 100_000
     max_dict_size: int = 100_000
     max_string_bytes: int = 1_048_576
     max_int_bits: int = 4096
     max_total_bytes: int = 67_108_864
     max_total_vms: int = 1000
+    max_descendant_vms: int = 1000
     max_vm_depth: int = 8
     max_fs_files: int = 1000
     max_fs_file_bytes: int = 1_048_576
@@ -259,8 +258,12 @@ class VMContext:
     alloc_bytes: int = 0
     child_count: int = 0
     child_ids: set[int] = field(default_factory=set)
+    live_descendant_count: int = 0
+    ancestor_ids: tuple[int, ...] = ()
     running: bool = False
     meter_stack: list[Meter] = field(default_factory=list)
+    meter: Meter | None = None
+    finalizer: weakref.finalize | None = None
 
     @property
     def filename(self) -> str:
@@ -273,6 +276,7 @@ class VMHandle:
     def __init__(self, engine: SericiteEngine, vm_id: int) -> None:
         self._engine = engine
         self._vm_id = vm_id
+        self._context = engine._contexts.get(vm_id)
 
     def run(self, inputs: object = None) -> str:
         if inputs is not None:

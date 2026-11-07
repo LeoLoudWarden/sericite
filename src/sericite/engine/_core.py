@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 
@@ -64,9 +65,9 @@ class _EngineCore:
     def __init__(self, limits: SericiteLimits | None = None) -> None:
         self._validate_limits(limits)
         self._limits = limits if limits is not None else SericiteLimits()
-        self._contexts: dict[int, VMContext] = {}
-        self._account_routes: dict[int, AccountRoute] = {}
-        self._meters: dict[int, Meter] = {}
+        self._contexts: weakref.WeakValueDictionary[int, VMContext] = (
+            weakref.WeakValueDictionary()
+        )
         self._next_vm_id = 0
 
     @staticmethod
@@ -188,10 +189,21 @@ class _EngineCore:
             raise SericiteError(
                 "source too large", kind="syntax_error", filename=filename
             )
-        if (
-            limits.max_total_vms != UNLIMITED
-            and self._next_vm_id >= limits.max_total_vms
-        ):
+        if parent_id is not None:
+            ancestor = self._resolve_account(parent_id)
+            while True:
+                if ancestor.live_descendant_count >= ancestor.limits.max_descendant_vms:
+                    error = SericiteError(
+                        "descendant VM limit exceeded",
+                        kind="resource_exhausted",
+                        filename=filename,
+                    )
+                    error._resource_vm_id = ancestor.vm_id
+                    raise error
+                if ancestor.parent_id is None:
+                    break
+                ancestor = self._resolve_account(ancestor.parent_id)
+        if len(self._contexts) >= limits.max_total_vms:
             raise SericiteError(
                 "total VM limit exceeded",
                 kind="resource_exhausted",
@@ -216,16 +228,76 @@ class _EngineCore:
         )
         if not any(instr.stmt_start for instr in code.instrs):
             context.state = "done"
-        route = AccountRoute(context, resolve=self._contexts.__getitem__)
+        route = AccountRoute(context, resolve=self._resolve_account)
+        context.ancestor_ids = tuple(account.vm_id for account in route.accounts[1:])
         meter = Meter(route)
         meter.allocate(_const_bytes(code))
+        context.meter = meter
         self._next_vm_id += 1
         self._contexts[vm_id] = context
-        self._account_routes[vm_id] = route
-        self._meters[vm_id] = meter
+        context.finalizer = weakref.finalize(
+            context,
+            _EngineCore._finalize_vm,
+            weakref.ref(self),
+            vm_id,
+            parent_id,
+            context.ancestor_ids,
+        )
         if parent_id is not None:
             self._contexts[parent_id].child_ids.add(vm_id)
+        for ancestor_id in context.ancestor_ids:
+            self._contexts[ancestor_id].live_descendant_count += 1
         return VMHandle(self, vm_id)
+
+    @staticmethod
+    def _finalize_vm(
+        engine_ref: weakref.ref,
+        vm_id: int,
+        parent_id: int | None,
+        ancestor_ids: tuple[int, ...],
+    ) -> None:
+        engine = engine_ref()
+        if engine is not None:
+            engine._unregister_vm(vm_id, parent_id, ancestor_ids)
+
+    def _unregister_vm(
+        self,
+        vm_id: int,
+        parent_id: int | None = None,
+        ancestor_ids: tuple[int, ...] = (),
+        update_ancestors: bool = True,
+    ) -> None:
+        context = self._contexts.pop(vm_id, None)
+        if context is not None:
+            context.state = "terminated"
+            context.meter = None
+            parent_id = context.parent_id
+            ancestor_ids = context.ancestor_ids
+            finalizer = context.finalizer
+            context.finalizer = None
+            if finalizer is not None:
+                finalizer.detach()
+        if parent_id is not None:
+            parent = self._contexts.get(parent_id)
+            if parent is not None:
+                parent.child_ids.discard(vm_id)
+        if update_ancestors:
+            for ancestor_id in ancestor_ids:
+                ancestor = self._contexts.get(ancestor_id)
+                if ancestor is not None:
+                    ancestor.live_descendant_count -= 1
+
+    def _require_live_home(self, home: object) -> None:
+        if isinstance(home, VMContext) and self._contexts.get(home.vm_id) is not home:
+            raise SericiteError("VM home has been disposed", kind="runtime_error")
+
+    def _resolve_account(self, vm_id: int) -> VMContext:
+        context = self._contexts.get(vm_id)
+        if context is None:
+            raise SericiteError(
+                "VM accounting ancestor is unavailable", kind="internal_error"
+            )
+        return context
 
     def _context(self, handle: VMHandle) -> VMContext:
         if handle._engine is not self:
@@ -245,30 +317,43 @@ class _EngineCore:
         context = self._contexts.get(handle._vm_id)
         if context is None:
             return
-        if context.state not in {"done", "error", "resource_exhausted", "terminated"}:
-            raise SericiteError(
-                "cannot dispose a VM that has not reached a terminal state",
-                kind="runtime_error",
+        contexts = []
+        pending = [context]
+        seen = set()
+        while pending:
+            current = pending.pop()
+            if current.vm_id in seen:
+                continue
+            seen.add(current.vm_id)
+            contexts.append(current)
+            for child_id in current.child_ids:
+                child = self._contexts.get(child_id)
+                if child is not None:
+                    pending.append(child)
+        for current in contexts:
+            current.state = "terminated"
+        for current in reversed(contexts):
+            self._unregister_vm(
+                current.vm_id,
+                current.parent_id,
+                update_ancestors=False,
             )
-        if context.child_ids:
-            raise SericiteError(
-                "cannot dispose a VM with live child VMs", kind="runtime_error"
-            )
-        if context.parent_id is not None:
-            self._contexts[context.parent_id].child_ids.remove(context.vm_id)
-        del self._meters[context.vm_id]
-        del self._account_routes[context.vm_id]
-        del self._contexts[context.vm_id]
+        for ancestor_id in context.ancestor_ids:
+            ancestor = self._contexts.get(ancestor_id)
+            if ancestor is not None:
+                ancestor.live_descendant_count -= len(contexts)
 
     def _meter(self, context: VMContext) -> Meter:
         if context.meter_stack:
             return context.meter_stack[-1]
-        return self._meters[context.vm_id]
+        if context.meter is None:
+            raise SericiteError("VM meter is unavailable", kind="internal_error")
+        return context.meter
 
     @contextmanager
     def _causal_meter(self, *contexts: VMContext) -> Iterator[Meter]:
         unique = list({id(context): context for context in contexts}.values())
-        meter = Meter(AccountRoute(*unique, resolve=self._contexts.__getitem__))
+        meter = Meter(AccountRoute(*unique, resolve=self._resolve_account))
         for context in unique:
             context.meter_stack.append(meter)
         try:
@@ -869,6 +954,11 @@ class _EngineCore:
         function = stack[base - 1]
         args = tuple(stack[base : base + argc])
         kwargs = dict(zip(kw_names, stack[base + argc :]))
+        if isinstance(
+            function,
+            (SericiteFunction, _GrantedSericiteFunction, _NativeFunction),
+        ):
+            self._require_live_home(function.home)
         if isinstance(function, SericiteFunction):
             code = function.code
             visible = code.origin_vm == context.vm_id

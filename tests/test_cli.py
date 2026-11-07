@@ -586,8 +586,6 @@ class CliTests(unittest.TestCase):
                 "        max_instructions=-1,\n"
                 "        max_output_bytes=-1,\n"
                 "        max_total_bytes=-1,\n"
-                "        max_child_vms=-1,\n"
-                "        max_total_vms=-1,\n"
                 "    )}\n",
             )
             result = self.run_cli(

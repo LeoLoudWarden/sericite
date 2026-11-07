@@ -225,11 +225,6 @@ class _EngineBuiltins:
         depth = causal.depth + 1
         if depth > limits.max_vm_depth:
             raise SericiteError("VM depth limit exceeded", kind="resource_exhausted")
-        if (
-            causal.limits.max_child_vms != UNLIMITED
-            and causal.child_count >= causal.limits.max_child_vms
-        ):
-            raise SericiteError("child VM limit exceeded", kind="resource_exhausted")
         handle = self._create_vm(
             source=source,
             parent_id=causal.vm_id,

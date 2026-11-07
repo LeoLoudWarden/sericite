@@ -761,13 +761,38 @@ class ResourceLimitTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
-    def test_child_vm_limit(self):
-        limits = SericiteLimits(max_child_vms=1)
+    def test_total_vm_limit(self):
+        limits = SericiteLimits(max_total_vms=2)
         engine = SericiteEngine(limits=limits)
         vm = engine.create_root('a = VM("x = 1")\nb = VM("y = 2")\n')
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
+
+    def test_descendant_limit_covers_tree_and_is_catchable_by_parent(self):
+        branch_source = "leaf = VM('')\nsecond_leaf = VM('')"
+        child_source = (
+            f"branch = VM({branch_source!r})\n"
+            "try:\n"
+            "    branch.run()\n"
+            "except resource_exhausted:\n"
+            "    print('child swallowed its own quota')"
+        )
+        engine = SericiteEngine(SericiteLimits(max_total_vms=10))
+        root = engine.create_root(
+            f"sub = VM({child_source!r}, max_descendant_vms=2)\n"
+            "try:\n"
+            "    sub.run()\n"
+            "except resource_exhausted:\n"
+            "    print('caught')\n"
+            "print('root alive')"
+        )
+        self.assertEqual(root.run(), "caught\nroot alive\n")
+        self.assertEqual(root.snapshot()["state"], "done")
+        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+        self.assertEqual(engine._contexts[0].live_descendant_count, 3)
+        self.assertEqual(engine._contexts[1].live_descendant_count, 2)
+        self.assertEqual(engine._contexts[2].live_descendant_count, 1)
 
     def test_child_vm_shares_instruction_budget_independence(self):
         engine = SericiteEngine()

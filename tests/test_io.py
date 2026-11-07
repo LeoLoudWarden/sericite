@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from sericite.accounting import Meter
 from sericite.engine import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
@@ -12,7 +11,7 @@ class VirtualInputStoreTests(unittest.TestCase):
         self.engine.create_root("")
         self.context = self.engine._contexts[0]
         self.io = self.context.io
-        self.meter = Meter(self.engine._account_routes[0])
+        self.meter = self.engine._meter(self.context)
 
     def test_script_input_consumes_matching_permit(self) -> None:
         permit = self.meter.reserve(self.io, "input", self.io.input_cost("x"))

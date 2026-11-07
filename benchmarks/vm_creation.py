@@ -69,7 +69,6 @@ def bench(fn: Callable[[], None], reps: int) -> float:
 def main() -> None:
     script_limits = SericiteLimits(
         max_instructions=100_000_000,
-        max_child_vms=N_SCRIPT + 100,
         max_total_vms=N_SCRIPT + 100,
     )
     host_limits = SericiteLimits(max_total_vms=N_HOST + 100)

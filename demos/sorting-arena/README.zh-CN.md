@@ -76,7 +76,7 @@ Sericite 本身不内置随机数。`capabilities.py` 把 Python 的 `random.ran
 |---|---:|---|
 | `max_instructions` | 120,000 | 限制死循环的指令数 |
 | `max_output_bytes` | 512 | 截停输出洪水 |
-| `max_child_vms` | 0 | 禁止选手派生 VM |
+| `max_descendant_vms` | 0 | 禁止选手派生任何后代 VM |
 | `max_frames` | 64 | 限制调用深度 |
 | `max_total_bytes` | 1 MiB（近似账本） | 限制内存增长 |
 

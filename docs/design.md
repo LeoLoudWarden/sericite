@@ -73,6 +73,12 @@ Three corollaries:
 
 **Granted functions respect the same boundary in their errors.** A granted function retains its full definition-side environment when executing in a child VM (that is the explicitly granted capability), but its error text uses only the granted name (the key in `functions={"f": ...}`) and structural descriptions — definition-side function names, type labels, and any local, closure, or module variable names involved in undefined-name errors never appear in the child layer. The name on the door is part of the door; the internal names of what is behind it are not.
 
+### 3.5 VMs are resources; handles are capability values
+
+Ordinary containers, records, and functions are data; a VM context is a resource with a release commitment. Handles may be captured by closures, granted across layers, and may even form self-references or cross-VM cycles. This should not be prohibited, but the engine must eventually release unreachable reference islands instead of relying on untrusted code to follow a cleanup protocol.
+
+VM lifetime therefore has two mechanisms: Python GC automatically destroys a resource after its references become wholly unreachable, while `dispose()` gives well-behaved code deterministic, forced destruction. Even a hypothetical scope-cleanup syntax would only help cooperative code; it cannot provide resource safety against malicious code. Destruction does not execute target script code; otherwise collection itself would become an execution and re-entrancy entry point.
+
 ## 4. Sericite's relationship with LLMs
 
 A common misreading must be corrected: **Sericite is not "a tool for LLMs".**

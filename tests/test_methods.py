@@ -973,6 +973,71 @@ class VfsChargeTests(unittest.TestCase):
             SericiteEngine().create_root(source).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
+    def test_dispose_charges_caller_for_live_subtree(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        targets = []
+
+        def checkpoint():
+            target = engine._contexts.get(1)
+            if target is not None:
+                targets.append(target)
+            checkpoints.append(
+                (
+                    engine._contexts[0].instruction_count,
+                    engine._contexts[0].alloc_bytes,
+                    None if target is None else target.instruction_count,
+                    None if target is None else target.alloc_bytes,
+                )
+            )
+
+        engine.create_root(
+            "sub = VM(\"inner = VM('')\")\n"
+            "sub.run()\n"
+            "checkpoint()\n"
+            "sub.dispose()\n"
+            "checkpoint()\n",
+            functions={"checkpoint": checkpoint},
+        ).run()
+        before, after = checkpoints
+        self.assertGreaterEqual(after[0] - before[0], 2 * 2 + 1)
+        self.assertGreaterEqual(after[1] - before[1], 32 * 2)
+        self.assertEqual(targets[0].instruction_count, before[2])
+        self.assertEqual(targets[0].alloc_bytes, before[3])
+        self.assertEqual(set(engine._contexts), {0})
+
+    def test_dispose_quota_failure_happens_before_subtree_mutation(self):
+        checkpoints = []
+        probe = SericiteEngine()
+        probe.create_root(
+            "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    probe._contexts[0].instruction_count
+                )
+            },
+        ).run()
+
+        limits = SericiteLimits(max_instructions=checkpoints[0] + 3)
+        engine = SericiteEngine(limits)
+        root = engine.create_root(
+            "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n",
+            functions={"checkpoint": lambda: None},
+        )
+        with self.assertRaises(SericiteError) as ctx:
+            root.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(set(engine._contexts), {0, 1, 2})
+        self.assertEqual(engine._contexts[0].live_descendant_count, 2)
+        self.assertEqual(engine._contexts[1].live_descendant_count, 1)
+        self.assertEqual(engine._contexts[1].state, "done")
+
+    def test_dispose_of_stale_handle_remains_a_free_noop(self):
+        engine = SericiteEngine()
+        root = engine.create_root('sub = VM("")\nsub.dispose()\nsub.dispose()')
+        root.run()
+        self.assertEqual(set(engine._contexts), {0})
+
 
 class CrossVmResultEstimationTests(unittest.TestCase):
     @staticmethod

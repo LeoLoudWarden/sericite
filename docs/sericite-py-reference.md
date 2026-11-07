@@ -54,7 +54,7 @@ The `SericiteLimits` field list and defaults are in the [VM reference](vm-refere
 
 The engine constructor supplies the default quotas. Passing `limits` to `create_root()` replaces the whole configuration for that root rather than merging individual fields.
 
-For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the field list and combining/inheritance rules are in the [VM reference](vm-reference.md) §5); structural limits must remain finite.
+For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the field list and combining/inheritance rules are in the [VM reference](vm-reference.md) §5); live VM counts and other structural limits must remain finite.
 
 `-1` is an explicit trust decision: use it only for code you control. For what unlimited quotas do and do not mean for resource safety, see the [security model](security.md) §3.
 
