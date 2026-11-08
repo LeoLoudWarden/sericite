@@ -218,6 +218,18 @@ class _EngineBuiltins:
                     home.fs.copy_dir_allocation(source_path, destination_path),
                 ),
             )
+        if name == "make_dir":
+            return _NativeFunction(
+                "make_dir",
+                lambda path, *, _allocation_permit=None: home.fs.make_dir(
+                    path, permit=_allocation_permit
+                ),
+                home,
+                work=home.fs.path_work,
+                allocation=lambda path: self._meter(home).reserve(
+                    home.fs, "write", home.fs.make_dir_allocation(path)
+                ),
+            )
         if name == "list_dir":
             return _NativeFunction(
                 "list_dir",

@@ -345,6 +345,9 @@ class VMHandle:
     def copy_dir(self, source_path: object, destination_path: object) -> None:
         self._engine._context(self).fs.copy_dir_trusted(source_path, destination_path)
 
+    def make_dir(self, path: object) -> None:
+        self._engine._context(self).fs.make_dir_trusted(path)
+
     def list_dir(self, path: object) -> list[str]:
         return self._engine._context(self).fs.list_dir(path)
 

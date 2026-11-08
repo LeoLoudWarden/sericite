@@ -222,13 +222,13 @@ except resource_exhausted as e:
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
 - `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
-- 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`delete_file(path)`、`rename_file(old_path, new_path)`、`copy_file(source_path, destination_path)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
-- 目录：`delete_dir(path)`、`rename_dir(old_path, new_path)`、`copy_dir(source_path, destination_path)`，分别递归删除、移动和复制整个目录树。
+- 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`delete_file(path)`、`rename_file(old_path, new_path)`、`copy_file(source_path, destination_path)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`。
+- 目录：`make_dir(path)` 显式创建目录；`delete_dir(path)`、`rename_dir(old_path, new_path)`、`copy_dir(source_path, destination_path)` 分别递归删除、移动和复制整个目录树。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
-文件级删除、重命名和复制只处理文件，目录路径报 `is_directory`，缺失源文件报 `file_not_found`。重命名和复制会自动创建目标父目录，但拒绝覆盖已有文件，目标已存在时报 `file_exists`。重命名不增加文件总数，因此不需要额外的文件数配额槽位；复制需要。删除或移走文件后，不再含文件或子目录的隐式目录会自动移除，根目录始终保留。
+文件级删除、重命名和复制只处理文件，目录路径报 `is_directory`，缺失源文件报 `file_not_found`。重命名和复制会自动创建目标父目录，但拒绝覆盖已有文件，目标已存在时报 `file_exists`。重命名不增加文件总数，因此不需要额外的文件数配额槽位；复制需要。删除或移走文件后，不再含文件或子目录的隐式目录会自动移除；`make_dir` 创建的显式目录即使为空也会保留，根目录始终保留。
 
-目录级操作的源路径必须是目录：文件路径报 `not_directory`，缺失目录报 `file_not_found`。目标已有文件或目录时报 `file_exists`；目标位于源目录内部或任一操作涉及根目录时报 `runtime_error`。目录复制需要足够的文件数与内存配额，所有校验和配额检查先于文件树变更。
+`make_dir` 会创建缺失的父目录，目标已有文件或目录时报 `file_exists`。目录级删除、移动和复制的源路径必须是目录：文件路径报 `not_directory`，缺失目录报 `file_not_found`。目标已有文件或目录时报 `file_exists`；目标位于源目录内部或删除、移动、复制涉及根目录时报 `runtime_error`。目录复制需要足够的文件数与内存配额，所有校验和配额检查先于文件树变更。
 
 列表与字典方法：
 

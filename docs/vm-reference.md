@@ -66,6 +66,7 @@ VM IDs are never reused, and the parent's cumulative instruction/memory ledgers 
 | `delete_file(path)` | Delete a file and prune empty implicit directories |
 | `rename_file(old_path, new_path)` | Rename or move a file; refuse to overwrite an existing file |
 | `copy_file(source_path, destination_path)` | Copy a file; refuse to overwrite an existing file |
+| `make_dir(path)` | Explicitly create a directory and missing parents; empty directories persist |
 | `delete_dir(path)` | Recursively delete a whole directory tree |
 | `rename_dir(old_path, new_path)` | Recursively move a directory tree; refuse overwrite or moving into itself |
 | `copy_dir(source_path, destination_path)` | Recursively copy a directory tree; refuse overwrite or copying into itself |
@@ -89,7 +90,7 @@ After a child enters the terminal `resource_exhausted` state, a parent can catch
 A terminal VM can still be operated on, but two kinds of methods behave differently:
 
 - methods that do not drive the VM (`snapshot`, `step`, `step_instruction`, VFS reads, …) remain available; on a terminal VM, `step`/`step_instruction` only return a snapshot;
-- write or driving methods (`write_file`, `delete_file`, `rename_file`, `copy_file`, `delete_dir`, `rename_dir`, `copy_dir`, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
+- write or driving methods (`write_file`, `delete_file`, `rename_file`, `copy_file`, `make_dir`, `delete_dir`, `rename_dir`, `copy_dir`, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
 
 The charging model — which operations are charged to whom — is in the [architecture](architecture.md) §5.4.
 

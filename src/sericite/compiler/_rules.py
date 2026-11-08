@@ -20,6 +20,7 @@ RESERVED_NAMES = {
     "delete_dir",
     "rename_dir",
     "copy_dir",
+    "make_dir",
     "list_dir",
     "path_exists",
     "any",
@@ -130,6 +131,7 @@ VM_METHODS = {
     "delete_dir",
     "rename_dir",
     "copy_dir",
+    "make_dir",
     "list_dir",
     "path_exists",
 }
