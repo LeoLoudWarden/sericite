@@ -93,18 +93,70 @@ class VirtualFileSystem:
             return len(text) * 4
         return self._write_allocation(normalize_path(path), text)
 
-    def _validate_write(self, path: object, text: object) -> str:
+    def rename_work(self, old_path: object, new_path: object) -> int:
+        return self.path_work(old_path) + self.path_work(new_path)
+
+    def rename_allocation(self, old_path: object, new_path: object) -> int:
+        if not isinstance(new_path, str):
+            return 0
+        return self._write_allocation(normalize_path(new_path), "")
+
+    def copy_work(self, source_path: object, destination_path: object) -> int:
+        text = ""
+        if isinstance(source_path, str):
+            text = self._files.get(normalize_path(source_path), "")
+        return (
+            self.path_work(source_path) + self.path_work(destination_path) + len(text)
+        )
+
+    def copy_allocation(self, source_path: object, destination_path: object) -> int:
+        text = ""
+        if isinstance(source_path, str):
+            text = self._files.get(normalize_path(source_path), "")
+        if not isinstance(destination_path, str):
+            return len(text) * 4
+        return self._write_allocation(normalize_path(destination_path), text)
+
+    def _validate_write(
+        self,
+        path: object,
+        text: object,
+        *,
+        overwrite: bool = True,
+        require_file_slot: bool = True,
+    ) -> str:
         normalized = normalize_path(path)
         if not isinstance(text, str):
             raise SericiteError("file content must be a string", kind="type_error")
         if normalized == "/" or self._find_directory(normalized) is not None:
             raise SericiteError(f"is a directory: {path}", kind="is_directory")
+        if not overwrite and normalized in self._files:
+            raise SericiteError(f"file already exists: {path}", kind="file_exists")
         size = len(text.encode("utf-8"))
         if size > self._max_file_bytes:
             raise SericiteError("file size limit exceeded", kind="resource_exhausted")
-        if normalized not in self._files and len(self._files) >= self._max_files:
+        if (
+            require_file_slot
+            and normalized not in self._files
+            and len(self._files) >= self._max_files
+        ):
             raise SericiteError("file count limit exceeded", kind="resource_exhausted")
         return normalized
+
+    def _validate_new_file(
+        self, path: object, text: str, *, require_file_slot: bool = True
+    ) -> str:
+        return self._validate_write(
+            path, text, overwrite=False, require_file_slot=require_file_slot
+        )
+
+    def _require_file(self, path: object) -> tuple[str, str]:
+        normalized = normalize_path(path)
+        if normalized in self._files:
+            return normalized, self._files[normalized]
+        if self._find_directory(normalized) is not None:
+            raise SericiteError(f"is a directory: {path}", kind="is_directory")
+        raise SericiteError(f"no such file: {path}", kind="file_not_found")
 
     def _commit_write(self, normalized: str, text: str) -> None:
         is_new = normalized not in self._files
@@ -123,6 +175,24 @@ class VirtualFileSystem:
         directory.files.add(segments[-1])
         directory.name_chars += len(segments[-1])
 
+    def _commit_delete(self, normalized: str) -> None:
+        del self._files[normalized]
+        segments = self._segments(normalized)
+        directory = self._root
+        parents: list[tuple[_Directory, str, _Directory]] = []
+        for segment in segments[:-1]:
+            child = directory.directories[segment]
+            parents.append((directory, segment, child))
+            directory = child
+        name = segments[-1]
+        directory.files.remove(name)
+        directory.name_chars -= len(name)
+        for parent, segment, child in reversed(parents):
+            if child.files or child.directories:
+                break
+            del parent.directories[segment]
+            parent.name_chars -= len(segment)
+
     def write_file(
         self, path: object, text: object, *, permit: AllocationPermit
     ) -> None:
@@ -134,6 +204,48 @@ class VirtualFileSystem:
         """Preconfigure a file on behalf of the trusted host, outside script accounting."""
         normalized = self._validate_write(path, text)
         self._commit_write(normalized, text)
+
+    def delete_file(self, path: object) -> None:
+        normalized, _ = self._require_file(path)
+        self._commit_delete(normalized)
+
+    def rename_file(
+        self, old_path: object, new_path: object, *, permit: AllocationPermit
+    ) -> None:
+        old_normalized, text = self._require_file(old_path)
+        new_normalized = self._validate_new_file(
+            new_path, text, require_file_slot=False
+        )
+        permit.consume(self, "write", self._write_allocation(new_normalized, ""))
+        self._commit_delete(old_normalized)
+        self._commit_write(new_normalized, text)
+
+    def rename_file_trusted(self, old_path: object, new_path: object) -> None:
+        old_normalized, text = self._require_file(old_path)
+        new_normalized = self._validate_new_file(
+            new_path, text, require_file_slot=False
+        )
+        self._commit_delete(old_normalized)
+        self._commit_write(new_normalized, text)
+
+    def copy_file(
+        self,
+        source_path: object,
+        destination_path: object,
+        *,
+        permit: AllocationPermit,
+    ) -> None:
+        _, text = self._require_file(source_path)
+        destination_normalized = self._validate_new_file(destination_path, text)
+        permit.consume(
+            self, "write", self._write_allocation(destination_normalized, text)
+        )
+        self._commit_write(destination_normalized, text)
+
+    def copy_file_trusted(self, source_path: object, destination_path: object) -> None:
+        _, text = self._require_file(source_path)
+        destination_normalized = self._validate_new_file(destination_path, text)
+        self._commit_write(destination_normalized, text)
 
     def read_file(self, path: object) -> str:
         normalized = normalize_path(path)

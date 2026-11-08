@@ -973,6 +973,55 @@ class VfsChargeTests(unittest.TestCase):
             SericiteEngine().create_root(source).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
+    def test_copy_charges_source_text_work_and_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        text = "x" * 1000
+        vm = engine.create_root(
+            "checkpoint()\ncopy_file('/source.txt', '/copy.txt')\ncheckpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    (
+                        engine._contexts[0].instruction_count,
+                        engine._contexts[0].alloc_bytes,
+                    )
+                )
+            },
+        )
+        vm.write_file("/source.txt", text)
+        vm.run()
+        work, allocation = (
+            checkpoints[1][0] - checkpoints[0][0],
+            checkpoints[1][1] - checkpoints[0][1],
+        )
+        self.assertGreaterEqual(work, len(text))
+        self.assertGreaterEqual(allocation, len(text) * 4)
+
+    def test_copy_file_count_failure_is_atomic_and_catchable(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("", max_fs_files=1)\n'
+            "sub.write_file('/source.txt', 'source')\n"
+            "try:\n"
+            "    sub.copy_file('/source.txt', '/copy.txt')\n"
+            "except resource_exhausted:\n"
+            "    print('caught')\n"
+            "print(sub.read_file('/source.txt'))\n"
+            "print(sub.path_exists('/copy.txt'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\nsource\nFalse\n")
+        self.assertEqual(engine._contexts[1].state, "done")
+
+    def test_rename_does_not_increase_file_count(self):
+        source = (
+            'write_file("/source.txt", "payload")\n'
+            'rename_file("/source.txt", "/nested/renamed.txt")\n'
+            'print(read_file("/nested/renamed.txt"))\n'
+            'print(path_exists("/source.txt"))\n'
+        )
+        engine = SericiteEngine(SericiteLimits(max_fs_files=1))
+        self.assertEqual(engine.create_root(source).run(), "payload\nFalse\n")
+
     def test_dispose_charges_caller_for_live_subtree(self):
         engine = SericiteEngine()
         checkpoints = []

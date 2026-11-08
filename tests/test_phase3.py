@@ -186,6 +186,7 @@ class TryExceptTests(unittest.TestCase):
             "contract_error",
             "conversion_error",
             "ffi_error",
+            "file_exists",
             "file_not_found",
             "index_error",
             "input_error",
@@ -599,6 +600,69 @@ class VFSTests(unittest.TestCase):
         vm.write_file("/input.txt", "hello")
         vm.run()
         self.assertEqual(vm.read_file("/output.txt"), "hello!")
+
+    def test_delete_rename_and_copy(self):
+        source = (
+            'write_file("/notes/source.txt", "payload")\n'
+            'copy_file("/notes/source.txt", "/archive/copy.txt")\n'
+            'rename_file("/notes/source.txt", "/results/final.txt")\n'
+            'delete_file("/archive/copy.txt")\n'
+            'print(read_file("/results/final.txt"))\n'
+            'print(path_exists("/notes"), path_exists("/archive"))\n'
+            'print(list_dir("/"))\n'
+        )
+        self.assertEqual(run(source), "payload\nFalse False\n['results']\n")
+
+    def test_file_mutation_errors_are_catchable(self):
+        source = (
+            'write_file("/source.txt", "source")\n'
+            'write_file("/destination.txt", "destination")\n'
+            'write_file("/d/file.txt", "file")\n'
+            "try:\n"
+            '    copy_file("/source.txt", "/destination.txt")\n'
+            "except file_exists:\n"
+            '    print("copy exists")\n'
+            "try:\n"
+            '    rename_file("/source.txt", "/destination.txt")\n'
+            "except file_exists:\n"
+            '    print("rename exists")\n'
+            "try:\n"
+            '    delete_file("/missing.txt")\n'
+            "except file_not_found:\n"
+            '    print("missing")\n'
+            "try:\n"
+            '    delete_file("/d")\n'
+            "except is_directory:\n"
+            '    print("directory")\n'
+            'print(read_file("/source.txt"), read_file("/destination.txt"))\n'
+        )
+        self.assertEqual(
+            run(source),
+            "copy exists\nrename exists\nmissing\ndirectory\nsource destination\n",
+        )
+
+    def test_child_handle_file_mutations(self):
+        source = (
+            'sub = VM("")\n'
+            'sub.write_file("/source.txt", "child")\n'
+            'sub.copy_file(source_path="/source.txt", destination_path="/copy.txt")\n'
+            'sub.rename_file(old_path="/source.txt", new_path="/moved.txt")\n'
+            'sub.delete_file(path="/copy.txt")\n'
+            'print(sub.read_file("/moved.txt"))\n'
+            'print(sub.path_exists("/source.txt"), sub.path_exists("/copy.txt"))\n'
+        )
+        self.assertEqual(run(source), "child\nFalse False\n")
+
+    def test_host_file_mutations(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        vm.write_file("/a/source.txt", "payload")
+        vm.copy_file("/a/source.txt", "/b/copy.txt")
+        vm.rename_file("/a/source.txt", "/c/moved.txt")
+        vm.delete_file("/b/copy.txt")
+        self.assertEqual(vm.read_file("/c/moved.txt"), "payload")
+        self.assertFalse(vm.path_exists("/a"))
+        self.assertFalse(vm.path_exists("/b"))
 
 
 if __name__ == "__main__":

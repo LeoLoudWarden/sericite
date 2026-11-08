@@ -63,6 +63,9 @@ VM 上下文是资源，VM 句柄是指向它的能力值。只要句柄或授�
 | `dispose()` | 强制销毁任意状态的 VM 及其存活后代；见第 3 节 |
 | `read_file(path) -> str` | 读取该 VM 的文本文件 |
 | `write_file(path, text)` | 写入该 VM 的文本文件 |
+| `delete_file(path)` | 删除文件并清理为空的隐式目录 |
+| `rename_file(old_path, new_path)` | 重命名或移动文件；拒绝覆盖已有文件 |
+| `copy_file(source_path, destination_path)` | 复制文件；拒绝覆盖已有文件 |
 | `list_dir(path) -> list[str]` | 列出目录的直接子项并排序 |
 | `path_exists(path) -> bool` | 检查文件或目录是否存在 |
 
@@ -83,7 +86,7 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 终态 VM 仍可被操作，但两类方法的行为不同：
 
 - 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、VFS 读取等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照；
-- 写入或驱动方法（`write_file`、`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
+- 写入或驱动方法（`write_file`、`delete_file`、`rename_file`、`copy_file`、`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
 
 计费模型（哪些操作由谁计量）见[架构说明](architecture.zh-CN.md)第 5.4 节。
 

@@ -201,7 +201,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
-- 文件与 FFI：`file_not_found`、`is_directory`、`not_directory`、`ffi_error`。
+- 文件与 FFI：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
 - 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
 ```python
@@ -222,8 +222,10 @@ except resource_exhausted as e:
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
 - `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
-- 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
+- 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`delete_file(path)`、`rename_file(old_path, new_path)`、`copy_file(source_path, destination_path)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`，目录靠路径前缀隐含。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
+
+删除、重命名和复制只处理文件，目录路径报 `is_directory`，缺失源文件报 `file_not_found`。重命名和复制会自动创建目标父目录，但拒绝覆盖已有文件，目标已存在时报 `file_exists`。重命名不增加文件总数，因此不需要额外的文件数配额槽位；复制需要。删除或移走文件后，不再含文件或子目录的隐式目录会自动移除，根目录始终保留。
 
 列表与字典方法：
 
