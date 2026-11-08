@@ -266,6 +266,9 @@ class VirtualFileStoreTests(unittest.TestCase):
             ):
                 operation()
             self.assertEqual(ctx.exception.kind, "not_directory")
+            self.assertEqual(
+                ctx.exception.message, "parent path is not a directory: /a"
+            )
             self.assertEqual(self.fs.read_file("/a"), "parent file")
             self.assertEqual(self.fs.read_file("/source.txt"), "source")
             self.assertEqual(self.fs.read_file("/tree/file.txt"), "tree")

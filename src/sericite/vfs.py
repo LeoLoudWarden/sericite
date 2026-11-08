@@ -231,10 +231,12 @@ class VirtualFileSystem:
 
     def _validate_parent_directories(self, normalized: str) -> None:
         directory = self._root
-        for segment in self._segments(normalized)[:-1]:
+        segments = self._segments(normalized)
+        for index, segment in enumerate(segments[:-1]):
             if segment in directory.files:
+                parent = "/" + "/".join(segments[: index + 1])
                 raise SericiteError(
-                    f"parent path is not a directory: {normalized}",
+                    f"parent path is not a directory: {parent}",
                     kind="not_directory",
                 )
             child = directory.directories.get(segment)
