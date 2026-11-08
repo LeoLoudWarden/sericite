@@ -210,6 +210,41 @@ class VirtualFileStoreTests(unittest.TestCase):
             self.assertFalse(self.fs.path_exists("/new"))
         self.assert_aggregate_metadata()
 
+    def test_make_dir_creates_persistent_empty_directories(self) -> None:
+        amount = self.fs.make_dir_allocation("/a/empty/nested")
+        permit = self.meter.reserve(self.fs, "write", amount)
+        self.fs.make_dir("/a/empty/nested", permit=permit)
+        self.assertTrue(permit.consumed)
+        self.assertEqual(self.fs.list_dir("/a/empty"), ["nested"])
+        self.assertEqual(self.fs.list_dir("/a/empty/nested"), [])
+        self.fs.write_file_trusted("/a/empty/file.txt", "x")
+        self.fs.delete_file("/a/empty/file.txt")
+        self.assertTrue(self.fs.path_exists("/a/empty"))
+        self.assertTrue(self.fs.path_exists("/a/empty/nested"))
+        self.assert_aggregate_metadata()
+
+    def test_make_dir_rejects_existing_paths(self) -> None:
+        self.fs.make_dir_trusted("/empty")
+        self.fs.write_file_trusted("/file.txt", "x")
+        for path in ("/empty", "/file.txt", "/"):
+            with self.subTest(path=path), self.assertRaises(SericiteError) as ctx:
+                self.fs.make_dir_trusted(path)
+            self.assertEqual(ctx.exception.kind, "file_exists")
+
+    def test_empty_directories_survive_copy_and_rename(self) -> None:
+        self.fs.make_dir_trusted("/tree/empty/nested")
+        self.fs.copy_dir_trusted("/tree", "/copy")
+        self.assertTrue(self.fs.path_exists("/copy/empty/nested"))
+        self.fs.rename_dir_trusted("/copy", "/moved")
+        self.assertFalse(self.fs.path_exists("/copy"))
+        self.assertEqual(self.fs.list_dir("/moved/empty"), ["nested"])
+        self.fs.delete_dir("/moved/empty/nested")
+        self.assertEqual(self.fs.list_dir("/moved/empty"), [])
+        self.fs.delete_dir("/moved")
+        self.fs.delete_dir("/tree")
+        self.assertEqual(self.fs.list_dir("/"), [])
+        self.assert_aggregate_metadata()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1074,6 +1074,42 @@ class VfsChargeTests(unittest.TestCase):
         engine = SericiteEngine(SericiteLimits(max_fs_files=2))
         self.assertEqual(engine.create_root(source).run(), "a b\nFalse\n")
 
+    def test_make_dir_charges_directory_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        vm = engine.create_root(
+            "checkpoint()\nmake_dir('/a/empty')\ncheckpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                )
+            },
+        )
+        vm.run()
+        self.assertGreaterEqual(checkpoints[1] - checkpoints[0], 2 * 64)
+
+    def test_make_dir_quota_failure_leaves_no_partial_directories(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("", max_total_bytes=64)\n'
+            "try:\n"
+            "    sub.make_dir('/a/empty')\n"
+            "except resource_exhausted:\n"
+            "    print('caught')\n"
+            "print(sub.path_exists('/a'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\nFalse\n")
+
+    def test_empty_directory_copy_needs_no_file_slots(self):
+        source = (
+            'make_dir("/tree/empty")\n'
+            'copy_dir("/tree", "/copy")\n'
+            'rename_dir("/copy", "/moved")\n'
+            'print(path_exists("/moved/empty"))\n'
+        )
+        engine = SericiteEngine(SericiteLimits(max_fs_files=0))
+        self.assertEqual(engine.create_root(source).run(), "True\n")
+
     def test_dispose_charges_caller_for_live_subtree(self):
         engine = SericiteEngine()
         checkpoints = []

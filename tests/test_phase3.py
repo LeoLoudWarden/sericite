@@ -720,6 +720,31 @@ class VFSTests(unittest.TestCase):
         self.assertEqual(vm.read_file("/moved/nested/file.txt"), "payload")
         self.assertFalse(vm.path_exists("/tree"))
 
+    def test_make_dir_and_empty_directory_tree_operations(self):
+        source = (
+            'make_dir("/tree/empty/nested")\n'
+            'print(list_dir("/tree/empty"), list_dir("/tree/empty/nested"))\n'
+            'write_file("/tree/file.txt", "x")\n'
+            'delete_file("/tree/file.txt")\n'
+            'print(path_exists("/tree"), path_exists("/tree/empty"))\n'
+            'copy_dir("/tree", "/copy")\n'
+            'rename_dir("/copy", "/moved")\n'
+            'print(path_exists("/moved/empty/nested"))\n'
+            'delete_dir("/moved")\n'
+            'print(path_exists("/moved"))\n'
+        )
+        self.assertEqual(run(source), "['nested'] []\nTrue True\nTrue\nFalse\n")
+
+    def test_child_and_host_make_dir(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("")\nsub.make_dir(path="/empty")\n'
+            'print(sub.path_exists("/empty"))\n'
+        )
+        vm.make_dir("/host/empty")
+        self.assertTrue(vm.path_exists("/host/empty"))
+        self.assertEqual(vm.run(), "True\n")
+
 
 if __name__ == "__main__":
     unittest.main()

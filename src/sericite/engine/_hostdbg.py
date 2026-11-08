@@ -62,6 +62,9 @@ class _EngineHostDebug:
         if attr == "delete_dir":
             path = args[0] if args else kwargs.get("path")
             return fs.delete_dir_work(path)
+        if attr == "make_dir":
+            path = args[0] if args else kwargs.get("path")
+            return fs.path_work(path)
         if attr in ("read_file", "delete_file", "path_exists"):
             path = args[0] if args else kwargs.get("path")
             return fs.path_work(path)
@@ -103,6 +106,10 @@ class _EngineHostDebug:
             value = args[0] if args else kwargs.get("value")
             amount = target.io.input_cost(value)
             return self._meter(context).reserve(target.io, "input", amount)
+        if attr == "make_dir":
+            path = args[0] if args else kwargs.get("path")
+            amount = target.fs.make_dir_allocation(path)
+            return self._meter(context).reserve(target.fs, "write", amount)
         if attr == "write_file":
             path = args[0] if args else kwargs.get("path")
             text = args[1] if len(args) > 1 else kwargs.get("text")
@@ -188,6 +195,9 @@ class _EngineHostDebug:
             and (bool(args) or "source_path" in kwargs)
             and (len(args) > 1 or "destination_path" in kwargs)
         )
+        make_dir_signature = (
+            len(args) + len(kwargs) == 1 and len(args) <= 1 and set(kwargs) <= {"path"}
+        )
         if attr == "feed_input" and feed_signature:
             value = args[0] if args else kwargs.get("value")
             if not isinstance(value, str):
@@ -209,6 +219,16 @@ class _EngineHostDebug:
                 if target.state == "waiting_input":
                     target.state = "ready"
             result = self._run(handle)
+        elif attr == "make_dir" and make_dir_signature:
+            path = args[0] if args else kwargs["path"]
+            target = self._context(handle)
+            try:
+                target.fs.make_dir(path, permit=permit)
+            except SericiteError as error:
+                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
+                    error._resource_vm_id = target.vm_id
+                raise
+            result = None
         elif attr == "write_file" and write_signature:
             path = args[0] if args else kwargs["path"]
             text = args[1] if len(args) > 1 else kwargs["text"]

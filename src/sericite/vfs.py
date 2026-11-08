@@ -24,6 +24,7 @@ class _Directory:
         "directories",
         "directory_count",
         "directory_name_chars",
+        "explicit",
         "file_count",
         "file_path_chars",
         "file_text_chars",
@@ -40,6 +41,7 @@ class _Directory:
         self.file_path_chars = 0
         self.directory_count = 0
         self.directory_name_chars = 0
+        self.explicit = False
 
 
 class VirtualFileSystem:
@@ -82,6 +84,21 @@ class VirtualFileSystem:
 
     def _missing_directory_allocation(self, path: str) -> int:
         segments = self._segments(path)[:-1]
+        directory = self._root
+        for index, segment in enumerate(segments):
+            child = directory.directories.get(segment)
+            if child is None:
+                return sum(64 + len(name) * 4 for name in segments[index:])
+            directory = child
+        return 0
+
+    def make_dir_allocation(self, path: object) -> int:
+        if not isinstance(path, str):
+            return 0
+        normalized = normalize_path(path)
+        if normalized in self._files or self._find_directory(normalized) is not None:
+            return 0
+        segments = self._segments(normalized)
         directory = self._root
         for index, segment in enumerate(segments):
             child = directory.directories.get(segment)
@@ -284,40 +301,38 @@ class VirtualFileSystem:
             )
         return destination
 
-    def _directory_files(
+    def _directory_tree(
         self, normalized: str, directory: _Directory
-    ) -> list[tuple[str, str]]:
-        result: list[tuple[str, str]] = []
+    ) -> tuple[list[tuple[str, str]], list[tuple[str, bool]]]:
+        files: list[tuple[str, str]] = []
+        directories: list[tuple[str, bool]] = []
         pending = [(normalized, directory)]
         while pending:
             path, current = pending.pop()
+            directories.append((path, current.explicit))
             for name in current.files:
                 file_path = f"{path}/{name}"
-                result.append((file_path, self._files[file_path]))
+                files.append((file_path, self._files[file_path]))
             for name, child in current.directories.items():
                 pending.append((f"{path}/{name}", child))
-        return result
+        return files, directories
 
-    def _commit_write(self, normalized: str, text: str) -> None:
-        is_new = normalized not in self._files
-        previous_text = self._files.get(normalized, "")
-        self._files[normalized] = text
-        segments = self._segments(normalized)
+    def _ensure_directories(
+        self, segments: list[str], *, explicit_new: bool = False
+    ) -> tuple[list[_Directory], _Directory]:
         directory = self._root
         ancestors = [directory]
         created: list[tuple[int, str]] = []
-        for index, segment in enumerate(segments[:-1]):
+        for index, segment in enumerate(segments):
             child = directory.directories.get(segment)
             if child is None:
                 child = _Directory()
+                child.explicit = explicit_new
                 directory.directories[segment] = child
                 directory.name_chars += len(segment)
                 created.append((index, segment))
             directory = child
             ancestors.append(directory)
-        if is_new:
-            directory.files.add(segments[-1])
-            directory.name_chars += len(segments[-1])
         created_counts = [0] * len(ancestors)
         created_chars = [0] * len(ancestors)
         for index, name in created:
@@ -328,9 +343,32 @@ class VirtualFileSystem:
         for index in reversed(range(len(ancestors))):
             directory_count += created_counts[index]
             directory_name_chars += created_chars[index]
-            ancestor = ancestors[index]
-            ancestor.directory_count += directory_count
-            ancestor.directory_name_chars += directory_name_chars
+            ancestors[index].directory_count += directory_count
+            ancestors[index].directory_name_chars += directory_name_chars
+        return ancestors, directory
+
+    def _commit_make_dir(
+        self,
+        normalized: str,
+        *,
+        explicit: bool = True,
+        explicit_ancestors: bool = False,
+    ) -> None:
+        _, directory = self._ensure_directories(
+            self._segments(normalized), explicit_new=explicit_ancestors
+        )
+        directory.explicit = explicit
+
+    def _commit_write(self, normalized: str, text: str) -> None:
+        is_new = normalized not in self._files
+        previous_text = self._files.get(normalized, "")
+        self._files[normalized] = text
+        segments = self._segments(normalized)
+        ancestors, directory = self._ensure_directories(segments[:-1])
+        if is_new:
+            directory.files.add(segments[-1])
+            directory.name_chars += len(segments[-1])
+        for ancestor in ancestors:
             if is_new:
                 ancestor.file_count += 1
                 ancestor.file_path_chars += len(normalized)
@@ -353,7 +391,7 @@ class VirtualFileSystem:
         directory.name_chars -= len(name)
         pruned: list[tuple[_Directory, str, _Directory]] = []
         for parent, segment, child in reversed(parents):
-            if child.files or child.directories:
+            if child.explicit or child.files or child.directories:
                 break
             del parent.directories[segment]
             parent.name_chars -= len(segment)
@@ -365,6 +403,31 @@ class VirtualFileSystem:
             ancestor.file_path_chars -= len(normalized)
             ancestor.directory_count -= len(pruned)
             ancestor.directory_name_chars -= pruned_chars
+
+    def _commit_detach_directory(self, normalized: str) -> None:
+        directory = self._root
+        parents: list[tuple[_Directory, str, _Directory]] = []
+        for segment in self._segments(normalized):
+            child = directory.directories[segment]
+            parents.append((directory, segment, child))
+            directory = child
+        parent, name, detached = parents[-1]
+        del parent.directories[name]
+        parent.name_chars -= len(name)
+        removed_count = detached.directory_count + 1
+        removed_chars = detached.directory_name_chars + len(name)
+        for parent, segment, child in reversed(parents[:-1]):
+            if child.explicit or child.files or child.directories:
+                break
+            del parent.directories[segment]
+            parent.name_chars -= len(segment)
+            removed_count += 1
+            removed_chars += len(segment)
+        ancestors = [self._root]
+        ancestors.extend(item[2] for item in parents[:-1])
+        for ancestor in ancestors:
+            ancestor.directory_count -= removed_count
+            ancestor.directory_name_chars -= removed_chars
 
     def write_file(
         self, path: object, text: object, *, permit: AllocationPermit
@@ -420,55 +483,81 @@ class VirtualFileSystem:
         destination_normalized = self._validate_new_file(destination_path, text)
         self._commit_write(destination_normalized, text)
 
+    def make_dir(self, path: object, *, permit: AllocationPermit) -> None:
+        normalized = normalize_path(path)
+        if normalized in self._files or self._find_directory(normalized) is not None:
+            raise SericiteError(f"path already exists: {path}", kind="file_exists")
+        permit.consume(self, "write", self.make_dir_allocation(normalized))
+        self._commit_make_dir(normalized, explicit_ancestors=True)
+
+    def make_dir_trusted(self, path: object) -> None:
+        normalized = normalize_path(path)
+        if normalized in self._files or self._find_directory(normalized) is not None:
+            raise SericiteError(f"path already exists: {path}", kind="file_exists")
+        self._commit_make_dir(normalized, explicit_ancestors=True)
+
     def delete_dir(self, path: object) -> None:
         normalized, directory = self._require_directory(path)
-        for file_path, _ in self._directory_files(normalized, directory):
+        files, _ = self._directory_tree(normalized, directory)
+        for file_path, _ in files:
             self._commit_delete(file_path)
+        if self._find_directory(normalized) is not None:
+            self._commit_detach_directory(normalized)
 
     def _rename_dir_plan(
         self, old_path: object, new_path: object
-    ) -> tuple[str, str, list[tuple[str, str]]]:
+    ) -> tuple[str, str, list[tuple[str, str]], list[tuple[str, bool]]]:
         old_normalized, directory = self._require_directory(old_path)
         new_normalized = self._validate_directory_destination(old_normalized, new_path)
-        files = self._directory_files(old_normalized, directory)
-        return old_normalized, new_normalized, files
+        files, directories = self._directory_tree(old_normalized, directory)
+        return old_normalized, new_normalized, files, directories
 
     def rename_dir(
         self, old_path: object, new_path: object, *, permit: AllocationPermit
     ) -> None:
-        old_normalized, new_normalized, files = self._rename_dir_plan(
+        old_normalized, new_normalized, files, directories = self._rename_dir_plan(
             old_path, new_path
         )
         permit.consume(
             self, "write", self.rename_dir_allocation(old_normalized, new_normalized)
         )
+        for path, explicit in directories:
+            suffix = path[len(old_normalized) :]
+            self._commit_make_dir(new_normalized + suffix, explicit=explicit)
         for file_path, text in files:
             suffix = file_path[len(old_normalized) :]
             self._commit_write(new_normalized + suffix, text)
         for file_path, _ in files:
             self._commit_delete(file_path)
+        if self._find_directory(old_normalized) is not None:
+            self._commit_detach_directory(old_normalized)
 
     def rename_dir_trusted(self, old_path: object, new_path: object) -> None:
-        old_normalized, new_normalized, files = self._rename_dir_plan(
+        old_normalized, new_normalized, files, directories = self._rename_dir_plan(
             old_path, new_path
         )
+        for path, explicit in directories:
+            suffix = path[len(old_normalized) :]
+            self._commit_make_dir(new_normalized + suffix, explicit=explicit)
         for file_path, text in files:
             suffix = file_path[len(old_normalized) :]
             self._commit_write(new_normalized + suffix, text)
         for file_path, _ in files:
             self._commit_delete(file_path)
+        if self._find_directory(old_normalized) is not None:
+            self._commit_detach_directory(old_normalized)
 
     def _copy_dir_plan(
         self, source_path: object, destination_path: object
-    ) -> tuple[str, str, list[tuple[str, str]]]:
+    ) -> tuple[str, str, list[tuple[str, str]], list[tuple[str, bool]]]:
         source_normalized, directory = self._require_directory(source_path)
         destination_normalized = self._validate_directory_destination(
             source_normalized, destination_path
         )
         if len(self._files) + directory.file_count > self._max_files:
             raise SericiteError("file count limit exceeded", kind="resource_exhausted")
-        files = self._directory_files(source_normalized, directory)
-        return source_normalized, destination_normalized, files
+        files, directories = self._directory_tree(source_normalized, directory)
+        return source_normalized, destination_normalized, files, directories
 
     def copy_dir(
         self,
@@ -477,22 +566,28 @@ class VirtualFileSystem:
         *,
         permit: AllocationPermit,
     ) -> None:
-        source_normalized, destination_normalized, files = self._copy_dir_plan(
-            source_path, destination_path
+        source_normalized, destination_normalized, files, directories = (
+            self._copy_dir_plan(source_path, destination_path)
         )
         permit.consume(
             self,
             "write",
             self.copy_dir_allocation(source_normalized, destination_normalized),
         )
+        for path, explicit in directories:
+            suffix = path[len(source_normalized) :]
+            self._commit_make_dir(destination_normalized + suffix, explicit=explicit)
         for file_path, text in files:
             suffix = file_path[len(source_normalized) :]
             self._commit_write(destination_normalized + suffix, text)
 
     def copy_dir_trusted(self, source_path: object, destination_path: object) -> None:
-        source_normalized, destination_normalized, files = self._copy_dir_plan(
-            source_path, destination_path
+        source_normalized, destination_normalized, files, directories = (
+            self._copy_dir_plan(source_path, destination_path)
         )
+        for path, explicit in directories:
+            suffix = path[len(source_normalized) :]
+            self._commit_make_dir(destination_normalized + suffix, explicit=explicit)
         for file_path, text in files:
             suffix = file_path[len(source_normalized) :]
             self._commit_write(destination_normalized + suffix, text)
