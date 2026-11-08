@@ -327,6 +327,15 @@ class VMHandle:
     def write_file(self, path: object, text: object) -> None:
         self._engine._context(self).fs.write_file_trusted(path, text)
 
+    def delete_file(self, path: object) -> None:
+        self._engine._context(self).fs.delete_file(path)
+
+    def rename_file(self, old_path: object, new_path: object) -> None:
+        self._engine._context(self).fs.rename_file_trusted(old_path, new_path)
+
+    def copy_file(self, source_path: object, destination_path: object) -> None:
+        self._engine._context(self).fs.copy_file_trusted(source_path, destination_path)
+
     def list_dir(self, path: object) -> list[str]:
         return self._engine._context(self).fs.list_dir(path)
 

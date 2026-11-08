@@ -201,7 +201,7 @@ Note: bare `except:` and `except ...` only handle **catchable** errors. The catc
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
-- Files and FFI: `file_not_found`, `is_directory`, `not_directory`, `ffi_error`.
+- Files and FFI: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
 - Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
 ```python
@@ -222,8 +222,10 @@ except resource_exhausted as e:
 
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
 - `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
-- Files (text only): `read_file(path)`, `write_file(path, text)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
+- Files (text only): `read_file(path)`, `write_file(path, text)`, `delete_file(path)`, `rename_file(old_path, new_path)`, `copy_file(source_path, destination_path)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
+
+Delete, rename, and copy operate on files only: a directory path raises `is_directory`, and a missing source file raises `file_not_found`. Rename and copy create missing destination parent directories but refuse to overwrite an existing file, raising `file_exists`. Rename does not increase the file count and therefore needs no additional file-count slot; copy does. After deletion or rename, implicit directories with no remaining files or subdirectories are removed automatically; the root directory always remains.
 
 List and dict methods:
 
