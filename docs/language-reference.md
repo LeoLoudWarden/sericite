@@ -222,17 +222,58 @@ except resource_exhausted as e:
 
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
 - `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
-- Files (text only): `read_file(path)`, `write_file(path, text)`, `delete_file(path)`, `rename_file(old_path, new_path)`, `copy_file(source_path, destination_path)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`.
-- Directories: `make_dir(path)` explicitly creates a directory; `delete_dir(path)`, `rename_dir(old_path, new_path)`, and `copy_dir(source_path, destination_path)` recursively delete, move, and copy whole directory trees.
+- Files and directories (text only): see below.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
-File deletion, rename, and copy operate on files only: a directory path raises `is_directory`, and a missing source file raises `file_not_found`. Rename and copy create missing destination parent directories but refuse to overwrite an existing file, raising `file_exists`. Rename does not increase the file count and therefore needs no additional file-count slot; copy does. After deletion or rename, empty implicit directories are removed automatically; explicit directories created by `make_dir` remain even when empty, and the root directory always remains.
+**Files and directories**
 
-`make_dir` creates missing parent directories and raises `file_exists` when a file or directory already exists at the target. Directory deletion, rename, and copy require a directory source: a file path raises `not_directory`, and a missing directory raises `file_not_found`. An existing file or directory at the destination raises `file_exists`; a destination inside the source tree or deleting, moving, or copying the root directory raises `runtime_error`. Directory copy needs sufficient file-count and memory quotas, and all validation and quota checks finish before the file tree changes.
+Each VM has a text-only filesystem, with paths such as `/notes/a.txt`. These operations are available as built-ins and as VM-handle methods; the handle form operates on that VM's filesystem (see the [VM reference](vm-reference.md) §4).
 
-Every operation that creates a file or directory first validates all intermediate path segments. If any segment is an existing file, the operation raises `not_directory` without creating a same-name file/directory conflict or leaving a partial change.
+| Operation | Purpose |
+|---|---|
+| `read_file(path)` | Read a text file |
+| `write_file(path, text)` | Write a text file, creating missing parent directories |
+| `delete_file(path)` | Delete a file |
+| `rename_file(old_path, new_path)` | Rename or move a file |
+| `copy_file(source_path, destination_path)` | Copy a file |
+| `make_dir(path)` | Create a directory and missing parents |
+| `delete_dir(path)` | Recursively delete a directory tree |
+| `rename_dir(old_path, new_path)` | Recursively move a directory tree |
+| `copy_dir(source_path, destination_path)` | Recursively copy a directory tree |
+| `list_dir(path)` | Return sorted direct children of a directory |
+| `path_exists(path)` | Check whether a file or directory exists |
 
-List and dict methods:
+**Implicit and explicit directories.** Writing a file creates missing parent directories implicitly. When deletion or rename leaves an implicit directory with no files or subdirectories, that directory is removed automatically. `make_dir` creates its target and any missing parents explicitly; they remain even when empty. The root directory always remains.
+
+```python
+write_file("/scratch/note.txt", "text")
+delete_file("/scratch/note.txt")
+print(path_exists("/scratch"))            # False
+
+make_dir("/keep/empty")
+print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
+```
+
+**File operations**
+
+- Delete, rename, and copy require a file source. A directory raises `is_directory`; a missing file raises `file_not_found`.
+- Rename and copy create missing destination parents but refuse to overwrite an existing file, raising `file_exists`.
+- Rename does not increase the number of files. Copy requires room for one more file under the file-count quota.
+
+**Directory operations**
+
+- `make_dir` raises `file_exists` when a file or directory already exists at the target.
+- Delete, rename, and copy require a directory source. A file raises `not_directory`; a missing directory raises `file_not_found`.
+- Rename and copy refuse to overwrite an existing file or directory, raising `file_exists`.
+- Directory deletion, rename, and copy reject the root directory as a source or destination. Moving or copying a directory into its own tree is also forbidden. These cases raise `runtime_error`.
+- Directory copy requires sufficient file-count and memory quotas for the copied tree.
+
+**Common path and failure rules**
+
+- Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
+- Mutating operations complete path validation and quota checks before changing the file tree. Failure leaves no partial change.
+
+**List and dict methods**
 
 - `lst.append(x)`: append one item in place and return `None`.
 - `lst.pop()` / `lst.pop(i)`: remove and return the last item or the item at `i`; negative indices work as in indexing. An empty list or invalid index raises `index_error`.
@@ -240,7 +281,7 @@ List and dict methods:
 - `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
 - `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
 
-String methods (arguments are positional):
+**String methods**
 
 - `s.strip()` / `s.lstrip()` / `s.rstrip()`: remove whitespace from both ends, the left, or the right. Forms such as `s.strip(chars)` instead remove any of the individual characters listed in `chars`, not a whole prefix or suffix.
 - `s.split()`: split on runs of whitespace and ignore whitespace at the ends. `s.split(sep, maxsplit=-1)` splits on a non-empty string `sep`; `sep=None` selects whitespace splitting. `maxsplit` limits the number of splits, with a negative value meaning no limit.

@@ -63,15 +63,17 @@ VM IDs are never reused, and the parent's cumulative instruction/memory ledgers 
 | `dispose()` | Forcibly destroy a VM in any state and all live descendants; see section 3 |
 | `read_file(path) -> str` | Read a text file from this VM |
 | `write_file(path, text)` | Write a text file into this VM |
-| `delete_file(path)` | Delete a file and prune empty implicit directories |
+| `delete_file(path)` | Delete a file |
 | `rename_file(old_path, new_path)` | Rename or move a file; refuse to overwrite an existing file |
 | `copy_file(source_path, destination_path)` | Copy a file; refuse to overwrite an existing file |
-| `make_dir(path)` | Explicitly create a directory and missing parents; empty directories persist |
+| `make_dir(path)` | Create a directory and missing parents; empty directories persist |
 | `delete_dir(path)` | Recursively delete a whole directory tree |
 | `rename_dir(old_path, new_path)` | Recursively move a directory tree; refuse overwrite or moving into itself |
 | `copy_dir(source_path, destination_path)` | Recursively copy a directory tree; refuse overwrite or copying into itself |
 | `list_dir(path) -> list[str]` | Return sorted direct children of a directory |
 | `path_exists(path) -> bool` | Check whether a file or directory exists |
+
+The file and directory methods have the same path, error, and empty-directory behavior as the corresponding script built-ins; see the [language reference](language-reference.md) §6.
 
 ```python
 sub = VM(code, max_instructions=10000)
@@ -90,7 +92,7 @@ After a child enters the terminal `resource_exhausted` state, a parent can catch
 A terminal VM can still be operated on, but two kinds of methods behave differently:
 
 - methods that do not drive the VM (`snapshot`, `step`, `step_instruction`, VFS reads, …) remain available; on a terminal VM, `step`/`step_instruction` only return a snapshot;
-- write or driving methods (`write_file`, `delete_file`, `rename_file`, `copy_file`, `make_dir`, `delete_dir`, `rename_dir`, `copy_dir`, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
+- write or driving methods (the file/directory mutation methods above, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
 
 The charging model — which operations are charged to whom — is in the [architecture](architecture.md) §5.4.
 

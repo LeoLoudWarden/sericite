@@ -222,17 +222,58 @@ except resource_exhausted as e:
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
 - `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
-- 文件（纯文本）：`read_file(path)`、`write_file(path, text)`、`delete_file(path)`、`rename_file(old_path, new_path)`、`copy_file(source_path, destination_path)`、`list_dir(path)`、`path_exists(path)`。路径形如 `/notes/a.txt`。
-- 目录：`make_dir(path)` 显式创建目录；`delete_dir(path)`、`rename_dir(old_path, new_path)`、`copy_dir(source_path, destination_path)` 分别递归删除、移动和复制整个目录树。
+- 文件与目录（纯文本）：见下文。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
-文件级删除、重命名和复制只处理文件，目录路径报 `is_directory`，缺失源文件报 `file_not_found`。重命名和复制会自动创建目标父目录，但拒绝覆盖已有文件，目标已存在时报 `file_exists`。重命名不增加文件总数，因此不需要额外的文件数配额槽位；复制需要。删除或移走文件后，不再含文件或子目录的隐式目录会自动移除；`make_dir` 创建的显式目录即使为空也会保留，根目录始终保留。
+**文件与目录**
 
-`make_dir` 会创建缺失的父目录，目标已有文件或目录时报 `file_exists`。目录级删除、移动和复制的源路径必须是目录：文件路径报 `not_directory`，缺失目录报 `file_not_found`。目标已有文件或目录时报 `file_exists`；目标位于源目录内部或删除、移动、复制涉及根目录时报 `runtime_error`。目录复制需要足够的文件数与内存配额，所有校验和配额检查先于文件树变更。
+每个 VM 都有纯文本文件系统，路径形如 `/notes/a.txt`。下列操作既可作为内建函数调用，也可作为 VM 句柄方法调用；句柄形式操作该 VM 的文件系统（见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
 
-所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`，不会创建文件与目录的同名冲突，也不会留下部分变更。
+| 操作 | 用途 |
+|---|---|
+| `read_file(path)` | 读取文本文件 |
+| `write_file(path, text)` | 写入文本文件，并创建缺失的父目录 |
+| `delete_file(path)` | 删除文件 |
+| `rename_file(old_path, new_path)` | 重命名或移动文件 |
+| `copy_file(source_path, destination_path)` | 复制文件 |
+| `make_dir(path)` | 创建目录及缺失的父目录 |
+| `delete_dir(path)` | 递归删除目录树 |
+| `rename_dir(old_path, new_path)` | 递归移动目录树 |
+| `copy_dir(source_path, destination_path)` | 递归复制目录树 |
+| `list_dir(path)` | 列出目录的直接子项并排序 |
+| `path_exists(path)` | 检查文件或目录是否存在 |
 
-列表与字典方法：
+**隐式目录与显式目录。** 写入文件时会隐式创建缺失的父目录。删除或重命名使隐式目录不再含任何文件或子目录时，该目录会自动移除。`make_dir` 会显式创建目标及缺失的父目录；它们即使为空也会保留。根目录始终保留。
+
+```python
+write_file("/scratch/note.txt", "text")
+delete_file("/scratch/note.txt")
+print(path_exists("/scratch"))            # False
+
+make_dir("/keep/empty")
+print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
+```
+
+**文件操作**
+
+- 删除、重命名和复制要求源路径是文件。源路径为目录时报 `is_directory`，文件不存在时报 `file_not_found`。
+- 重命名和复制会创建缺失的目标父目录，但不覆盖已有文件；目标文件已存在时报 `file_exists`。
+- 重命名不增加文件数；复制要求文件数配额还能容纳一个新文件。
+
+**目录操作**
+
+- `make_dir` 的目标已有文件或目录时报 `file_exists`。
+- 删除、重命名和复制要求源路径是目录。源路径为文件时报 `not_directory`，目录不存在时报 `file_not_found`。
+- 重命名和复制不覆盖已有文件或目录；目标已存在时报 `file_exists`。
+- 删除、重命名和复制目录时，根目录不能作为源或目标；也禁止把目录移动或复制到自身内部。这些情况报 `runtime_error`。
+- 复制目录要求文件数与内存配额足以容纳复制出的目录树。
+
+**公共路径与失败规则**
+
+- 所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`。
+- 变更操作会在修改文件树之前完成路径校验与配额检查，失败不会留下部分变更。
+
+**列表与字典方法**
 
 - `lst.append(x)`：原地追加一个元素，返回 `None`。
 - `lst.pop()` / `lst.pop(i)`：删除并返回末尾或索引 `i` 处的元素；负索引与下标读取一致。空列表或无效索引报 `index_error`。
@@ -240,7 +281,7 @@ except resource_exhausted as e:
 - `d.get(key)` / `d.get(key, default)`：返回键对应的值；键不存在时返回 `None` 或 `default`。
 - `d.pop(key)` / `d.pop(key, default)`：删除并返回键对应的值；未提供默认值时，缺键报 `key_error`，否则返回默认值。
 
-字符串方法（参数按位置传递）：
+**字符串方法**
 
 - `s.strip()` / `s.lstrip()` / `s.rstrip()`：去除两端、左端或右端空白；`s.strip(chars)` 等形式改为去除 `chars` 中列出的任意字符，而不是去除整个前后缀。
 - `s.split()`：按连续空白拆分并忽略两端空白；`s.split(sep, maxsplit=-1)` 按非空字符串 `sep` 拆分，`sep=None` 时按空白拆分。`maxsplit` 限制拆分次数，负数表示不限制。
