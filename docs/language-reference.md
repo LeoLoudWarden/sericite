@@ -230,6 +230,8 @@ File deletion, rename, and copy operate on files only: a directory path raises `
 
 `make_dir` creates missing parent directories and raises `file_exists` when a file or directory already exists at the target. Directory deletion, rename, and copy require a directory source: a file path raises `not_directory`, and a missing directory raises `file_not_found`. An existing file or directory at the destination raises `file_exists`; a destination inside the source tree or deleting, moving, or copying the root directory raises `runtime_error`. Directory copy needs sufficient file-count and memory quotas, and all validation and quota checks finish before the file tree changes.
 
+Every operation that creates a file or directory first validates all intermediate path segments. If any segment is an existing file, the operation raises `not_directory` without creating a same-name file/directory conflict or leaving a partial change.
+
 List and dict methods:
 
 - `lst.append(x)`: append one item in place and return `None`.

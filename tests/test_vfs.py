@@ -245,6 +245,34 @@ class VirtualFileStoreTests(unittest.TestCase):
         self.assertEqual(self.fs.list_dir("/"), [])
         self.assert_aggregate_metadata()
 
+    def test_file_parent_conflicts_are_rejected_before_any_mutation(self) -> None:
+        self.fs.write_file_trusted("/a", "parent file")
+        self.fs.write_file_trusted("/source.txt", "source")
+        self.fs.write_file_trusted("/tree/file.txt", "tree")
+        operations = (
+            lambda: self.fs.write_file_trusted("/a/b", "new"),
+            lambda: self.fs.make_dir_trusted("/a/b"),
+            lambda: self.fs.rename_file_trusted("/source.txt", "/a/b"),
+            lambda: self.fs.copy_file_trusted("/source.txt", "/a/b"),
+            lambda: self.fs.rename_dir_trusted("/tree", "/a/b"),
+            lambda: self.fs.copy_dir_trusted("/tree", "/a/b"),
+            lambda: self.fs.write_file_trusted("/a/b/c", "deep"),
+            lambda: self.fs.make_dir_trusted("/a/b/c"),
+        )
+        for operation in operations:
+            with (
+                self.subTest(operation=operation),
+                self.assertRaises(SericiteError) as ctx,
+            ):
+                operation()
+            self.assertEqual(ctx.exception.kind, "not_directory")
+            self.assertEqual(self.fs.read_file("/a"), "parent file")
+            self.assertEqual(self.fs.read_file("/source.txt"), "source")
+            self.assertEqual(self.fs.read_file("/tree/file.txt"), "tree")
+            self.assertFalse(self.fs.path_exists("/a/b"))
+            self.assertEqual(self.fs.list_dir("/"), ["a", "source.txt", "tree"])
+        self.assert_aggregate_metadata()
+
 
 if __name__ == "__main__":
     unittest.main()
