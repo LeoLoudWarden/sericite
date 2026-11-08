@@ -230,6 +230,8 @@ except resource_exhausted as e:
 
 `make_dir` 会创建缺失的父目录，目标已有文件或目录时报 `file_exists`。目录级删除、移动和复制的源路径必须是目录：文件路径报 `not_directory`，缺失目录报 `file_not_found`。目标已有文件或目录时报 `file_exists`；目标位于源目录内部或删除、移动、复制涉及根目录时报 `runtime_error`。目录复制需要足够的文件数与内存配额，所有校验和配额检查先于文件树变更。
 
+所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`，不会创建文件与目录的同名冲突，也不会留下部分变更。
+
 列表与字典方法：
 
 - `lst.append(x)`：原地追加一个元素，返回 `None`。

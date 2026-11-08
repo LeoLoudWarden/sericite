@@ -229,6 +229,19 @@ class VirtualFileSystem:
             + directory_allocation
         )
 
+    def _validate_parent_directories(self, normalized: str) -> None:
+        directory = self._root
+        for segment in self._segments(normalized)[:-1]:
+            if segment in directory.files:
+                raise SericiteError(
+                    f"parent path is not a directory: {normalized}",
+                    kind="not_directory",
+                )
+            child = directory.directories.get(segment)
+            if child is None:
+                return
+            directory = child
+
     def _validate_write(
         self,
         path: object,
@@ -240,6 +253,7 @@ class VirtualFileSystem:
         normalized = normalize_path(path)
         if not isinstance(text, str):
             raise SericiteError("file content must be a string", kind="type_error")
+        self._validate_parent_directories(normalized)
         if normalized == "/" or self._find_directory(normalized) is not None:
             raise SericiteError(f"is a directory: {path}", kind="is_directory")
         if not overwrite and normalized in self._files:
@@ -295,6 +309,7 @@ class VirtualFileSystem:
             raise SericiteError(
                 "cannot move or copy a directory into itself", kind="runtime_error"
             )
+        self._validate_parent_directories(destination)
         if destination in self._files or self._find_directory(destination) is not None:
             raise SericiteError(
                 f"path already exists: {destination_path}", kind="file_exists"
@@ -324,6 +339,10 @@ class VirtualFileSystem:
         ancestors = [directory]
         created: list[tuple[int, str]] = []
         for index, segment in enumerate(segments):
+            if segment in directory.files:
+                raise SericiteError(
+                    "file/directory conflict during commit", kind="internal_error"
+                )
             child = directory.directories.get(segment)
             if child is None:
                 child = _Directory()
@@ -483,17 +502,20 @@ class VirtualFileSystem:
         destination_normalized = self._validate_new_file(destination_path, text)
         self._commit_write(destination_normalized, text)
 
-    def make_dir(self, path: object, *, permit: AllocationPermit) -> None:
+    def _validate_make_dir(self, path: object) -> str:
         normalized = normalize_path(path)
+        self._validate_parent_directories(normalized)
         if normalized in self._files or self._find_directory(normalized) is not None:
             raise SericiteError(f"path already exists: {path}", kind="file_exists")
+        return normalized
+
+    def make_dir(self, path: object, *, permit: AllocationPermit) -> None:
+        normalized = self._validate_make_dir(path)
         permit.consume(self, "write", self.make_dir_allocation(normalized))
         self._commit_make_dir(normalized, explicit_ancestors=True)
 
     def make_dir_trusted(self, path: object) -> None:
-        normalized = normalize_path(path)
-        if normalized in self._files or self._find_directory(normalized) is not None:
-            raise SericiteError(f"path already exists: {path}", kind="file_exists")
+        normalized = self._validate_make_dir(path)
         self._commit_make_dir(normalized, explicit_ancestors=True)
 
     def delete_dir(self, path: object) -> None:

@@ -745,6 +745,31 @@ class VFSTests(unittest.TestCase):
         self.assertTrue(vm.path_exists("/host/empty"))
         self.assertEqual(vm.run(), "True\n")
 
+    def test_parent_file_conflict_is_catchable_and_consistent(self):
+        source = (
+            'write_file("/a", "x")\n'
+            "try:\n"
+            '    write_file("/a/b", "y")\n'
+            "except not_directory:\n"
+            '    print("write caught")\n'
+            "try:\n"
+            '    make_dir("/a/b")\n'
+            "except not_directory:\n"
+            '    print("mkdir caught")\n'
+            'sub = VM("")\n'
+            'sub.write_file("/a", "child")\n'
+            "try:\n"
+            '    sub.copy_file("/a", "/a/b")\n'
+            "except not_directory:\n"
+            '    print("child caught")\n'
+            'print(list_dir("/"), read_file("/a"))\n'
+            'print(sub.list_dir("/"), sub.read_file("/a"))\n'
+        )
+        self.assertEqual(
+            run(source),
+            "write caught\nmkdir caught\nchild caught\n['a'] x\n['a'] child\n",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
