@@ -223,9 +223,12 @@ except resource_exhausted as e:
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
 - `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
 - Files (text only): `read_file(path)`, `write_file(path, text)`, `delete_file(path)`, `rename_file(old_path, new_path)`, `copy_file(source_path, destination_path)`, `list_dir(path)`, `path_exists(path)`. Paths look like `/notes/a.txt`; directories exist implicitly via path prefixes.
+- Directories: `delete_dir(path)`, `rename_dir(old_path, new_path)`, and `copy_dir(source_path, destination_path)` recursively delete, move, and copy whole directory trees.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
-Delete, rename, and copy operate on files only: a directory path raises `is_directory`, and a missing source file raises `file_not_found`. Rename and copy create missing destination parent directories but refuse to overwrite an existing file, raising `file_exists`. Rename does not increase the file count and therefore needs no additional file-count slot; copy does. After deletion or rename, implicit directories with no remaining files or subdirectories are removed automatically; the root directory always remains.
+File deletion, rename, and copy operate on files only: a directory path raises `is_directory`, and a missing source file raises `file_not_found`. Rename and copy create missing destination parent directories but refuse to overwrite an existing file, raising `file_exists`. Rename does not increase the file count and therefore needs no additional file-count slot; copy does. After deletion or rename, implicit directories with no remaining files or subdirectories are removed automatically; the root directory always remains.
+
+Directory operations require a directory source: a file path raises `not_directory`, and a missing directory raises `file_not_found`. An existing file or directory at the destination raises `file_exists`; a destination inside the source tree or any operation on the root directory raises `runtime_error`. Directory copy needs sufficient file-count and memory quotas, and all validation and quota checks finish before the file tree changes.
 
 List and dict methods:
 

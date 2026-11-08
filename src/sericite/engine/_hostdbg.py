@@ -44,19 +44,24 @@ class _EngineHostDebug:
             path = args[0] if args else kwargs.get("path")
             text = args[1] if len(args) > 1 else kwargs.get("text")
             return fs.write_work(path, text)
-        if attr == "rename_file":
+        if attr in ("rename_file", "rename_dir"):
             old_path = args[0] if args else kwargs.get("old_path")
             new_path = args[1] if len(args) > 1 else kwargs.get("new_path")
-            return fs.rename_work(old_path, new_path)
-        if attr == "copy_file":
+            work = fs.rename_work if attr == "rename_file" else fs.rename_dir_work
+            return work(old_path, new_path)
+        if attr in ("copy_file", "copy_dir"):
             source_path = args[0] if args else kwargs.get("source_path")
             destination_path = (
                 args[1] if len(args) > 1 else kwargs.get("destination_path")
             )
-            return fs.copy_work(source_path, destination_path)
+            work = fs.copy_work if attr == "copy_file" else fs.copy_dir_work
+            return work(source_path, destination_path)
         if attr == "list_dir":
             path = args[0] if args else kwargs.get("path")
             return fs.list_dir_work(path)
+        if attr == "delete_dir":
+            path = args[0] if args else kwargs.get("path")
+            return fs.delete_dir_work(path)
         if attr in ("read_file", "delete_file", "path_exists"):
             path = args[0] if args else kwargs.get("path")
             return fs.path_work(path)
@@ -103,22 +108,33 @@ class _EngineHostDebug:
             text = args[1] if len(args) > 1 else kwargs.get("text")
             amount = target.fs.write_allocation(path, text)
             return self._meter(context).reserve(target.fs, "write", amount)
-        if attr == "rename_file":
+        if attr in ("rename_file", "rename_dir"):
             old_path = args[0] if args else kwargs.get("old_path")
             new_path = args[1] if len(args) > 1 else kwargs.get("new_path")
-            amount = target.fs.rename_allocation(old_path, new_path)
+            estimate = (
+                target.fs.rename_allocation
+                if attr == "rename_file"
+                else target.fs.rename_dir_allocation
+            )
+            amount = estimate(old_path, new_path)
             return self._meter(context).reserve(target.fs, "write", amount)
-        if attr == "copy_file":
+        if attr in ("copy_file", "copy_dir"):
             source_path = args[0] if args else kwargs.get("source_path")
             destination_path = (
                 args[1] if len(args) > 1 else kwargs.get("destination_path")
             )
-            amount = target.fs.copy_allocation(source_path, destination_path)
+            estimate = (
+                target.fs.copy_allocation
+                if attr == "copy_file"
+                else target.fs.copy_dir_allocation
+            )
+            amount = estimate(source_path, destination_path)
             return self._meter(context).reserve(target.fs, "write", amount)
         if attr in {
             "exec",
             "read_file",
             "delete_file",
+            "delete_dir",
             "list_dir",
             "path_exists",
             "step",
@@ -204,23 +220,23 @@ class _EngineHostDebug:
                     error._resource_vm_id = target.vm_id
                 raise
             result = None
-        elif attr == "rename_file" and rename_signature:
+        elif attr in ("rename_file", "rename_dir") and rename_signature:
             old_path = args[0] if args else kwargs["old_path"]
             new_path = args[1] if len(args) > 1 else kwargs["new_path"]
             target = self._context(handle)
             try:
-                target.fs.rename_file(old_path, new_path, permit=permit)
+                getattr(target.fs, attr)(old_path, new_path, permit=permit)
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
                 raise
             result = None
-        elif attr == "copy_file" and copy_signature:
+        elif attr in ("copy_file", "copy_dir") and copy_signature:
             source_path = args[0] if args else kwargs["source_path"]
             destination_path = args[1] if len(args) > 1 else kwargs["destination_path"]
             target = self._context(handle)
             try:
-                target.fs.copy_file(source_path, destination_path, permit=permit)
+                getattr(target.fs, attr)(source_path, destination_path, permit=permit)
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id

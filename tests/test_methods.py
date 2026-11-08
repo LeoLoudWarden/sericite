@@ -1022,6 +1022,58 @@ class VfsChargeTests(unittest.TestCase):
         engine = SericiteEngine(SericiteLimits(max_fs_files=1))
         self.assertEqual(engine.create_root(source).run(), "payload\nFalse\n")
 
+    def test_copy_dir_charges_whole_tree_work_and_allocation(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        text = "x" * 1000
+        vm = engine.create_root(
+            "checkpoint()\ncopy_dir('/tree', '/copy')\ncheckpoint()\n",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    (
+                        engine._contexts[0].instruction_count,
+                        engine._contexts[0].alloc_bytes,
+                    )
+                )
+            },
+        )
+        vm.write_file("/tree/a.txt", text)
+        vm.write_file("/tree/nested/b.txt", text)
+        vm.run()
+        work, allocation = (
+            checkpoints[1][0] - checkpoints[0][0],
+            checkpoints[1][1] - checkpoints[0][1],
+        )
+        self.assertGreaterEqual(work, len(text) * 2)
+        self.assertGreaterEqual(allocation, len(text) * 8)
+
+    def test_copy_dir_file_count_failure_leaves_tree_unchanged(self):
+        engine = SericiteEngine()
+        vm = engine.create_root(
+            'sub = VM("", max_fs_files=2)\n'
+            "sub.write_file('/tree/a.txt', 'a')\n"
+            "sub.write_file('/tree/b.txt', 'b')\n"
+            "try:\n"
+            "    sub.copy_dir('/tree', '/copy')\n"
+            "except resource_exhausted:\n"
+            "    print('caught')\n"
+            "print(sub.read_file('/tree/a.txt'), sub.read_file('/tree/b.txt'))\n"
+            "print(sub.path_exists('/copy'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\na b\nFalse\n")
+        self.assertEqual(engine._contexts[1].state, "done")
+
+    def test_rename_dir_does_not_increase_file_count(self):
+        source = (
+            'write_file("/tree/a.txt", "a")\n'
+            'write_file("/tree/nested/b.txt", "b")\n'
+            'rename_dir("/tree", "/moved")\n'
+            'print(read_file("/moved/a.txt"), read_file("/moved/nested/b.txt"))\n'
+            'print(path_exists("/tree"))\n'
+        )
+        engine = SericiteEngine(SericiteLimits(max_fs_files=2))
+        self.assertEqual(engine.create_root(source).run(), "a b\nFalse\n")
+
     def test_dispose_charges_caller_for_live_subtree(self):
         engine = SericiteEngine()
         checkpoints = []

@@ -180,6 +180,44 @@ class _EngineBuiltins:
                     home.fs.copy_allocation(source_path, destination_path),
                 ),
             )
+        if name == "delete_dir":
+            return _NativeFunction(
+                "delete_dir",
+                home.fs.delete_dir,
+                home,
+                work=home.fs.delete_dir_work,
+                allocation=_no_allocation,
+            )
+        if name == "rename_dir":
+            return _NativeFunction(
+                "rename_dir",
+                lambda old_path, new_path, *, _allocation_permit=None: (
+                    home.fs.rename_dir(old_path, new_path, permit=_allocation_permit)
+                ),
+                home,
+                work=home.fs.rename_dir_work,
+                allocation=lambda old_path, new_path: self._meter(home).reserve(
+                    home.fs, "write", home.fs.rename_dir_allocation(old_path, new_path)
+                ),
+            )
+        if name == "copy_dir":
+            return _NativeFunction(
+                "copy_dir",
+                lambda source_path, destination_path, *, _allocation_permit=None: (
+                    home.fs.copy_dir(
+                        source_path, destination_path, permit=_allocation_permit
+                    )
+                ),
+                home,
+                work=home.fs.copy_dir_work,
+                allocation=lambda source_path, destination_path: self._meter(
+                    home
+                ).reserve(
+                    home.fs,
+                    "write",
+                    home.fs.copy_dir_allocation(source_path, destination_path),
+                ),
+            )
         if name == "list_dir":
             return _NativeFunction(
                 "list_dir",
