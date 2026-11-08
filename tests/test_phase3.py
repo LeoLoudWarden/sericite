@@ -664,6 +664,62 @@ class VFSTests(unittest.TestCase):
         self.assertFalse(vm.path_exists("/a"))
         self.assertFalse(vm.path_exists("/b"))
 
+    def test_delete_rename_and_copy_directories(self):
+        source = (
+            'write_file("/tree/a.txt", "a")\n'
+            'write_file("/tree/nested/b.txt", "b")\n'
+            'copy_dir("/tree", "/copy")\n'
+            'rename_dir("/copy/nested", "/moved")\n'
+            'delete_dir("/copy")\n'
+            'print(read_file("/tree/a.txt"), read_file("/moved/b.txt"))\n'
+            'print(path_exists("/copy"), list_dir("/"))\n'
+        )
+        self.assertEqual(run(source), "a b\nFalse ['moved', 'tree']\n")
+
+    def test_directory_mutation_errors_are_catchable(self):
+        source = (
+            'write_file("/tree/file.txt", "tree")\n'
+            'write_file("/plain.txt", "plain")\n'
+            "try:\n"
+            '    copy_dir("/plain.txt", "/new")\n'
+            "except not_directory:\n"
+            '    print("not directory")\n'
+            "try:\n"
+            '    rename_dir("/tree", "/tree/child")\n'
+            "except runtime_error:\n"
+            '    print("inside itself")\n'
+            "try:\n"
+            '    delete_dir("/")\n'
+            "except runtime_error:\n"
+            '    print("root")\n'
+            'print(read_file("/tree/file.txt"), path_exists("/new"))\n'
+        )
+        self.assertEqual(
+            run(source), "not directory\ninside itself\nroot\ntree False\n"
+        )
+
+    def test_child_handle_directory_mutations(self):
+        source = (
+            'sub = VM("")\n'
+            'sub.write_file("/tree/nested/file.txt", "child")\n'
+            'sub.copy_dir(source_path="/tree", destination_path="/copy")\n'
+            'sub.rename_dir(old_path="/copy", new_path="/moved")\n'
+            'sub.delete_dir(path="/tree")\n'
+            'print(sub.read_file("/moved/nested/file.txt"))\n'
+            'print(sub.path_exists("/tree"))\n'
+        )
+        self.assertEqual(run(source), "child\nFalse\n")
+
+    def test_host_directory_mutations(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        vm.write_file("/tree/nested/file.txt", "payload")
+        vm.copy_dir("/tree", "/copy")
+        vm.rename_dir("/copy", "/moved")
+        vm.delete_dir("/tree")
+        self.assertEqual(vm.read_file("/moved/nested/file.txt"), "payload")
+        self.assertFalse(vm.path_exists("/tree"))
+
 
 if __name__ == "__main__":
     unittest.main()
