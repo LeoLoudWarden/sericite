@@ -284,8 +284,8 @@ class _EngineOperators:
             )
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
-        if type(value) is list:
-            if attr == "append":
+        if type(value) in (list, tuple):
+            if type(value) is list and attr == "append":
                 return _NativeFunction(
                     "list.append",
                     lambda *args: self._list_append(context, value, args),
@@ -293,12 +293,20 @@ class _EngineOperators:
                     work=_no_work,
                     allocation=lambda *args: 8 if len(args) == 1 else 0,
                 )
-            if attr == "pop":
+            if type(value) is list and attr == "pop":
                 return _NativeFunction(
                     "list.pop",
                     lambda *args: self._list_pop(context, value, args),
                     context,
                     work=lambda *args: self._list_pop_work(value, args),
+                    allocation=_no_allocation,
+                )
+            if attr in ("count", "index"):
+                return _NativeFunction(
+                    f"{_type_name(value)}.{attr}",
+                    lambda *args: self._sequence_method(context, value, attr, args),
+                    context,
+                    work=_no_work,
                     allocation=_no_allocation,
                 )
         if type(value) is str:
@@ -311,6 +319,8 @@ class _EngineOperators:
                 "join",
                 "find",
                 "replace",
+                "partition",
+                "rpartition",
             ):
                 return _NativeFunction(
                     f"str.{attr}",
@@ -321,13 +331,15 @@ class _EngineOperators:
                 )
             raise SericiteError(f"str has no method '{attr}'", kind="attribute_error")
         if type(value) is dict:
-            if attr in ("keys", "values"):
+            if attr in ("keys", "values", "items"):
                 return _NativeFunction(
                     f"dict.{attr}",
                     lambda *args: self._dict_snapshot(context, value, attr, args),
                     context,
                     work=lambda *args: 0 if args else len(value),
-                    allocation=lambda *args: 0 if args else len(value) * 8,
+                    allocation=lambda *args: (
+                        0 if args else len(value) * (24 if attr == "items" else 8)
+                    ),
                 )
             if attr == "get":
                 return _NativeFunction(
@@ -345,7 +357,7 @@ class _EngineOperators:
                     work=lambda *args: self._dict_method_work(args),
                     allocation=_no_allocation,
                 )
-        if type(value) in (list, dict):
+        if type(value) in (list, tuple, dict):
             raise SericiteError(
                 f"{_type_name(value)} has no method '{attr}'", kind="attribute_error"
             )
@@ -373,6 +385,8 @@ class _EngineOperators:
             return self._string_find(context, target, args)
         if attr == "replace":
             return self._string_replace(context, target, args)
+        if attr in ("partition", "rpartition"):
+            return self._string_partition(context, target, attr, args)
         raise SericiteError(f"unknown string method: {attr}", kind="internal_error")
 
     @staticmethod
@@ -570,9 +584,9 @@ class _EngineOperators:
     ) -> str:
         self._string_arity("join", args, 1, 1)
         values = args[0]
-        if not isinstance(values, (str, list, dict)):
+        if not isinstance(values, (str, list, dict, tuple)):
             raise SericiteError(
-                f"str.join() expects str, list, or dict, got {_type_name(values)}",
+                f"str.join() expects str, list, dict, or tuple, got {_type_name(values)}",
                 kind="type_error",
             )
         size = 0
@@ -623,6 +637,55 @@ class _EngineOperators:
             context, target, needle, normalized_start, normalized_stop
         )
 
+    def _string_partition(
+        self,
+        context: VMContext,
+        target: str,
+        attr: str,
+        args: tuple[object, ...],
+    ) -> tuple[str, str, str]:
+        self._string_arity(attr, args, 1, 1)
+        separator = args[0]
+        if type(separator) is not str:
+            raise SericiteError(
+                f"str.{attr}() separator must be str, got {_type_name(separator)}",
+                kind="type_error",
+            )
+        if separator == "":
+            raise SericiteError(
+                f"str.{attr}() separator cannot be empty", kind="type_error"
+            )
+        if context.limits.max_list_size < 3:
+            raise SericiteError("tuple size limit exceeded", kind="resource_exhausted")
+        self._meter(context).allocate(3 * 8)
+        if attr == "partition":
+            found = self._string_find_from(context, target, separator, 0, len(target))
+        else:
+            found = -1
+            for position in range(len(target) - len(separator), -1, -1):
+                self._meter(context).work(1 + len(separator))
+                if target.startswith(separator, position):
+                    found = position
+                    break
+        if found < 0:
+            if attr == "partition":
+                return (
+                    self._string_copy(context, target, 0, len(target)),
+                    "",
+                    "",
+                )
+            return (
+                "",
+                "",
+                self._string_copy(context, target, 0, len(target)),
+            )
+        separator_end = found + len(separator)
+        return (
+            self._string_copy(context, target, 0, found),
+            self._string_copy(context, target, found, separator_end),
+            self._string_copy(context, target, separator_end, len(target)),
+        )
+
     def _string_replace(
         self,
         context: VMContext,
@@ -669,6 +732,55 @@ class _EngineOperators:
             construction_work += len(target)
         self._meter(context).work(construction_work)
         return target.replace(old, new, count)
+
+    def _sequence_method(
+        self,
+        context: VMContext,
+        target: list[object] | tuple[object, ...],
+        attr: str,
+        args: tuple[object, ...],
+    ) -> int:
+        name = _type_name(target)
+        if attr == "count":
+            if len(args) != 1:
+                raise SericiteError(
+                    f"{name}.count() expects 1 argument(s), got {len(args)}",
+                    kind="arity_error",
+                )
+            count = 0
+            active: set = set()
+            cache: dict = {}
+            for element in target:
+                if _equals(element, args[0], active, cache, meter=self._meter(context)):
+                    count += 1
+            return count
+        if attr == "index":
+            if not 1 <= len(args) <= 3:
+                raise SericiteError(
+                    f"{name}.index() expects 1 to 3 argument(s), got {len(args)}",
+                    kind="arity_error",
+                )
+            start = args[1] if len(args) >= 2 else None
+            stop = args[2] if len(args) == 3 else None
+            for bound in (start, stop):
+                if bound is not None and type(bound) is not int:
+                    raise SericiteError(
+                        f"{name}.index() bounds must be int or None, "
+                        f"got {_type_name(bound)}",
+                        kind="type_error",
+                    )
+            normalized_start, normalized_stop, _ = slice(start, stop).indices(
+                len(target)
+            )
+            active: set = set()
+            cache: dict = {}
+            for position in range(normalized_start, normalized_stop):
+                if _equals(
+                    target[position], args[0], active, cache, meter=self._meter(context)
+                ):
+                    return position
+            raise SericiteError(f"{name}.index(): value not found", kind="value_error")
+        raise SericiteError(f"unknown sequence method: {attr}", kind="internal_error")
 
     def _list_append(
         self, context: VMContext, target: list[object], args: tuple[object, ...]
@@ -726,7 +838,13 @@ class _EngineOperators:
             )
         if len(target) > context.limits.max_list_size:
             raise SericiteError("list size limit exceeded", kind="resource_exhausted")
-        return list(target.keys()) if attr == "keys" else list(target.values())
+        if attr == "keys":
+            return list(target.keys())
+        if attr == "values":
+            return list(target.values())
+        if target and context.limits.max_list_size < 2:
+            raise SericiteError("tuple size limit exceeded", kind="resource_exhausted")
+        return list(target.items())
 
     @staticmethod
     def _dict_method_work(args: tuple[object, ...]) -> int:

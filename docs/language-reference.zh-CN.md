@@ -215,7 +215,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
-- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
+- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
 - 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
@@ -288,11 +288,14 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - 所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`。
 - 变更操作会在修改文件树之前完成路径校验与配额检查，失败不会留下部分变更。
 
-**列表与字典方法**
+**列表、元组与字典方法**
 
 - `lst.append(x)`：原地追加一个元素，返回 `None`。
 - `lst.pop()` / `lst.pop(i)`：删除并返回末尾或索引 `i` 处的元素；负索引与下标读取一致。空列表或无效索引报 `index_error`。
+- `seq.count(x)`：统计列表或元组中与 `x` 结构相等的元素数。
+- `seq.index(x, start=None, stop=None)`：返回列表或元组中首个匹配元素的位置；可指定搜索区间，找不到时报 `value_error`。
 - `d.keys()` / `d.values()`：按插入顺序返回新的键/值列表；之后修改字典不会改变已返回的列表。
+- `d.items()`：按插入顺序返回新的 `(key, value)` 二元元组列表；之后修改字典不会改变已返回的列表。
 - `d.get(key)` / `d.get(key, default)`：返回键对应的值；键不存在时返回 `None` 或 `default`。
 - `d.pop(key)` / `d.pop(key, default)`：删除并返回键对应的值；未提供默认值时，缺键报 `key_error`，否则返回默认值。
 
@@ -301,11 +304,12 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `s.strip()` / `s.lstrip()` / `s.rstrip()`：去除两端、左端或右端空白；`s.strip(chars)` 等形式改为去除 `chars` 中列出的任意字符，而不是去除整个前后缀。
 - `s.split()`：按连续空白拆分并忽略两端空白；`s.split(sep, maxsplit=-1)` 按非空字符串 `sep` 拆分，`sep=None` 时按空白拆分。`maxsplit` 限制拆分次数，负数表示不限制。
 - `s.splitlines(keepends=False)`：按通用换行边界拆行；`keepends` 必须是 `bool`，为 `True` 时保留行尾换行符。
-- `separator.join(values)`：用分隔符连接 `str`、列表或字典（键）中的字符串，所有元素必须是 `str`。
+- `separator.join(values)`：用分隔符连接 `str`、列表、元组或字典（键）中的字符串，所有元素必须是 `str`。
 - `s.find(sub, start=None, end=None)`：返回子串首次出现的位置，不存在时返回 `-1`；可指定搜索区间。
 - `s.replace(old, new, count=-1)`：替换不重叠的旧子串，`count` 限制替换次数，负数表示全部替换；`old` 为空串时按 Python 语义在字符间及两端插入。
+- `s.partition(sep)` / `s.rpartition(sep)`：按首个/最后一个非空分隔符拆成 `(before, sep, after)` 三元元组；找不到时分别返回 `(s, "", "")` 或 `("", "", s)`。
 
-字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造都计入指令配额：字符串结果按实际长度分配，`split`/`splitlines` 还计入结果列表槽位。方法集合是封闭的，未列出的列表、字典或字符串方法报 `attribute_error`。
+字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造都计入指令配额：字符串结果按实际长度分配，`split`/`splitlines` 还计入结果列表槽位，`partition`/`rpartition` 还计入三元元组槽位。`d.items()` 同时计入结果列表与每个二元元组的槽位。方法集合是封闭的，未列出的列表、元组、字典或字符串方法报 `attribute_error`。
 
 ## 7. 记录（record）：自定义含成员的对象
 

@@ -215,7 +215,7 @@ The trace contains only frames from the current execution environment. Granted f
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
-- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
+- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
 - Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
@@ -288,11 +288,14 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
 - Mutating operations complete path validation and quota checks before changing the file tree. Failure leaves no partial change.
 
-**List and dict methods**
+**List, tuple, and dict methods**
 
 - `lst.append(x)`: append one item in place and return `None`.
 - `lst.pop()` / `lst.pop(i)`: remove and return the last item or the item at `i`; negative indices work as in indexing. An empty list or invalid index raises `index_error`.
+- `seq.count(x)`: count elements structurally equal to `x` in a list or tuple.
+- `seq.index(x, start=None, stop=None)`: return the first matching position in a list or tuple; an optional search range may be supplied, and no match raises `value_error`.
 - `d.keys()` / `d.values()`: return a new list of keys or values in insertion order; later dict mutations do not change that list.
+- `d.items()`: return a new list of `(key, value)` pairs in insertion order; later dict mutations do not change that list.
 - `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
 - `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
 
@@ -301,11 +304,12 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `s.strip()` / `s.lstrip()` / `s.rstrip()`: remove whitespace from both ends, the left, or the right. Forms such as `s.strip(chars)` instead remove any of the individual characters listed in `chars`, not a whole prefix or suffix.
 - `s.split()`: split on runs of whitespace and ignore whitespace at the ends. `s.split(sep, maxsplit=-1)` splits on a non-empty string `sep`; `sep=None` selects whitespace splitting. `maxsplit` limits the number of splits, with a negative value meaning no limit.
 - `s.splitlines(keepends=False)`: split at universal line boundaries. `keepends` must be a `bool`; when true, line endings are retained.
-- `separator.join(values)`: join strings from a `str`, list, or dict (its keys) using the separator; every item must be a `str`.
+- `separator.join(values)`: join strings from a `str`, list, tuple, or dict (its keys) using the separator; every item must be a `str`.
 - `s.find(sub, start=None, end=None)`: return the first position of the substring, or `-1` when absent; an optional search range may be supplied.
 - `s.replace(old, new, count=-1)`: replace non-overlapping occurrences, with `count` limiting replacements and a negative value replacing all. An empty `old` inserts between characters and at both ends, following Python semantics.
+- `s.partition(sep)` / `s.rpartition(sep)`: split at the first/last non-empty separator into a `(before, sep, after)` tuple; when absent, return `(s, "", "")` or `("", "", s)` respectively.
 
-String methods return new values rather than modifying the original string. Scanning, matching, and result construction all count against the instruction quota: string results charge their actual length, and `split`/`splitlines` also charge result-list slots. These are closed method sets: unlisted list, dict, or string methods raise `attribute_error`.
+String methods return new values rather than modifying the original string. Scanning, matching, and result construction all count against the instruction quota: string results charge their actual length, `split`/`splitlines` also charge result-list slots, and `partition`/`rpartition` also charge three tuple slots. `d.items()` charges both the result list and every pair tuple. These are closed method sets: unlisted list, tuple, dict, or string methods raise `attribute_error`.
 
 ## 7. Records: custom objects with members
 
