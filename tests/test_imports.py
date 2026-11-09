@@ -553,11 +553,132 @@ class ImportTests(unittest.TestCase):
         )
         self.assertEqual(output, "circular import: pkg.a -> pkg.b -> pkg.a\n")
 
+    def test_from_package_continues_with_later_exports(self):
+        output = self.run_source(
+            "from pkg import child\n"
+            "from pkg import answer\n"
+            "print(child.value, answer)\n",
+            {
+                "/pkg/__init__.sericite": "answer = 42\n",
+                "/pkg/child.sericite": "value = 7\n",
+            },
+        )
+        self.assertEqual(output, "7 42\n")
+
+    def test_from_package_comma_imports_keep_values_and_stack_aligned(self):
+        output = self.run_source(
+            "from pkg import child, other, answer\n"
+            "print(child.value, other.value, answer)\n",
+            {
+                "/pkg/__init__.sericite": "answer = 42\n",
+                "/pkg/child.sericite": "value = 7\n",
+                "/pkg/other.sericite": "value = 8\n",
+            },
+        )
+        self.assertEqual(output, "7 8 42\n")
+
+    def test_package_init_comma_imports_resume_correctly(self):
+        output = self.run_source(
+            "import pkg\nprint(pkg.child.value, pkg.other.value, pkg.answer)\n",
+            {
+                "/pkg/__init__.sericite": (
+                    "answer = 42\nfrom . import child, other, answer\n"
+                ),
+                "/pkg/child.sericite": "value = 9\n",
+                "/pkg/other.sericite": "value = 10\n",
+            },
+        )
+        self.assertEqual(output, "9 10 42\n")
+
+    def test_function_and_granted_function_from_imports_resume_correctly(self):
+        files = {
+            "/pkg/__init__.sericite": "answer = 42\n",
+            "/pkg/child.sericite": "value = 11\n",
+        }
+        local = self.run_source(
+            "def load():\n"
+            "    from pkg import child, answer\n"
+            "    return child.value + answer\n"
+            "print(load())\n",
+            files,
+        )
+        self.assertEqual(local, "53\n")
+        granted = self.run_source(
+            "def load():\n"
+            "    from pkg import child, answer\n"
+            "    return child.value + answer\n"
+            "sub = VM('print(load())', functions={'load': load})\n"
+            "print(sub.run(), end='')\n",
+            files,
+        )
+        self.assertEqual(granted, "53\n")
+
+    def test_sibling_vm_import_charges_home_account(self):
+        engine = SericiteEngine()
+        root = engine.create_root(
+            "box = []\n"
+            "def capture(fn):\n"
+            "    box.append(fn)\n"
+            "a = VM('def load():\\n"
+            "    import util\\n"
+            "    return util.value\\n"
+            "capture(load)\\n', functions={'capture': capture})\n"
+            "a.run()\n"
+            "f = box[0]\n"
+        )
+        root.run()
+        context = engine._context(root)
+        a = context.frames[0].locals["a"]
+        home = engine._context(a)
+        a.write_file("/util.sericite", "value = 99\n")
+        before = home.alloc_bytes
+        output = root.exec(
+            "b = VM('print(f())', functions={'f': f})\nprint(b.run(), end='')\n"
+        )
+        self.assertEqual(output, "99\n")
+        self.assertGreater(home.alloc_bytes, before)
+        self.assertEqual(list(home.modules), ["util"])
+
+    def test_sibling_vm_import_cannot_bypass_exhausted_home_quota(self):
+        engine = SericiteEngine()
+        root = engine.create_root(
+            "box = []\n"
+            "def capture(fn):\n"
+            "    box.append(fn)\n"
+            "a = VM('def load():\\n"
+            "    import util\\n"
+            "    return util.value\\n"
+            "capture(load)\\n', functions={'capture': capture}, max_total_bytes=8)\n"
+            "a.run()\n"
+            "f = box[0]\n"
+        )
+        root.run()
+        context = engine._context(root)
+        a = context.frames[0].locals["a"]
+        home = engine._context(a)
+        a.write_file("/util.sericite", "value = 99\n")
+        before = (home.instruction_count, home.alloc_bytes)
+        output = root.exec(
+            "b = VM('try:\\n"
+            "    print(f())\\n"
+            "except resource_exhausted as e:\\n"
+            "    print(e.kind)', functions={'f': f})\n"
+            "print(b.run(), end='')\n"
+        )
+        self.assertEqual(output, "resource_exhausted\n")
+        self.assertGreater(home.instruction_count, before[0])
+        self.assertEqual(home.alloc_bytes, before[1])
+        self.assertEqual(home.modules, {})
+
     def test_invalid_import_bindings_and_wildcard_are_rejected(self):
         cases = (
             "from util import *\n",
             "import print\n",
             "import __private\n",
+            "import pkg.__private as p\n",
+            "from pkg.__private import value\n",
+            "from __private import value\n",
+            "from .__private import value\n",
         )
         for source in cases:
             with self.subTest(source=source):

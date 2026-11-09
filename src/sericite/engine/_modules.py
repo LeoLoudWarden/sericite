@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..accounting import Meter
 from ..compiler import compile_source
 from ..errors import SericiteError
 from ._model import _MAX_SOURCE_BYTES, Frame, SericiteModule, VMContext
@@ -40,7 +41,12 @@ class _EngineModules:
         return f"{base}.{name}" if name else base
 
     def _import_module(
-        self, context: VMContext, frame: Frame, spec: object
+        self,
+        context: VMContext,
+        frame: Frame,
+        spec: object,
+        *,
+        advance: bool = True,
     ) -> SericiteModule | None:
         if (
             not isinstance(spec, tuple)
@@ -52,8 +58,23 @@ class _EngineModules:
         name, level = spec
         home = frame.home or context
         self._require_live_home(home)
+        with self._causal_meter(context, home) as meter:
+            return self._load_module(
+                context, frame, name, level, home, meter, advance=advance
+            )
+
+    def _load_module(
+        self,
+        context: VMContext,
+        frame: Frame,
+        name: str,
+        level: int,
+        home: VMContext,
+        meter: Meter,
+        *,
+        advance: bool,
+    ) -> SericiteModule | None:
         full_name = self._resolve_module_name(home, context, frame, name, level)
-        meter = self._meter(context)
         meter.work(len(full_name))
         cached = home.modules.get(full_name)
         if cached is not None:
@@ -129,7 +150,8 @@ class _EngineModules:
         )
         home.loading_modules[full_name] = module
         frame.call_line = frame.code.instrs[frame.pc].line
-        frame.pc += 1
+        if advance:
+            frame.pc += 1
         module_frame = self._new_frame(
             context,
             code,
@@ -149,13 +171,24 @@ class _EngineModules:
         if not isinstance(module, SericiteModule) or not isinstance(name, str):
             raise SericiteError("invalid import state", kind="internal_error")
         self._require_live_home(module.home)
-        self._meter(context).work(len(name))
+        with self._causal_meter(context, module.home) as meter:
+            return self._import_from_with_meter(context, frame, module, name, meter)
+
+    def _import_from_with_meter(
+        self,
+        context: VMContext,
+        frame: Frame,
+        module: SericiteModule,
+        name: str,
+        meter: Meter,
+    ) -> tuple[object, bool]:
+        meter.work(len(name))
         if name in module.locals:
             return module.locals[name], False
         if not module.is_package:
             raise SericiteError(f"cannot import name '{name}'", kind="import_error")
         child_name = f"{module.name}.{name}"
-        child = self._import_module(context, frame, (child_name, 0))
+        child = self._import_module(context, frame, (child_name, 0), advance=False)
         if child is None:
             frame.pending_import = (module, name)
             return None, True
