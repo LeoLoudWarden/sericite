@@ -712,6 +712,29 @@ class _EngineCore:
                 del stack[len(stack) - arg :]
             self._meter(context).allocate(arg * 8)
             stack.append(list(items))
+        elif op == isa.BUILD_TUPLE:
+            if arg > context.limits.max_list_size:
+                raise SericiteError(
+                    "tuple size limit exceeded", kind="resource_exhausted"
+                )
+            items = stack[len(stack) - arg :] if arg else []
+            if arg:
+                del stack[len(stack) - arg :]
+            self._meter(context).allocate(arg * 8)
+            stack.append(tuple(items))
+        elif op == isa.UNPACK:
+            value = stack.pop()
+            if isinstance(value, (str, dict)):
+                self._meter(context).work(len(value))
+            items = _make_iterator(value).items
+            if isinstance(value, (str, dict)):
+                self._meter(context).allocate(len(items) * 8)
+            if len(items) != arg:
+                raise SericiteError(
+                    f"expected {arg} values to unpack, got {len(items)}",
+                    kind="value_error",
+                )
+            stack.extend(reversed(items))
         elif op == isa.BUILD_DICT:
             if arg > context.limits.max_dict_size:
                 raise SericiteError(

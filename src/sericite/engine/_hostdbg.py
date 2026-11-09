@@ -375,13 +375,17 @@ class _EngineHostDebug:
             meter.work(1)
         if value is None or type(value) in {str, int, float, bool}:
             return value
-        if isinstance(value, (list, dict, SericiteRecord)):
+        if isinstance(value, (list, tuple, dict, SericiteRecord)):
             if _depth > 64:
                 return "<max depth>"
+            if type(value) is tuple and not value:
+                return ()
             ident = id(value)
             if ident in _seen:
                 if type(value) is list:
                     return "[...]"
+                if type(value) is tuple:
+                    return "(...)"
                 if type(value) is dict:
                     return "{...}"
                 return "record(...)"
@@ -391,6 +395,11 @@ class _EngineHostDebug:
                     self._safe_value(item, _seen, _depth + 1, _budget, meter=meter)
                     for item in value
                 ]
+            if type(value) is tuple:
+                return tuple(
+                    self._safe_value(item, _seen, _depth + 1, _budget, meter=meter)
+                    for item in value
+                )
             fields = value.fields if isinstance(value, SericiteRecord) else value
             result = {
                 str(key): self._safe_value(

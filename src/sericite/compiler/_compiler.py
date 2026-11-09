@@ -9,6 +9,16 @@ from ._scopes import _Scope
 from ._stack import _analyze_stack
 
 
+def _target_names(target: ast.AST) -> set[str]:
+    if isinstance(target, ast.Name):
+        return {target.id}
+    assert isinstance(target, ast.Tuple)
+    names: set[str] = set()
+    for element in target.elts:
+        names.update(_target_names(element))
+    return names
+
+
 def _assigned_names(body: list[ast.stmt]) -> set[str]:
     names: set[str] = set()
 
@@ -85,6 +95,18 @@ class _Compiler:
         op = isa.STORE_DEREF if name in code.cell_names else isa.STORE_NAME
         self.emit(code, op, name, line)
 
+    def _compile_store_target(
+        self, target: ast.AST, code: isa.CodeUnit, line: int
+    ) -> None:
+        if isinstance(target, ast.Name):
+            self._store_name(code, target.id, line)
+            self._label_stack[-1].pop(target.id, None)
+            return
+        assert isinstance(target, ast.Tuple)
+        self.emit(code, isa.UNPACK, len(target.elts), line)
+        for element in target.elts:
+            self._compile_store_target(element, code, line)
+
     def _compile_finally_exits(
         self,
         code: isa.CodeUnit,
@@ -127,28 +149,27 @@ class _Compiler:
         if isinstance(node, ast.Assign):
             self.compile_expression(node.value, code)
             targets = node.targets
-            for target in targets[:-1]:
-                self.emit(code, isa.DUP, None, line)
-                assert isinstance(target, ast.Name)
-                self._store_name(code, target.id, line)
-                self._propagate_label(target.id, node.value)
-            last = targets[-1]
-            if isinstance(last, ast.Name):
-                self._store_name(code, last.id, line)
-                self._propagate_label(last.id, node.value)
-            elif isinstance(last, ast.Attribute):
-                self.compile_expression(last.value, code)
-                self.emit(
-                    code,
-                    isa.STORE_ATTR,
-                    (last.attr, *self._attr_hints(last.value, last.attr)),
-                    line,
-                )
-            else:
-                assert isinstance(last, ast.Subscript)
-                self.compile_expression(last.value, code)
-                self.compile_expression(last.slice, code)
-                self.emit(code, isa.STORE_INDEX, None, line)
+            for index, target in enumerate(targets):
+                if index < len(targets) - 1:
+                    self.emit(code, isa.DUP, None, line)
+                if isinstance(target, ast.Name):
+                    self._store_name(code, target.id, line)
+                    self._propagate_label(target.id, node.value)
+                elif isinstance(target, ast.Tuple):
+                    self._compile_store_target(target, code, line)
+                elif isinstance(target, ast.Attribute):
+                    self.compile_expression(target.value, code)
+                    self.emit(
+                        code,
+                        isa.STORE_ATTR,
+                        (target.attr, *self._attr_hints(target.value, target.attr)),
+                        line,
+                    )
+                else:
+                    assert isinstance(target, ast.Subscript)
+                    self.compile_expression(target.value, code)
+                    self.compile_expression(target.slice, code)
+                    self.emit(code, isa.STORE_INDEX, None, line)
             return
         if isinstance(node, ast.AugAssign):
             target = node.target
@@ -404,13 +425,12 @@ class _Compiler:
         self.compile_expression(node.iter, code)
         self.emit(code, isa.GET_ITER, iter_name, line)
         head_labels = self._without_labels(
-            entry_labels, _assigned_names(node.body) | {node.target.id}
+            entry_labels, _assigned_names(node.body) | _target_names(node.target)
         )
         self._set_labels(head_labels.copy())
         start = len(code.instrs)
         for_iter = self.emit(code, isa.FOR_ITER, (iter_name, None), line)
-        self._store_name(code, node.target.id, line)
-        self._label_stack[-1].pop(node.target.id, None)
+        self._compile_store_target(node.target, code, line)
         breaks: list[int] = []
         self._loops.append((start, breaks, len(self._finally_stack)))
         self.compile_body(node.body, code)
@@ -566,6 +586,11 @@ class _Compiler:
             for element in node.elts:
                 self.compile_expression(element, code)
             self.emit(code, isa.BUILD_LIST, len(node.elts), line)
+            return
+        if isinstance(node, ast.Tuple):
+            for element in node.elts:
+                self.compile_expression(element, code)
+            self.emit(code, isa.BUILD_TUPLE, len(node.elts), line)
             return
         if isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):

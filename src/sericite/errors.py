@@ -34,6 +34,7 @@ CATCHABLE_ERROR_KINDS = frozenset(
         "runtime_error",
         "syntax_error",
         "type_error",
+        "value_error",
         "zero_division",
     }
 )

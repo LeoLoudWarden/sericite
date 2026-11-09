@@ -163,7 +163,7 @@ writer：
 | `max_instructions` | 1,000,000 | 指令及折算工作量上限 |
 | `max_output_bytes` | 1,048,576 | stdout 的 UTF-8 字节上限 |
 | `max_frames` | 100 | 调用帧上限 |
-| `max_list_size` | 100,000 | 单列表槽位上限 |
+| `max_list_size` | 100,000 | 单列表/元组槽位上限 |
 | `max_dict_size` | 100,000 | 单字典项数上限 |
 | `max_string_bytes` | 1,048,576 | 单字符串上限 |
 | `max_int_bits` | 4096 | 整数位宽上限 |

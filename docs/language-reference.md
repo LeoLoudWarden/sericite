@@ -12,7 +12,7 @@ x = input()               # read one line (a string)
 
 ## 2. Types and operators
 
-Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user-defined `record`s (see section 7).
+Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, `tuple`, plus user-defined `record`s (see section 7).
 
 ```python
 7 / 2        # 3.5 (division always yields float)
@@ -24,9 +24,10 @@ Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, plus user
 line2""" # multi-line
 f"{1/3:.2f}" # f-string
 [1, 2] + [3] # list concatenation
+(1, 2) + (3,) # tuple concatenation; a one-item tuple needs a trailing comma
 not x        # logical not; and / or short-circuit
 1 < 2        # comparison: == != < <= > >= (no chaining like a < b < c)
-"a" in {"a": 1}    # in / not in: dict keys, list elements, str substrings
+"a" in {"a": 1}    # in / not in: dict keys, list/tuple elements, str substrings
 nan = float("nan")
 nan == nan                   # False: NaN is not equal to itself
 [nan] == [nan]               # False: two new containers compared element by element
@@ -38,7 +39,7 @@ lst == lst                   # True: the same object
 
 Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
 
-Strings and lists support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
+Strings, lists, and tuples support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
 
 ```python
 s = "abcdef"
@@ -49,14 +50,28 @@ s[::-1]     # "fedcba": negative step walks backwards
 s[2:99]     # "cdef": out-of-range positions clip, no error
 ```
 
-Rules: all three positions may be omitted (omission means `None`), and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero; slice assignment is not supported. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing has a cost: it always creates a new string or list.
+Rules: all three positions may be omitted (omission means `None`), and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero; slice assignment is not supported. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing has a cost: it always creates a new string, list, or tuple.
+
+Tuples are immutable sequences. They support `len`, truth testing, iteration, indexing, slicing, membership, structural equality, same-type `+` concatenation, and bidirectional `*` repetition with integers. Zero or negative repetition produces an empty tuple; every result is a new value. Tuples cannot be assigned into, mixed with lists in concatenation, ordered with `<`/`>`, or used as dict keys. `tuple` is an annotation-only contract name, not a conversion function.
+
+Fixed-length, nested unpacking into names is supported:
+
+```python
+a, b = (1, 2)
+a, b = b, a
+x, (y, z) = [3, (4, 5)]
+for first, second in [(1, 2), (3, 4)]:
+    print(first + second)
+```
+
+The right-hand side may be any currently iterable type: list, tuple, str, or dict (its keys). A length mismatch raises the catchable `value_error`; a non-iterable value raises `type_error`. Target leaves must be names: starred unpacking, list targets, and subscript/attribute leaves are not supported.
 
 Key differences from Python (mistakes raise `type_error`):
 
 - `bool` does not participate in arithmetic: `True + 1` is an error.
 - Cross-type ordering comparison is an error: `1 < "a"` raises (`==`/`!=` may cross types, evaluating to False/True).
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
-- Strings support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
+- Strings and tuples support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
 
 ## 3. Control flow
 
@@ -77,7 +92,7 @@ while i < 10:
 else:
     print("no break")     # while/else
 
-for item in [1, 2, 3]:      # for iterates: list, dict (keys), str (chars), range() results
+for item in [1, 2, 3]:      # for iterates: list, tuple, dict (keys), str (chars), range() results
     print(item)
 for k in {"a": 1, "b": 2}:
     print(k, "->", ...)     # values via d[k]
@@ -89,7 +104,7 @@ pass                        # empty statement, legal
 label = "big" if x >= 10 else "small"   # ternary (short-circuits: only the chosen branch runs)
 ```
 
-Note: the for loop variable must be a single name (`for a, b in ...` is not supported). Iterating a list is a live view (edits during iteration are visible); iterating a dict is a snapshot of its keys.
+Note: a for target is a single name or a fixed-length, nested tuple of names. Iterating a list is a live view (edits during iteration are visible), tuples are immutable sequences, and iterating a dict is a snapshot of its keys.
 
 ## 4. Functions
 
@@ -200,7 +215,7 @@ The trace contains only frames from the current execution environment. Granted f
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`.
-- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
+- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and FFI: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
 - Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
@@ -221,7 +236,7 @@ except resource_exhausted as e:
 ## 6. Built-in functions
 
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
-- `len(x)` (str/list/dict), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
+- `len(x)` (str/list/dict/tuple), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
 - Files and directories (text only): see below.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
@@ -308,8 +323,8 @@ p.x = 10                 # dot assignment writes, still checked against the fiel
 
 A class body only allows field declarations, in two forms: `x` (contract `any`, any value) or `y: int` (a specific contract). Defaults, methods, and inheritance are not supported yet. Available contract names:
 
-- `int`/`float`/`str`/`bool`/`list`/`dict`, `any`, or another schema (nested constraint);
-- `any`/`bool`/`list`/`dict` are annotation-only contract names: they cannot be called or assigned;
+- `int`/`float`/`str`/`bool`/`list`/`dict`/`tuple`, `any`, or another schema (nested constraint);
+- `any`/`bool`/`list`/`dict`/`tuple` are annotation-only contract names: they cannot be called or assigned;
 - `int`/`float`/`str` remain conversion builtins.
 
 `None` is a value, not a contract. Parameter, return, field, and annotated-assignment positions cannot use an explicit `None` annotation; doing so raises `syntax_error`. Omit the annotation when no contract check is intended.
@@ -392,11 +407,11 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 ## 9. Explicitly not writable (rejected at compile time)
 
 - `import` and `del`
-- `*args`/`**kwargs`, chained comparisons, and slice assignment
-- tuples and dunder names
+- `*args`/`**kwargs`, starred unpacking, chained comparisons, and slice assignment
+- list unpacking targets, subscript/attribute unpacking leaves, and dunder names
 - class field defaults, methods, and inheritance
 - annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
-- rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`) — contract names may only appear in annotation positions
+- rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`/`tuple`) — contract names may only appear in annotation positions
 
 ## 10. A complete example
 

@@ -163,7 +163,7 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_instructions` | 1,000,000 | Instruction and discounted-work limit |
 | `max_output_bytes` | 1,048,576 | stdout bytes in UTF-8 |
 | `max_frames` | 100 | Call-frame limit |
-| `max_list_size` | 100,000 | Slots per list |
+| `max_list_size` | 100,000 | Slots per list/tuple |
 | `max_dict_size` | 100,000 | Entries per dict |
 | `max_string_bytes` | 1,048,576 | Size per string |
 | `max_int_bits` | 4096 | Integer bit width |

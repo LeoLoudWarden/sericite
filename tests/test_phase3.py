@@ -134,12 +134,16 @@ class TryExceptTests(unittest.TestCase):
                     )
                 self.assertEqual(ctx.exception.kind, "syntax_error")
 
-    def test_group_and_wildcard_syntax_not_general_values(self):
-        for source in ("value = (name_error, type_error)\n", "value = ...\n"):
-            with self.subTest(source=source):
-                with self.assertRaises(SericiteError) as ctx:
-                    SericiteEngine().create_root(source)
-                self.assertEqual(ctx.exception.kind, "syntax_error")
+    def test_kind_group_is_static_but_tuple_values_are_allowed(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("value = (name_error, type_error)\n")
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "name_error")
+
+        with self.assertRaises(SericiteError) as ctx:
+            SericiteEngine().create_root("value = ...\n")
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_non_matching_kind_propagates(self):
         engine = SericiteEngine()
@@ -199,6 +203,7 @@ class TryExceptTests(unittest.TestCase):
             "runtime_error",
             "syntax_error",
             "type_error",
+            "value_error",
             "zero_division",
         )
         for kind in kinds:
