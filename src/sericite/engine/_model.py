@@ -355,37 +355,47 @@ class VMHandle:
         self._engine._dispose(self)
 
     def read_file(self, path: object) -> str:
-        return self._engine._context(self).fs.read_file(path)
+        return self._engine._attached_vfs(self._engine._context(self)).read_file(path)
 
     def write_file(self, path: object, text: object) -> None:
-        self._engine._context(self).fs.write_file_trusted(path, text)
+        self._engine._attached_vfs(self._engine._context(self)).write_file_trusted(
+            path, text
+        )
 
     def delete_file(self, path: object) -> None:
-        self._engine._context(self).fs.delete_file(path)
+        self._engine._attached_vfs(self._engine._context(self)).delete_file(path)
 
     def rename_file(self, old_path: object, new_path: object) -> None:
-        self._engine._context(self).fs.rename_file_trusted(old_path, new_path)
+        self._engine._attached_vfs(self._engine._context(self)).rename_file_trusted(
+            old_path, new_path
+        )
 
     def copy_file(self, source_path: object, destination_path: object) -> None:
-        self._engine._context(self).fs.copy_file_trusted(source_path, destination_path)
+        self._engine._attached_vfs(self._engine._context(self)).copy_file_trusted(
+            source_path, destination_path
+        )
 
     def delete_dir(self, path: object) -> None:
-        self._engine._context(self).fs.delete_dir(path)
+        self._engine._attached_vfs(self._engine._context(self)).delete_dir(path)
 
     def rename_dir(self, old_path: object, new_path: object) -> None:
-        self._engine._context(self).fs.rename_dir_trusted(old_path, new_path)
+        self._engine._attached_vfs(self._engine._context(self)).rename_dir_trusted(
+            old_path, new_path
+        )
 
     def copy_dir(self, source_path: object, destination_path: object) -> None:
-        self._engine._context(self).fs.copy_dir_trusted(source_path, destination_path)
+        self._engine._attached_vfs(self._engine._context(self)).copy_dir_trusted(
+            source_path, destination_path
+        )
 
     def make_dir(self, path: object) -> None:
-        self._engine._context(self).fs.make_dir_trusted(path)
+        self._engine._attached_vfs(self._engine._context(self)).make_dir_trusted(path)
 
     def list_dir(self, path: object) -> list[str]:
-        return self._engine._context(self).fs.list_dir(path)
+        return self._engine._attached_vfs(self._engine._context(self)).list_dir(path)
 
     def path_exists(self, path: object) -> bool:
-        return self._engine._context(self).fs.path_exists(path)
+        return self._engine._attached_vfs(self._engine._context(self)).path_exists(path)
 
     def __repr__(self) -> str:
         context = self._engine._contexts.get(self._vm_id)

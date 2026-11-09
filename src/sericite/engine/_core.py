@@ -309,6 +309,9 @@ class _EngineCore:
             raise SericiteError("VM has been disposed", kind="runtime_error")
         return context
 
+    def _attached_vfs(self, context: VMContext) -> VirtualFileSystem:
+        return context.fs
+
     def _dispose(self, handle: VMHandle) -> None:
         if handle._engine is not self:
             raise SericiteError(

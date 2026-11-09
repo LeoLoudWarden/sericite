@@ -104,8 +104,9 @@ class _EngineModules:
         file_path = f"/{stem}.sericite"
         package_path = f"/{stem}/__init__.sericite"
         meter.work(len(file_path) + len(package_path))
-        file_exists = home.fs.path_exists(file_path)
-        package_exists = home.fs.path_exists(package_path)
+        fs = self._attached_vfs(home)
+        file_exists = fs.path_exists(file_path)
+        package_exists = fs.path_exists(package_path)
         if file_exists and package_exists:
             raise self._import_error(
                 home,
@@ -121,7 +122,7 @@ class _EngineModules:
         if len(context.frames) + 1 > context.limits.max_frames:
             raise SericiteError("call depth limit exceeded", kind="resource_exhausted")
         try:
-            source = home.fs.read_file(path)
+            source = fs.read_file(path)
         except SericiteError as error:
             if error.kind not in {"file_not_found", "is_directory", "not_directory"}:
                 raise

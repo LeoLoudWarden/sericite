@@ -34,7 +34,7 @@ class _EngineHostDebug:
         if attr == "dispose":
             size, ancestor_depth = self._dispose_shape(handle)
             return 2 * size + ancestor_depth
-        fs = self._context(handle).fs
+        fs = self._attached_vfs(self._context(handle))
         if attr == "exec":
             source = args[0] if args else kwargs.get("source")
             return 1 + len(source) // 4 if isinstance(source, str) else 0
@@ -109,35 +109,43 @@ class _EngineHostDebug:
             return self._meter(context).reserve(target.io, "input", amount)
         if attr == "make_dir":
             path = args[0] if args else kwargs.get("path")
-            amount = target.fs.make_dir_allocation(path)
-            return self._meter(context).reserve(target.fs, "write", amount)
+            amount = self._attached_vfs(target).make_dir_allocation(path)
+            return self._meter(context).reserve(
+                self._attached_vfs(target), "write", amount
+            )
         if attr == "write_file":
             path = args[0] if args else kwargs.get("path")
             text = args[1] if len(args) > 1 else kwargs.get("text")
-            amount = target.fs.write_allocation(path, text)
-            return self._meter(context).reserve(target.fs, "write", amount)
+            amount = self._attached_vfs(target).write_allocation(path, text)
+            return self._meter(context).reserve(
+                self._attached_vfs(target), "write", amount
+            )
         if attr in ("rename_file", "rename_dir"):
             old_path = args[0] if args else kwargs.get("old_path")
             new_path = args[1] if len(args) > 1 else kwargs.get("new_path")
             estimate = (
-                target.fs.rename_allocation
+                self._attached_vfs(target).rename_allocation
                 if attr == "rename_file"
-                else target.fs.rename_dir_allocation
+                else self._attached_vfs(target).rename_dir_allocation
             )
             amount = estimate(old_path, new_path)
-            return self._meter(context).reserve(target.fs, "write", amount)
+            return self._meter(context).reserve(
+                self._attached_vfs(target), "write", amount
+            )
         if attr in ("copy_file", "copy_dir"):
             source_path = args[0] if args else kwargs.get("source_path")
             destination_path = (
                 args[1] if len(args) > 1 else kwargs.get("destination_path")
             )
             estimate = (
-                target.fs.copy_allocation
+                self._attached_vfs(target).copy_allocation
                 if attr == "copy_file"
-                else target.fs.copy_dir_allocation
+                else self._attached_vfs(target).copy_dir_allocation
             )
             amount = estimate(source_path, destination_path)
-            return self._meter(context).reserve(target.fs, "write", amount)
+            return self._meter(context).reserve(
+                self._attached_vfs(target), "write", amount
+            )
         if attr in {
             "exec",
             "read_file",
@@ -224,7 +232,7 @@ class _EngineHostDebug:
             path = args[0] if args else kwargs["path"]
             target = self._context(handle)
             try:
-                target.fs.make_dir(path, permit=permit)
+                self._attached_vfs(target).make_dir(path, permit=permit)
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
@@ -235,7 +243,7 @@ class _EngineHostDebug:
             text = args[1] if len(args) > 1 else kwargs["text"]
             target = self._context(handle)
             try:
-                target.fs.write_file(path, text, permit=permit)
+                self._attached_vfs(target).write_file(path, text, permit=permit)
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
@@ -246,7 +254,9 @@ class _EngineHostDebug:
             new_path = args[1] if len(args) > 1 else kwargs["new_path"]
             target = self._context(handle)
             try:
-                getattr(target.fs, attr)(old_path, new_path, permit=permit)
+                getattr(self._attached_vfs(target), attr)(
+                    old_path, new_path, permit=permit
+                )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
@@ -257,7 +267,9 @@ class _EngineHostDebug:
             destination_path = args[1] if len(args) > 1 else kwargs["destination_path"]
             target = self._context(handle)
             try:
-                getattr(target.fs, attr)(source_path, destination_path, permit=permit)
+                getattr(self._attached_vfs(target), attr)(
+                    source_path, destination_path, permit=permit
+                )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
