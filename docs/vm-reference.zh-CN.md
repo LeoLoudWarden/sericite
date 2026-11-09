@@ -81,7 +81,7 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 输入耗尽且没有更多输入来源是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，`sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
-子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的配额错误仍不可捕获。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
+子 VM 因执行预算耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的执行预算错误仍不可捕获。文件数、单文件大小或文件存储约束拒绝变更时使用普通、可捕获的 `file_limit_error`，与执行账户耗尽无关，也不终止执行会话。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 终态 VM 仍可被操作，但两类方法的行为不同：
 
@@ -154,10 +154,13 @@ writer：
 | `max_total_vms` | 1000 | 整个运行时同时存活且尚未销毁的 VM 数上限，包括入口 VM；销毁后释放槽位 |
 | `max_descendant_vms` | 1000 | 单台 VM 的整棵子树中同时存活的后代数上限，不含自身；销毁后释放槽位 |
 | `max_vm_depth` | 8 | VM 嵌套深度上限 |
-| `max_fs_files` | 1000 | 单 VM 文件数上限 |
-| `max_fs_file_bytes` | 1,048,576 | 单文件 UTF-8 字节上限 |
+| `max_fs_files` | 1000 | 当前 VM 可扩张到的 VFS 文件总数上限 |
+| `max_fs_file_bytes` | 1,048,576 | 当前 VM 可写入或复制的单文件 UTF-8 字节上限 |
+| `max_fs_storage_bytes` | 67,108,864 | 当前 VM 可扩张到的 VFS 近似总存储量，包含文本、路径与目录元数据 |
 
-`max_string_bytes` 因历史原因以此命名，但实际按单字符串的字符数计算；文件和输出配额按 UTF-8 字节计算。
+`max_string_bytes` 因历史原因以此命名，但实际按单字符串的字符数计算；单文件和输出配额按 UTF-8 字节计算，文件总存储量沿用内存模型的近似字节口径。
+
+三个文件字段都是 **VM 对文件操作的约束**，不是 VFS 持有的账户。约束拒绝变更时使用普通、可捕获的 `file_limit_error`，不终止 VM；已有世界即使超过当前 VM 的限制，也可读取、删除、重命名或进行不扩大规模的覆盖，但不能继续增长。失败操作不留下部分修改，失败与重试仍纳入正常计量。
 
 只有累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes` 接受用 `-1` 表示不设上限。包括存活数量字段 `max_total_vms`、`max_descendant_vms` 在内的其余字段都是结构性配额，必须是非负有限整数；所有字段都拒绝其他负数和非整数值。
 

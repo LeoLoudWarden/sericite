@@ -32,6 +32,7 @@ _VM_OPTIONS = {
     "max_vm_depth",
     "max_fs_files",
     "max_fs_file_bytes",
+    "max_fs_storage_bytes",
 }
 _CUMULATIVE_VM_OPTIONS = {
     "max_instructions",
@@ -55,6 +56,7 @@ class SericiteLimits:
     max_vm_depth: int = 8
     max_fs_files: int = 1000
     max_fs_file_bytes: int = 1_048_576
+    max_fs_storage_bytes: int = 67_108_864
 
     def __post_init__(self) -> None:
         for key in _VM_OPTIONS:
@@ -358,38 +360,46 @@ class VMHandle:
         return self._engine._attached_vfs(self._engine._context(self)).read_file(path)
 
     def write_file(self, path: object, text: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).write_file_trusted(
-            path, text
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).write_file_trusted(
+            path, text, limits=context.limits
         )
 
     def delete_file(self, path: object) -> None:
         self._engine._attached_vfs(self._engine._context(self)).delete_file(path)
 
     def rename_file(self, old_path: object, new_path: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).rename_file_trusted(
-            old_path, new_path
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).rename_file_trusted(
+            old_path, new_path, limits=context.limits
         )
 
     def copy_file(self, source_path: object, destination_path: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).copy_file_trusted(
-            source_path, destination_path
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).copy_file_trusted(
+            source_path, destination_path, limits=context.limits
         )
 
     def delete_dir(self, path: object) -> None:
         self._engine._attached_vfs(self._engine._context(self)).delete_dir(path)
 
     def rename_dir(self, old_path: object, new_path: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).rename_dir_trusted(
-            old_path, new_path
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).rename_dir_trusted(
+            old_path, new_path, limits=context.limits
         )
 
     def copy_dir(self, source_path: object, destination_path: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).copy_dir_trusted(
-            source_path, destination_path
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).copy_dir_trusted(
+            source_path, destination_path, limits=context.limits
         )
 
     def make_dir(self, path: object) -> None:
-        self._engine._attached_vfs(self._engine._context(self)).make_dir_trusted(path)
+        context = self._engine._context(self)
+        self._engine._attached_vfs(context).make_dir_trusted(
+            path, limits=context.limits
+        )
 
     def list_dir(self, path: object) -> list[str]:
         return self._engine._attached_vfs(self._engine._context(self)).list_dir(path)

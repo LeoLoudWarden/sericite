@@ -232,7 +232,11 @@ class _EngineHostDebug:
             path = args[0] if args else kwargs["path"]
             target = self._context(handle)
             try:
-                self._attached_vfs(target).make_dir(path, permit=permit)
+                self._attached_vfs(target).make_dir(
+                    path,
+                    permit=permit,
+                    limits=self._file_operation_limits(target),
+                )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
@@ -243,7 +247,12 @@ class _EngineHostDebug:
             text = args[1] if len(args) > 1 else kwargs["text"]
             target = self._context(handle)
             try:
-                self._attached_vfs(target).write_file(path, text, permit=permit)
+                self._attached_vfs(target).write_file(
+                    path,
+                    text,
+                    permit=permit,
+                    limits=self._file_operation_limits(target),
+                )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
                     error._resource_vm_id = target.vm_id
@@ -255,7 +264,10 @@ class _EngineHostDebug:
             target = self._context(handle)
             try:
                 getattr(self._attached_vfs(target), attr)(
-                    old_path, new_path, permit=permit
+                    old_path,
+                    new_path,
+                    permit=permit,
+                    limits=self._file_operation_limits(target),
                 )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:
@@ -268,7 +280,10 @@ class _EngineHostDebug:
             target = self._context(handle)
             try:
                 getattr(self._attached_vfs(target), attr)(
-                    source_path, destination_path, permit=permit
+                    source_path,
+                    destination_path,
+                    permit=permit,
+                    limits=self._file_operation_limits(target),
                 )
             except SericiteError as error:
                 if error.kind == "resource_exhausted" and error._resource_vm_id is None:

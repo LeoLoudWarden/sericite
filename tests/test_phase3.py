@@ -558,7 +558,8 @@ class VFSTests(unittest.TestCase):
         vm = engine.create_root(source)
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
-        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(ctx.exception.kind, "file_limit_error")
+        self.assertEqual(vm.snapshot()["state"], "error")
 
     def test_file_size_limit(self):
         limits = SericiteLimits(max_fs_file_bytes=5)
@@ -566,7 +567,65 @@ class VFSTests(unittest.TestCase):
         vm = engine.create_root('write_file("/a", "123456")\n')
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
-        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        self.assertEqual(ctx.exception.kind, "file_limit_error")
+        self.assertEqual(vm.snapshot()["state"], "error")
+
+    def test_file_count_limit_can_be_caught_and_repaired(self):
+        engine = SericiteEngine(SericiteLimits(max_fs_files=1))
+        vm = engine.create_root(
+            "write_file('/a', 'a')\n"
+            "try:\n"
+            "    write_file('/b', 'b')\n"
+            "except file_limit_error as e:\n"
+            "    print(e.kind)\n"
+            "print(path_exists('/b'))\n"
+            "delete_file('/a')\n"
+            "write_file('/b', 'b')\n"
+            "print(read_file('/b'))\n"
+        )
+        self.assertEqual(vm.run(), "file_limit_error\nFalse\nb\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_file_size_limit_can_be_caught_and_retried_with_smaller_text(self):
+        engine = SericiteEngine(SericiteLimits(max_fs_file_bytes=1))
+        vm = engine.create_root(
+            "try:\n"
+            "    write_file('/a', 'xx')\n"
+            "except file_limit_error:\n"
+            "    print('caught')\n"
+            "write_file('/a', 'x')\n"
+            "print(read_file('/a'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\nx\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_file_storage_limit_can_be_caught_and_repaired(self):
+        engine = SericiteEngine(SericiteLimits(max_fs_storage_bytes=76))
+        vm = engine.create_root(
+            "write_file('/a', 'x')\n"
+            "try:\n"
+            "    write_file('/b', 'y')\n"
+            "except file_limit_error:\n"
+            "    print('caught')\n"
+            "print(path_exists('/b'))\n"
+            "delete_file('/a')\n"
+            "write_file('/b', 'y')\n"
+            "print(read_file('/b'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\nFalse\ny\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
+
+    def test_empty_directory_uses_vm_file_storage_allowance(self):
+        engine = SericiteEngine(SericiteLimits(max_fs_storage_bytes=67))
+        vm = engine.create_root(
+            "try:\n"
+            "    make_dir('/a')\n"
+            "except file_limit_error:\n"
+            "    print('caught')\n"
+            "print(path_exists('/a'))\n"
+        )
+        self.assertEqual(vm.run(), "caught\nFalse\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
 
     def test_child_fs_isolated(self):
         source = (

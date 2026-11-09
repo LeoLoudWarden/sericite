@@ -65,10 +65,11 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 8. When adding a capability, consider isolation, resource accounting, lifecycle, and debugging semantics together — not just making the syntax runnable. All dynamic consumption must go through the unified Meter and AccountRoute; a child VM's consumption must be charged to its ancestors.
 9. Sericite value semantics are defined by engine helper functions and do not directly inherit Python operators' implicit behavior (e.g. bool does not participate in arithmetic).
 10.
-  - a. A `resource_exhausted` originating in the current VM or any of its ancestors must not be catchable by script `try/except` — a VM must not swallow its own or an ancestor's quotas.
+  - a. A `resource_exhausted` originating in the current VM or any of its ancestors must not be catchable by script `try/except` — a VM must not swallow its own or an ancestor's execution budget.
   - b. A `resource_exhausted` arriving from another, terminated VM may be caught by a living parent.
   - c. `internal_error` is always uncatchable.
   - d. A cross-VM resource error internally records the VM that owns the actually exhausted account on the causal route, and that identifier must never enter script-visible values.
+  - e. File-count, per-file, and file-storage constraints are VM limits on the current VFS operation, not VFS accounts. Rejection uses the ordinary, catchable `file_limit_error`, is unrelated to execution-account exhaustion, and terminates neither caller nor target; failed attempts and retries still use the same metering route.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict/tuple, recursive): handles, functions, records/schemas, and host-native objects must never cross.
@@ -97,7 +98,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 
 The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [VM reference](vm-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
-Error kinds are centrally registered in the `errors` module. The compiler rejects unknown filter names and always-uncatchable kinds; the runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10). The full kind list is in the [language reference](language-reference.md) §5.
+Error kinds are centrally registered in the `errors` module. The compiler rejects unknown filter names and always-uncatchable kinds; the runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10), while `file_limit_error` is an ordinary catchable error unrelated to execution-account exhaustion. The full kind list is in the [language reference](language-reference.md) §5.
 
 ## 5. Resource quotas
 
@@ -108,7 +109,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
 - Only cumulative quota fields accept `-1` for no local cap; the live-count fields `max_total_vms` and `max_descendant_vms`, like other structural fields, always remain finite.
 - Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any finite ring fails. Unlimited accounts still accumulate their ledgers.
-- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included.
+- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included. `max_fs_storage_bytes` instead compares the file world's current approximate size, allowing shrinkage and non-growth without turning that current size into a cumulative VFS-owned ledger.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
 
 ### 5.2 Time costs: prepaid or incremental
@@ -121,6 +122,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 ### 5.3 Space costs: owners and permits
 
 - Script-driven IO/VFS mutations consume a one-shot `AllocationPermit`, bound to the owner, resource kind, and amount; permits cannot be reused or redirected.
+- A VFS supplies only its file tree and current-size metadata. File-operation limits come from VM limits on the current causal route and tighten jointly across caller, home, target, and ancestors.
 - Logical allocations such as containers are metered by trusted primitives; Python containers need not be wrapped.
 - Each charge checks every account on its route before committing anywhere. Rejected charges are not partially committed; charges for completed work are retained.
 - Direct host preconfiguration and management use explicit trusted channels, which scripts cannot use to bypass permits.

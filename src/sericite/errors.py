@@ -22,6 +22,7 @@ CATCHABLE_ERROR_KINDS = frozenset(
         "conversion_error",
         "ffi_error",
         "file_exists",
+        "file_limit_error",
         "file_not_found",
         "index_error",
         "import_error",

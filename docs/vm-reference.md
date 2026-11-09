@@ -81,7 +81,7 @@ The recommended workflow is: preset files and inputs before execution, then read
 
 Running out of queued input with no further source is ordinary suspension (`waiting_input`), not an exception; an input source explicitly reporting closure (`input_error`) follows the normal catchable-error path. On failure, `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
-After a child enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's quota errors remain uncatchable. For the full script-visible rules see the [language reference](language-reference.md) §5.
+After a child exhausts an execution budget and enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's execution-budget errors remain uncatchable. File-count, per-file, and file-storage constraints instead use the ordinary, catchable `file_limit_error`, which is unrelated to execution-account exhaustion and does not terminate the execution session. For the full script-visible rules see the [language reference](language-reference.md) §5.
 
 A terminal VM can still be operated on, but two kinds of methods behave differently:
 
@@ -154,10 +154,13 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_total_vms` | 1000 | Live, not-yet-disposed VMs across the runtime, including the entry VM; disposal releases a slot |
 | `max_descendant_vms` | 1000 | Live descendants throughout a VM's whole subtree, excluding itself; disposal releases a slot |
 | `max_vm_depth` | 8 | VM nesting depth |
-| `max_fs_files` | 1000 | Files per VM |
-| `max_fs_file_bytes` | 1,048,576 | UTF-8 bytes per file |
+| `max_fs_files` | 1000 | Maximum total VFS file count to which the current VM may grow the world |
+| `max_fs_file_bytes` | 1,048,576 | Maximum UTF-8 file size the current VM may write or copy |
+| `max_fs_storage_bytes` | 67,108,864 | Approximate total VFS storage to which the current VM may grow the world, including text, paths, and directory metadata |
 
-Despite its historical name, `max_string_bytes` limits characters per string; file and output quotas are measured in UTF-8 bytes.
+Despite its historical name, `max_string_bytes` limits characters per string; per-file and output quotas are measured in UTF-8 bytes. Total file storage uses the memory model's approximate-byte convention.
+
+The three file fields are **VM constraints on file operations**, not accounts held by the VFS. Rejection uses the ordinary, catchable `file_limit_error` and does not terminate the VM. An existing world that already exceeds the current VM's limits can be read, deleted, renamed, or overwritten without increasing its size, but cannot be grown further. A failed operation leaves no partial mutation, and failed attempts and retries remain normally metered.
 
 Only the cumulative fields `max_instructions`, `max_output_bytes`, and `max_total_bytes` accept `-1` for no local cap. Every other field, including the live-count quotas `max_total_vms` and `max_descendant_vms`, is structural and must be a non-negative finite integer; every field rejects other negative values and non-integer values.
 
