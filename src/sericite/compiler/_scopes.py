@@ -64,6 +64,38 @@ class _ScopeCollector(ast.NodeVisitor):
         for statement in node.body:
             collector.visit(statement)
 
+    def _visit_comprehension(
+        self, node: ast.ListComp | ast.DictComp, name: str
+    ) -> None:
+        generators = node.generators
+        self.visit(generators[0].iter)
+        input_name = "$comp_input"
+        child = _Scope(
+            node,
+            isa.CodeUnit(name=name, params=[input_name]),
+            self.scope,
+        )
+        self.scope.children.append(child)
+        child.bound[input_name] = None
+        collector = _ScopeCollector(child)
+        for index, generator in enumerate(generators):
+            collector.visit(generator.target)
+            if index > 0:
+                collector.visit(generator.iter)
+            for condition in generator.ifs:
+                collector.visit(condition)
+        if isinstance(node, ast.ListComp):
+            collector.visit(node.elt)
+        else:
+            collector.visit(node.key)
+            collector.visit(node.value)
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node, "<listcomp>")
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node, "<dictcomp>")
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # The class name binds in the current scope; field names are not scope names —
         # only field contract annotations are evaluated at definition (and may reference outer names).

@@ -570,7 +570,8 @@ class ValidationTests(unittest.TestCase):
         from sericite.compiler import compile_source
 
         cases = {
-            "[x for x in [1]]": "comprehensions are not supported",
+            "{x for x in [1]}": "set comprehensions are not supported",
+            "(x for x in [1])": "generator expressions are not supported",
             "with x:\n    pass": "`with` statements are not supported",
             "lambda: 1": "lambda expressions are not supported",
             "assert True": "`assert` statements are not supported",

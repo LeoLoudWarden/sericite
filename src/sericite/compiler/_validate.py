@@ -17,10 +17,8 @@ _UNSUPPORTED_MESSAGES = {
     ast.UAdd: "unary `+` is not supported",
     ast.Is: "`is` is not supported",
     ast.IsNot: "`is not` is not supported",
-    ast.ListComp: "comprehensions are not supported",
-    ast.SetComp: "comprehensions are not supported",
-    ast.DictComp: "comprehensions are not supported",
-    ast.GeneratorExp: "comprehensions are not supported",
+    ast.SetComp: "set comprehensions are not supported",
+    ast.GeneratorExp: "generator expressions are not supported",
     ast.With: "`with` statements are not supported",
     ast.AsyncWith: "`with` statements are not supported",
     ast.Lambda: "lambda expressions are not supported",
@@ -285,6 +283,15 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         f"duplicate parameter '{argument.arg}'",
                     )
                 seen_params.add(argument.arg)
+        if isinstance(node, ast.comprehension):
+            if node.is_async:
+                _reject(node, filename, "async comprehensions are not supported")
+            if not _is_unpack_target(node.target):
+                _reject(
+                    node,
+                    filename,
+                    "comprehension target must be a name or tuple of names",
+                )
         if isinstance(node, ast.For) and not _is_unpack_target(node.target):
             _reject(node, filename, "for target must be a name or tuple of names")
         if isinstance(node, ast.Raise) and node.cause is not None:

@@ -106,6 +106,17 @@ label = "big" if x >= 10 else "small"   # ternary (short-circuits: only the chos
 
 Note: a for target is a single name or a fixed-length, nested tuple of names. Iterating a list is a live view (edits during iteration are visible), tuples are immutable sequences, and iterating a dict is a snapshot of its keys.
 
+**List and dict comprehensions**
+
+```python
+squares = [x * x for x in range(6) if x % 2]
+pairs = [(x, y) for x in [1, 2] for y in [3, 4]]
+mapping = {key: value for key, value in [("a", 1), ("b", 2)]}
+reverse = {value: key for key, value in mapping.items()}
+```
+
+Comprehensions support multiple `for` clauses, multiple `if` filters, and fixed-length tuple unpacking, with the same iteration behavior as ordinary `for`. Each comprehension has its own scope: targets neither leak nor overwrite same-named outer variables. The outermost iterable is evaluated once in the enclosing scope; later iterables, filters, and result expressions run in the comprehension scope from left to right. Dict comprehensions evaluate key before value, and a duplicate key retains the later value. Result containers grow item by item and remain subject to container-size and resource quotas. Set comprehensions and generator expressions are not supported yet.
+
 ## 4. Functions
 
 ```python
@@ -412,7 +423,7 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 
 - `import` and `del`
 - `*args`/`**kwargs`, starred unpacking, chained comparisons, and slice assignment
-- list unpacking targets, subscript/attribute unpacking leaves, and dunder names
+- set comprehensions, generator expressions, list unpacking targets, subscript/attribute unpacking leaves, and dunder names
 - class field defaults, methods, and inheritance
 - annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
 - rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`/`tuple`) — contract names may only appear in annotation positions
