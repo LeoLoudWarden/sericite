@@ -245,6 +245,176 @@ class TupleBoundaryTests(unittest.TestCase):
         self.assertEqual(output, "(1, [2])\n")
 
 
+class TupleUsabilityTests(unittest.TestCase):
+    def test_dict_items_is_a_snapshot_of_pairs(self):
+        source = (
+            "mapping = {'a': 1, 'b': 2}\n"
+            "items = mapping.items()\n"
+            "mapping['c'] = 3\n"
+            "items[0] = ('changed', 9)\n"
+            "print(items, mapping)\n"
+            "for key, value in mapping.items():\n"
+            "    print(key, value)\n"
+        )
+        self.assertEqual(
+            run(source),
+            "[('changed', 9), ('b', 2)] {'a': 1, 'b': 2, 'c': 3}\na 1\nb 2\nc 3\n",
+        )
+
+    def test_dict_items_bound_method_and_arity(self):
+        self.assertEqual(
+            run("mapping = {'a': 1}\nitems = mapping.items\nprint(items())"),
+            "[('a', 1)]\n",
+        )
+        self.assertEqual(
+            run_error("mapping = {}\nmapping.items(1)").kind, "arity_error"
+        )
+
+    def test_dict_items_enforces_result_and_pair_limits(self):
+        for source in (
+            "mapping = {1: 2}\nmapping.items()",
+            "mapping = {1: 2, 3: 4}\nmapping.items()",
+        ):
+            with self.subTest(source=source):
+                error = run_error(source, SericiteLimits(max_list_size=1))
+                self.assertEqual(error.kind, "resource_exhausted")
+        self.assertEqual(
+            run(
+                "mapping = {}\nprint(mapping.items())",
+                limits=SericiteLimits(max_list_size=0),
+            ),
+            "[]\n",
+        )
+
+    def test_dict_items_charges_list_and_tuple_slots(self):
+        engine = SericiteEngine()
+        checkpoints = []
+        vm = engine.create_root(
+            "mapping = {'a': 1, 'b': 2}\ncheckpoint()\n"
+            "result = mapping.items()\ncheckpoint()",
+            functions={
+                "checkpoint": lambda: checkpoints.append(
+                    engine._contexts[0].alloc_bytes
+                )
+            },
+        )
+        vm.run()
+        self.assertEqual(checkpoints[1] - checkpoints[0], 2 * 24 + 8)
+
+    def test_join_accepts_tuples(self):
+        source = (
+            "print(','.join(('a', 'b', 'c')))\n"
+            "print('x'.join(()), 'x'.join(('only',)))\n"
+            "join = '-'.join\nprint(join(('a', 'b')))\n"
+        )
+        self.assertEqual(run(source), "a,b,c\n only\na-b\n")
+        self.assertEqual(run_error("print(','.join(('a', 1)))").kind, "type_error")
+
+    def test_partition_and_rpartition(self):
+        source = (
+            "print('a=b=c'.partition('='))\n"
+            "print('a=b=c'.rpartition('='))\n"
+            "print('abc'.partition('x'), 'abc'.rpartition('x'))\n"
+            "print(''.partition('x'), ''.rpartition('x'))\n"
+            "partition = 'a=b'.partition\n"
+            "print(partition('='))\n"
+            "before, separator, after = 'a=b'.partition('=')\n"
+            "print(before, separator, after)\n"
+        )
+        self.assertEqual(
+            run(source),
+            "('a', '=', 'b=c')\n"
+            "('a=b', '=', 'c')\n"
+            "('abc', '', '') ('', '', 'abc')\n"
+            "('', '', '') ('', '', '')\n"
+            "('a', '=', 'b')\n"
+            "a = b\n",
+        )
+
+    def test_partition_validation_and_tuple_limit(self):
+        cases = (
+            ("'a'.partition()", "arity_error"),
+            ("'a'.rpartition('x', 'y')", "arity_error"),
+            ("'a'.partition(1)", "type_error"),
+            ("'a'.rpartition('')", "type_error"),
+        )
+        for source, kind in cases:
+            with self.subTest(source=source):
+                self.assertEqual(run_error(source).kind, kind)
+        for method in ("partition", "rpartition"):
+            with self.subTest(method=method):
+                error = run_error(
+                    f"print('a=b'.{method}('='))", SericiteLimits(max_list_size=2)
+                )
+                self.assertEqual(error.kind, "resource_exhausted")
+
+    def test_count_and_index_for_lists_and_tuples(self):
+        source = (
+            "print([1, [2], 1].count(1), (1, [2], 1).count(1))\n"
+            "print([[2], [3]].count([2]), ([2], [3]).count([2]))\n"
+            "print([0, 1, 2, 1].index(1), (0, 1, 2, 1).index(1))\n"
+            "print([0, 1, 2, 1].index(1, 2), (0, 1, 2, 1).index(1, -1))\n"
+            "print([0, 1, 2].index(0, None, 2), (0, 1, 2).index(2, 0, None))\n"
+            "n = float('nan')\n"
+            "print((n, n).count(n))\n"
+        )
+        self.assertEqual(run(source), "2 2\n1 1\n1 1\n3 3\n0 2\n0\n")
+
+    def test_index_not_found_is_catchable_value_error(self):
+        source = (
+            "for value in ([1], (1,)):\n"
+            "    try:\n"
+            "        value.index(2)\n"
+            "    except value_error as e:\n"
+            "        print(e.kind)\n"
+        )
+        self.assertEqual(run(source), "value_error\nvalue_error\n")
+
+    def test_sequence_method_validation_and_closed_attributes(self):
+        cases = (
+            ("[1].count()", "arity_error"),
+            ("(1,).count(1, 2)", "arity_error"),
+            ("[1].index()", "arity_error"),
+            ("(1,).index(1, 0, 1, 2)", "arity_error"),
+            ("[1].index(1, False)", "type_error"),
+            ("(1,).index(1, 0, 'x')", "type_error"),
+            ("(1,).append(2)", "attribute_error"),
+            ("(1,).pop()", "attribute_error"),
+        )
+        for source, kind in cases:
+            with self.subTest(source=source):
+                self.assertEqual(run_error(source).kind, kind)
+
+    def test_method_work_scales_with_sequence_and_string_size(self):
+        cases = (
+            ("sequence", "value.count(-1)"),
+            ("sequence", "value.index(-1)"),
+            ("string", "value.partition('x')"),
+            ("string", "value.rpartition('x')"),
+        )
+        for kind, expression in cases:
+            counts = {}
+            for size in (100, 1000):
+                engine = SericiteEngine()
+                checkpoints = []
+                vm = engine.create_root(
+                    "value = make()\ncheckpoint()\n"
+                    f"result = {expression}\ncheckpoint()",
+                    functions={
+                        "make": lambda kind=kind, size=size: (
+                            "a" * size if kind == "string" else [0] * (size - 1) + [-1]
+                        ),
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(engine._contexts[0].instruction_count)
+                        ),
+                    },
+                )
+                vm.run()
+                counts[size] = checkpoints[1] - checkpoints[0]
+            with self.subTest(expression=expression):
+                self.assertGreater(counts[1000], counts[100])
+
+
 class TupleAccountingTests(unittest.TestCase):
     def test_tuple_size_limit_for_all_result_construction(self):
         sources = (

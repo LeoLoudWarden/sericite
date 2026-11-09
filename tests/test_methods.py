@@ -208,21 +208,21 @@ class DictMethodTests(unittest.TestCase):
 
     def test_snapshots_enforce_list_size_limit(self):
         limits = SericiteLimits(max_list_size=1)
-        for method in ("keys", "values"):
+        for method in ("keys", "values", "items"):
             with self.subTest(method=method):
                 exc = run_error(f"d = {{1: 2, 3: 4}}\nd.{method}()\n", limits)
                 self.assertEqual(exc.kind, "resource_exhausted")
 
     def test_snapshots_charge_list_allocation(self):
         limits = SericiteLimits(max_total_bytes=16)
-        for method in ("keys", "values"):
+        for method in ("keys", "values", "items"):
             with self.subTest(method=method):
                 exc = run_error(f"d = {{1: 2}}\nd.{method}()\n", limits)
                 self.assertEqual(exc.kind, "resource_exhausted")
 
     def test_snapshots_charge_work_proportional_to_dict_size(self):
         counts = {}
-        for method in ("keys", "values"):
+        for method in ("keys", "values", "items"):
             for size in (2, 4):
                 data = {i: i for i in range(size)}
                 engine = SericiteEngine()
