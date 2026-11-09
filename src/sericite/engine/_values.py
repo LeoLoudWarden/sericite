@@ -218,6 +218,7 @@ def _stamp_origin(code: isa.CodeUnit, vm_id: int, source_id: int = 0) -> None:
         unit.origin_vm = vm_id
         unit.source_id = source_id
         unit.filename = code.filename
+        unit.package = code.package
         for instr in unit.instrs:
             if instr.op == isa.MAKE_FUNCTION:
                 units.append(instr.arg[0])

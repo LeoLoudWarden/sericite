@@ -112,7 +112,7 @@ class ImportTests(unittest.TestCase):
         )
         self.assertEqual(
             output,
-            "import_error module 'missing' not found at /missing.sericite\n"
+            "import_error module 'missing' not found\n"
             "import_error cannot import name 'missing'\n",
         )
 
@@ -352,10 +352,209 @@ class ImportTests(unittest.TestCase):
         root.exec("import util")
         self.assertLess(root.snapshot()["instruction_count"] - initial, initial)
 
-    def test_unsupported_import_forms_and_invalid_bindings_are_rejected(self):
+    def test_dotted_import_binding_alias_and_from_import(self):
+        output = self.run_source(
+            "import lib.math\n"
+            "import lib.math as m\n"
+            "from lib.math import double\n"
+            "print(lib.math.double(2), m.double(3), double(4))\n",
+            {
+                "/lib/__init__.sericite": "print('lib')\n",
+                "/lib/math.sericite": (
+                    "print('math')\ndef double(x):\n    return x * 2\n"
+                ),
+            },
+        )
+        self.assertEqual(output, "lib\nmath\n4 6 8\n")
+
+    def test_dotted_import_inside_function_binds_top_level_package(self):
+        output = self.run_source(
+            "def f():\n    import lib.math\n    return lib.math.value\nprint(f())\n",
+            {
+                "/lib/__init__.sericite": "",
+                "/lib/math.sericite": "value = 16\n",
+            },
+        )
+        self.assertEqual(output, "16\n")
+
+    def test_nested_packages_and_final_package(self):
+        nested = self.run_source(
+            "import root.branch.leaf\nprint(root.branch.leaf.value)\n",
+            {
+                "/root/__init__.sericite": "",
+                "/root/branch/__init__.sericite": "",
+                "/root/branch/leaf.sericite": "value = 17\n",
+            },
+        )
+        self.assertEqual(nested, "17\n")
+        final_package = self.run_source(
+            "import lib.math\nprint(lib.math.value)\n",
+            {
+                "/lib/__init__.sericite": "",
+                "/lib/math/__init__.sericite": "value = 18\n",
+            },
+        )
+        self.assertEqual(final_package, "18\n")
+
+    def test_from_package_prefers_existing_export(self):
+        output = self.run_source(
+            "from pkg import child\nprint(child)\n",
+            {
+                "/pkg/__init__.sericite": "child = 'export'\n",
+                "/pkg/child.sericite": "print('should not load')\n",
+            },
+        )
+        self.assertEqual(output, "export\n")
+
+    def test_from_package_loads_and_caches_submodule(self):
+        output = self.run_source(
+            "from pkg import child\n"
+            "import pkg.child\n"
+            "print(child.value, pkg.child == child)\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/child.sericite": "print('child')\nvalue = 19\n",
+            },
+        )
+        self.assertEqual(output, "child\n19 True\n")
+
+    def test_failed_from_package_submodule_can_be_retried(self):
+        _, root = self.make_root(
+            files={
+                "/pkg/__init__.sericite": "",
+                "/pkg/child.sericite": "raise 'bad'\n",
+            }
+        )
+        root.exec("try:\n    from pkg import child\nexcept raise_error:\n    pass\n")
+        root.write_file("/pkg/child.sericite", "value = 20\n")
+        self.assertEqual(root.exec("from pkg import child\nprint(child.value)"), "20\n")
+
+    def test_package_requires_init_and_cannot_conflict_with_file(self):
+        missing_init = self.run_source(
+            "try:\n    import lib.math\nexcept import_error as e:\n    print(e.kind)\n",
+            {"/lib/math.sericite": "value = 1\n"},
+        )
+        self.assertEqual(missing_init, "import_error\n")
+
+        not_package = self.run_source(
+            "try:\n    import lib.math\nexcept import_error as e:\n    print(e.message)\n",
+            {
+                "/lib.sericite": "",
+                "/lib/math.sericite": "value = 1\n",
+            },
+        )
+        self.assertEqual(not_package, "module 'lib' is not a package\n")
+
+        ambiguous = self.run_source(
+            "try:\n    import lib\nexcept import_error as e:\n    print(e.message)\n",
+            {"/lib.sericite": "", "/lib/__init__.sericite": ""},
+        )
+        self.assertEqual(ambiguous, "module 'lib' is both a file and a package\n")
+
+    def test_relative_imports_within_package(self):
+        output = self.run_source(
+            "from pkg.mod import result\nprint(result)\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/util.sericite": "value = 21\n",
+                "/pkg/other.sericite": "value = 4\n",
+                "/pkg/mod.sericite": (
+                    "from .util import value\n"
+                    "from . import other\n"
+                    "result = value + other.value\n"
+                ),
+            },
+        )
+        self.assertEqual(output, "25\n")
+
+    def test_package_init_can_import_child_while_package_is_loading(self):
+        output = self.run_source(
+            "import pkg\nprint(pkg.child.value)\n",
+            {
+                "/pkg/__init__.sericite": "from . import child\n",
+                "/pkg/child.sericite": "value = 22\n",
+            },
+        )
+        self.assertEqual(output, "22\n")
+
+    def test_relative_imports_from_parent_package(self):
+        output = self.run_source(
+            "from pkg.sub.mod import result\nprint(result)\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/util.sericite": "value = 23\n",
+                "/pkg/other.sericite": "value = 5\n",
+                "/pkg/sub/__init__.sericite": "",
+                "/pkg/sub/mod.sericite": (
+                    "from ..util import value\n"
+                    "from .. import other\n"
+                    "result = value + other.value\n"
+                ),
+            },
+        )
+        self.assertEqual(output, "28\n")
+
+    def test_relative_and_absolute_imports_share_cache(self):
+        output = self.run_source(
+            "import pkg\nfrom pkg.mod import value\nimport pkg.util\n",
+            {
+                "/pkg/__init__.sericite": "from . import util\n",
+                "/pkg/util.sericite": "print('util')\nvalue = 24\n",
+                "/pkg/mod.sericite": "from .util import value\n",
+            },
+        )
+        self.assertEqual(output, "util\n")
+
+    def test_relative_import_outside_package_or_above_root_fails(self):
+        outside = self.run_source(
+            "try:\n"
+            "    from . import util\n"
+            "except import_error as e:\n"
+            "    print(e.message)\n"
+        )
+        self.assertEqual(outside, "relative import outside a package\n")
+        above_root = self.run_source(
+            "try:\n"
+            "    from pkg.mod import value\n"
+            "except import_error as e:\n"
+            "    print(e.message)\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/mod.sericite": "from ..util import value\n",
+            },
+        )
+        self.assertEqual(above_root, "relative import escapes the package root\n")
+
+    def test_granted_function_relative_import_uses_home_package(self):
+        output = self.run_source(
+            "from pkg.mod import load\n"
+            "sub = VM('print(load())', functions={'load': load})\n"
+            "sub.write_file('/pkg/__init__.sericite', '')\n"
+            "sub.write_file('/pkg/util.sericite', \"value = 'caller'\\n\")\n"
+            "print(sub.run(), end='')\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/util.sericite": "value = 'home'\n",
+                "/pkg/mod.sericite": (
+                    "def load():\n    from .util import value\n    return value\n"
+                ),
+            },
+        )
+        self.assertEqual(output, "home\n")
+
+    def test_package_cycle_reports_qualified_names(self):
+        output = self.run_source(
+            "try:\n    import pkg.a\nexcept import_error as e:\n    print(e.message)\n",
+            {
+                "/pkg/__init__.sericite": "",
+                "/pkg/a.sericite": "from . import b\n",
+                "/pkg/b.sericite": "from . import a\n",
+            },
+        )
+        self.assertEqual(output, "circular import: pkg.a -> pkg.b -> pkg.a\n")
+
+    def test_invalid_import_bindings_and_wildcard_are_rejected(self):
         cases = (
-            "import lib.util\n",
-            "from . import util\n",
             "from util import *\n",
             "import print\n",
             "import __private\n",

@@ -63,16 +63,12 @@ def _is_unpack_target(node: ast.AST) -> bool:
 
 def _validate(tree: ast.Module, filename: str) -> None:
     def validate_import(node: ast.Import | ast.ImportFrom) -> None:
-        module = node.module if isinstance(node, ast.ImportFrom) else None
-        if isinstance(node, ast.ImportFrom) and (node.level or module is None):
-            _reject(node, filename, "relative imports are not supported yet")
-        names = [alias.name for alias in node.names]
-        if any("." in name for name in names) or (module is not None and "." in module):
-            _reject(node, filename, "dotted imports are not supported yet")
         for alias in node.names:
             if isinstance(node, ast.ImportFrom) and alias.name == "*":
                 _reject(alias, filename, "wildcard imports are not supported")
-            binding = alias.asname or alias.name
+            binding = alias.asname or (
+                alias.name.split(".")[0] if isinstance(node, ast.Import) else alias.name
+            )
             if alias.name.startswith("__") or binding.startswith("__"):
                 _reject(alias, filename, "dunder names are not available")
             if binding in RESERVED_NAMES:

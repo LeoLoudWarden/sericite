@@ -82,15 +82,26 @@ class _Cell:
 
 
 class SericiteModule:
-    __slots__ = ("home", "locals", "name", "path")
+    __slots__ = ("home", "is_package", "locals", "name", "package", "parent", "path")
 
     def __init__(
-        self, name: str, path: str, locals: dict[str, object], home: object
+        self,
+        name: str,
+        path: str,
+        locals: dict[str, object],
+        home: object,
+        *,
+        package: str = "",
+        is_package: bool = False,
+        parent: object = None,
     ) -> None:
         self.name = name
         self.path = path
         self.locals = locals
         self.home = home
+        self.package = package
+        self.is_package = is_package
+        self.parent = parent
 
     def __repr__(self) -> str:
         return "<module>"
@@ -114,6 +125,7 @@ class Frame:
     # The VM that defined this code; builtins (IO/filesystem/quotas and other world services) resolve back to it.
     home: object = None
     module: SericiteModule | None = None
+    pending_import: tuple[SericiteModule, str] | None = None
 
 
 class SericiteFunction:
