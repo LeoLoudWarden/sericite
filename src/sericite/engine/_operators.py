@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from ..errors import SericiteError
 from ._model import (
     SericiteRecord,
@@ -75,6 +77,21 @@ class _EngineOperators:
                 self._meter(context).allocate(size * 4)
                 self._meter(context).work(size // 64)
                 return text * count
+            if (type(left) is list and type(right) is int) or (
+                type(left) is int and type(right) is list
+            ):
+                items = left if type(left) is list else right
+                count = right if type(left) is list else left
+                size = len(items) * count if count > 0 else 0
+                if size > context.limits.max_list_size:
+                    raise SericiteError(
+                        "list size limit exceeded", kind="resource_exhausted"
+                    )
+                if size == 0:
+                    return []
+                self._meter(context).allocate(size * 8)
+                self._meter(context).work(size)
+                return items * count
             if (type(left) is tuple and type(right) is int) or (
                 type(left) is int and type(right) is tuple
             ):
@@ -92,6 +109,10 @@ class _EngineOperators:
                 return items * count
             if _is_number(left) and _is_number(right):
                 return self._check_int(context, left * right)
+            raise _operand_error(op, left, right)
+        if op == "**":
+            if _is_number(left) and _is_number(right):
+                return self._power(context, left, right)
             raise _operand_error(op, left, right)
         if op == "-":
             if _is_number(left) and _is_number(right):
@@ -118,6 +139,33 @@ class _EngineOperators:
                 "integer size limit exceeded", kind="resource_exhausted"
             )
         return value
+
+    def _power(self, context: VMContext, left: float, right: float) -> object:
+        if left == 0 and right < 0:
+            raise SericiteError(
+                "zero cannot be raised to a negative power", kind="zero_division"
+            )
+        if type(left) is int and type(right) is int and right >= 0:
+            if left in (0, 1, -1):
+                return self._check_int(context, left**right)
+            try:
+                estimated_bits = max(1, int(right * math.log2(abs(left))) + 1)
+            except OverflowError:
+                raise SericiteError(
+                    "integer size limit exceeded", kind="resource_exhausted"
+                ) from None
+            if estimated_bits > context.limits.max_int_bits:
+                raise SericiteError(
+                    "integer size limit exceeded", kind="resource_exhausted"
+                )
+            self._meter(context).work(estimated_bits * max(1, right.bit_length()) // 64)
+            return self._check_int(context, left**right)
+        result = left**right
+        if type(result) not in (int, float):
+            raise SericiteError(
+                "power operation would produce a complex value", kind="type_error"
+            )
+        return self._check_int(context, result)
 
     def _unary_op(self, context: VMContext, op: str, value: object) -> object:
         if op == "-":

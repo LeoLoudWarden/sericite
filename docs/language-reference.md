@@ -18,12 +18,14 @@ Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, `tuple`, 
 7 / 2        # 3.5 (division always yields float)
 7 // 2       # 3
 7 % 3        # 1
+2 ** 3       # 8; exponentiation is right-associative
 "ab" + "cd"
 "=" * 20
 """line1
 line2""" # multi-line
 f"{1/3:.2f}" # f-string
 [1, 2] + [3] # list concatenation
+[1, 2] * 2  # list repetition returns a new list
 (1, 2) + (3,) # tuple concatenation; a one-item tuple needs a trailing comma
 not x        # logical not; and / or short-circuit
 1 < 2        # comparison: == != < <= > >= (no chaining like a < b < c)
@@ -37,7 +39,11 @@ lst == lst                   # True: the same object
 
 `a = b = value` evaluates `value` once and then binds each name in order; multiple targets with attributes or subscripts are not supported.
 
-Augmented assignment supports `+=`, `-=`, `*=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
+Augmented assignment supports `+=`, `-=`, `*=`, `**=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
+
+Lists support bidirectional `*` repetition with integers. Zero or negative counts produce an empty list. The result is a new shallow copy whose elements remain shared; copying work and result-list slots are metered by result size.
+
+Numeric `**` accepts only int/float, excluding `bool`. Non-negative integer exponents produce integers, with estimated bit width and work checked before computation; negative integer exponents produce floats. Zero to a negative power raises `zero_division`, an operation that would produce a complex value raises `type_error`, and float overflow raises `conversion_error`.
 
 Strings, lists, and tuples support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
 

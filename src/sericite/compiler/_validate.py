@@ -6,7 +6,6 @@ from ..errors import CATCHABLE_ERROR_KINDS, UNCATCHABLE_ERROR_KINDS, SericiteErr
 from ._rules import _ALLOWED_NODES, _CONTRACT_ONLY_NAMES, RESERVED_NAMES
 
 _UNSUPPORTED_MESSAGES = {
-    ast.Pow: "`**` is not supported",
     ast.MatMult: "`@` is not supported",
     ast.LShift: "`<<` is not supported",
     ast.RShift: "`>>` is not supported",

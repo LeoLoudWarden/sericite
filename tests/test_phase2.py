@@ -46,7 +46,7 @@ class ArithmeticTests(unittest.TestCase):
         self.assertEqual(run(source), "True\nTrue\nTrue\n")
 
     def test_string_repetition_rejects_other_operand_types(self):
-        sources = ('"a" * 1.5', 'True * "a"', '"a" * True', "[1] * 2")
+        sources = ('"a" * 1.5', 'True * "a"', '"a" * True')
         for expression in sources:
             with self.subTest(expression=expression):
                 with self.assertRaises(SericiteError) as ctx:
@@ -110,6 +110,148 @@ class StringRepetitionAccountingTests(unittest.TestCase):
             self.assertEqual(len(result), size * 3)
             self.assertEqual(allocation, len(result) * 4 + 8)
         self.assertGreater(counts[1000], counts[10])
+
+
+class ListRepetitionTests(unittest.TestCase):
+    def assert_error(self, source, kind, limits=None):
+        engine = SericiteEngine(limits=limits)
+        vm = engine.create_root(source)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, kind)
+
+    def test_both_directions_zero_negative_and_augmented(self):
+        huge = 10**100
+        source = (
+            "print([1, 2] * 2, 2 * [3], [1] * 0, [1] * -2)\n"
+            f"huge = {huge}\n"
+            "print([] * huge)\n"
+            "value = [1]\n"
+            "alias = value\n"
+            "value *= 3\n"
+            "print(value, alias)\n"
+        )
+        self.assertEqual(
+            run(source),
+            "[1, 2, 1, 2] [3, 3] [] []\n[]\n[1, 1, 1] [1]\n",
+        )
+
+    def test_repetition_is_shallow_and_returns_a_new_list(self):
+        source = (
+            "nested = [[]]\n"
+            "result = nested * 2\n"
+            "result[0].append(1)\n"
+            "result.append(2)\n"
+            "print(result[0])\n"
+            "print(result[1])\n"
+            "print(nested[0], len(result), len(nested))\n"
+        )
+        self.assertEqual(run(source), "[1]\n[1]\n[1] 3 1\n")
+
+    def test_rejects_non_integer_counts(self):
+        for expression in ("[1] * 1.5", "1.5 * [1]", "[1] * True", "True * [1]"):
+            with self.subTest(expression=expression):
+                self.assert_error(f"result = {expression}", "type_error")
+
+    def test_result_size_limit(self):
+        for expression in ("[1, 2] * 2", "2 * [1, 2]", f"[1] * {10**100}"):
+            with self.subTest(expression=expression):
+                self.assert_error(
+                    f"result = {expression}",
+                    "resource_exhausted",
+                    SericiteLimits(max_list_size=2),
+                )
+
+    def test_work_and_allocation_scale_with_result_size(self):
+        counts = {}
+        for size in (10, 1000):
+            engine = SericiteEngine()
+            checkpoints = []
+            vm = engine.create_root(
+                "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()",
+                functions={
+                    "make_value": lambda size=size: list(range(size)),
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(
+                            (
+                                engine._contexts[0].instruction_count,
+                                engine._contexts[0].alloc_bytes,
+                            )
+                        )
+                    ),
+                },
+            )
+            vm.run()
+            result = engine._contexts[0].frames[0].locals["result"]
+            work = checkpoints[1][0] - checkpoints[0][0]
+            allocation = checkpoints[1][1] - checkpoints[0][1]
+            counts[size] = work
+            self.assertEqual(len(result), size * 3)
+            self.assertEqual(allocation, len(result) * 8 + 8)
+        self.assertGreater(counts[1000], counts[10])
+
+
+class PowerTests(unittest.TestCase):
+    def assert_error(self, source, kind, limits=None):
+        engine = SericiteEngine(limits=limits)
+        vm = engine.create_root(source)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, kind)
+
+    def test_integer_float_precedence_and_augmented_power(self):
+        source = (
+            "print(2 ** 3, 2 ** 3 ** 2, -2 ** 2, (-2) ** 2)\n"
+            "print(2 ** -2, 4 ** 0.5, 2.0 ** 3, 0 ** 0)\n"
+            "value = 2\n"
+            "value **= 4\n"
+            "print(value)\n"
+            "print([x ** 2 for x in [1, 2, 3]])\n"
+        )
+        self.assertEqual(run(source), "8 512 -4 4\n0.25 2.0 8.0 1\n16\n[1, 4, 9]\n")
+
+    def test_rejects_bool_non_numbers_and_complex_results(self):
+        for expression in ("True ** 2", "2 ** True", "2 ** '3'", "(-1) ** 0.5"):
+            with self.subTest(expression=expression):
+                self.assert_error(f"result = {expression}", "type_error")
+
+    def test_zero_negative_power_and_float_overflow(self):
+        for expression in ("0 ** -1", "0.0 ** -1"):
+            with self.subTest(expression=expression):
+                self.assert_error(f"result = {expression}", "zero_division")
+        self.assert_error("result = 2.0 ** 10000", "conversion_error")
+
+    def test_integer_result_bit_limit_and_preflight(self):
+        engine = SericiteEngine(SericiteLimits(max_int_bits=4))
+        vm = engine.create_root("result = 2 ** 3")
+        self.assertEqual(vm.run(), "")
+        self.assertEqual(vm.snapshot()["locals"]["result"], 8)
+        self.assert_error(
+            "result = 2 ** 4", "resource_exhausted", SericiteLimits(max_int_bits=4)
+        )
+        self.assert_error(f"result = 2 ** {10**100}", "resource_exhausted")
+
+    def test_unit_and_zero_bases_accept_huge_exponents(self):
+        huge = 10**100
+        source = f"print(1 ** {huge}, (-1) ** {huge}, 0 ** {huge})\n"
+        self.assertEqual(run(source), "1 1 0\n")
+
+    def test_integer_power_work_scales_with_result_size(self):
+        counts = {}
+        for exponent in (100, 10000):
+            engine = SericiteEngine(SericiteLimits(max_int_bits=20_000))
+            checkpoints = []
+            vm = engine.create_root(
+                f"checkpoint()\nresult = 2 ** {exponent}\ncheckpoint()",
+                functions={
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].instruction_count)
+                    )
+                },
+            )
+            vm.run()
+            counts[exponent] = checkpoints[1] - checkpoints[0]
+        self.assertGreater(counts[10000], counts[100])
 
 
 class AssignmentTests(unittest.TestCase):
@@ -227,7 +369,6 @@ class AugmentedAssignmentTests(unittest.TestCase):
             ("x = True\nx += 1\n", "type_error"),
             ("x = 1\nx /= 0\n", "zero_division"),
             ('x = "abc"\nx[0] += "z"\n', "type_error"),
-            ("x = 1\nx **= 2\n", "syntax_error"),
             ("x = []\nx @= []\n", "syntax_error"),
             ("[x, y] += [1, 2]\n", "syntax_error"),
         )

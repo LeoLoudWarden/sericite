@@ -542,7 +542,6 @@ class ValidationTests(unittest.TestCase):
         from sericite.compiler import compile_source
 
         cases = {
-            "2 ** 3": "`**` is not supported",
             "1 is 1": "`is` is not supported",
             "1 is not 2": "`is not` is not supported",
             "1 @ 2": "`@` is not supported",
