@@ -129,7 +129,7 @@ class _EngineBuiltins:
                 "read_file",
                 lambda path: self._read_file(home, path),
                 home,
-                work=home.fs.path_work,
+                work=lambda path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "write_file":
@@ -139,95 +139,103 @@ class _EngineBuiltins:
                     home, path, text, _allocation_permit
                 ),
                 home,
-                work=home.fs.write_work,
+                work=lambda path, text: self._attached_vfs(home).write_work(path, text),
                 allocation=lambda path, text: self._vfs_allocation(home, path, text),
             )
         if name == "delete_file":
             return _NativeFunction(
                 "delete_file",
-                home.fs.delete_file,
+                lambda path: self._attached_vfs(home).delete_file(path),
                 home,
-                work=home.fs.path_work,
+                work=lambda path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "rename_file":
             return _NativeFunction(
                 "rename_file",
                 lambda old_path, new_path, *, _allocation_permit=None: (
-                    home.fs.rename_file(old_path, new_path, permit=_allocation_permit)
+                    self._attached_vfs(home).rename_file(
+                        old_path, new_path, permit=_allocation_permit
+                    )
                 ),
                 home,
-                work=home.fs.rename_work,
-                allocation=lambda old_path, new_path: self._meter(home).reserve(
-                    home.fs, "write", home.fs.rename_allocation(old_path, new_path)
+                work=lambda old_path, new_path: self._attached_vfs(home).rename_work(
+                    old_path, new_path
+                ),
+                allocation=lambda old_path, new_path: self._vfs_mutation_allocation(
+                    home, "rename_allocation", old_path, new_path
                 ),
             )
         if name == "copy_file":
             return _NativeFunction(
                 "copy_file",
                 lambda source_path, destination_path, *, _allocation_permit=None: (
-                    home.fs.copy_file(
+                    self._attached_vfs(home).copy_file(
                         source_path, destination_path, permit=_allocation_permit
                     )
                 ),
                 home,
-                work=home.fs.copy_work,
-                allocation=lambda source_path, destination_path: self._meter(
+                work=lambda source_path, destination_path: self._attached_vfs(
                     home
-                ).reserve(
-                    home.fs,
-                    "write",
-                    home.fs.copy_allocation(source_path, destination_path),
+                ).copy_work(source_path, destination_path),
+                allocation=lambda source_path, destination_path: (
+                    self._vfs_mutation_allocation(
+                        home, "copy_allocation", source_path, destination_path
+                    )
                 ),
             )
         if name == "delete_dir":
             return _NativeFunction(
                 "delete_dir",
-                home.fs.delete_dir,
+                lambda path: self._attached_vfs(home).delete_dir(path),
                 home,
-                work=home.fs.delete_dir_work,
+                work=lambda path: self._attached_vfs(home).delete_dir_work(path),
                 allocation=_no_allocation,
             )
         if name == "rename_dir":
             return _NativeFunction(
                 "rename_dir",
                 lambda old_path, new_path, *, _allocation_permit=None: (
-                    home.fs.rename_dir(old_path, new_path, permit=_allocation_permit)
+                    self._attached_vfs(home).rename_dir(
+                        old_path, new_path, permit=_allocation_permit
+                    )
                 ),
                 home,
-                work=home.fs.rename_dir_work,
-                allocation=lambda old_path, new_path: self._meter(home).reserve(
-                    home.fs, "write", home.fs.rename_dir_allocation(old_path, new_path)
+                work=lambda old_path, new_path: self._attached_vfs(
+                    home
+                ).rename_dir_work(old_path, new_path),
+                allocation=lambda old_path, new_path: self._vfs_mutation_allocation(
+                    home, "rename_dir_allocation", old_path, new_path
                 ),
             )
         if name == "copy_dir":
             return _NativeFunction(
                 "copy_dir",
                 lambda source_path, destination_path, *, _allocation_permit=None: (
-                    home.fs.copy_dir(
+                    self._attached_vfs(home).copy_dir(
                         source_path, destination_path, permit=_allocation_permit
                     )
                 ),
                 home,
-                work=home.fs.copy_dir_work,
-                allocation=lambda source_path, destination_path: self._meter(
+                work=lambda source_path, destination_path: self._attached_vfs(
                     home
-                ).reserve(
-                    home.fs,
-                    "write",
-                    home.fs.copy_dir_allocation(source_path, destination_path),
+                ).copy_dir_work(source_path, destination_path),
+                allocation=lambda source_path, destination_path: (
+                    self._vfs_mutation_allocation(
+                        home, "copy_dir_allocation", source_path, destination_path
+                    )
                 ),
             )
         if name == "make_dir":
             return _NativeFunction(
                 "make_dir",
-                lambda path, *, _allocation_permit=None: home.fs.make_dir(
-                    path, permit=_allocation_permit
-                ),
+                lambda path, *, _allocation_permit=None: self._attached_vfs(
+                    home
+                ).make_dir(path, permit=_allocation_permit),
                 home,
-                work=home.fs.path_work,
-                allocation=lambda path: self._meter(home).reserve(
-                    home.fs, "write", home.fs.make_dir_allocation(path)
+                work=lambda path: self._attached_vfs(home).path_work(path),
+                allocation=lambda path: self._vfs_mutation_allocation(
+                    home, "make_dir_allocation", path
                 ),
             )
         if name == "list_dir":
@@ -235,15 +243,15 @@ class _EngineBuiltins:
                 "list_dir",
                 lambda path: self._list_dir(home, path),
                 home,
-                work=home.fs.list_dir_work,
+                work=lambda path: self._attached_vfs(home).list_dir_work(path),
                 allocation=_no_allocation,
             )
         if name == "path_exists":
             return _NativeFunction(
                 "path_exists",
-                home.fs.path_exists,
+                lambda path: self._attached_vfs(home).path_exists(path),
                 home,
-                work=home.fs.path_work,
+                work=lambda path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "VM":
@@ -417,15 +425,21 @@ class _EngineBuiltins:
         return value
 
     def _read_file(self, context: VMContext, path: object) -> str:
-        text = context.fs.read_file(path)
+        text = self._attached_vfs(context).read_file(path)
         self._meter(context).allocate(len(text) * 4)
         return text
+
+    def _vfs_mutation_allocation(
+        self, context: VMContext, estimate: str, *args: object
+    ) -> AllocationPermit:
+        fs = self._attached_vfs(context)
+        amount = getattr(fs, estimate)(*args)
+        return self._meter(context).reserve(fs, "write", amount)
 
     def _vfs_allocation(
         self, context: VMContext, path: object, text: object
     ) -> AllocationPermit:
-        amount = context.fs.write_allocation(path, text)
-        return self._meter(context).reserve(context.fs, "write", amount)
+        return self._vfs_mutation_allocation(context, "write_allocation", path, text)
 
     def _write_file(
         self,
@@ -434,10 +448,10 @@ class _EngineBuiltins:
         text: object,
         permit: AllocationPermit,
     ) -> None:
-        context.fs.write_file(path, text, permit=permit)
+        self._attached_vfs(context).write_file(path, text, permit=permit)
 
     def _list_dir(self, context: VMContext, path: object) -> list[str]:
-        result = context.fs.list_dir(path)
+        result = self._attached_vfs(context).list_dir(path)
         if len(result) > context.limits.max_list_size:
             raise SericiteError("list size limit exceeded", kind="resource_exhausted")
         self._meter(context).allocate(len(result) * 8)
