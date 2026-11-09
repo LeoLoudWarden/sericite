@@ -59,7 +59,7 @@ lst == lst       # True：同一个对象
 2 ** -2      # 0.25
 ```
 
-`**` 只接受 int/float，`bool` 不参与。两个整数进行非负整数次幂运算时结果为 int；涉及 float 或使用负整数指数时结果为 float。整数结果的估算位宽与计算工作量会在运算前检查。
+`**` 只接受 int/float，`bool` 不参与。两个整数进行非负整数次幂运算时结果为 int；涉及 float 或使用负整数指数时结果为 float。
 
 错误契约：
 
@@ -81,7 +81,7 @@ lst == lst       # True：同一个对象
 (1, 2) * 0        # ()
 ```
 
-零次或负数重复返回同类型的空序列。拼接和重复都返回新序列；列表或元组重复是浅拷贝，内部元素仍共享。复制工作、结果字符串和结果列表/元组槽位均按结果规模计入配额。
+零次或负数重复返回同类型的空序列。拼接和重复都返回新序列；列表或元组重复是浅拷贝，内部元素仍共享。
 
 切片使用 `value[start:stop]` 或 `value[start:stop:step]`：
 
@@ -97,9 +97,9 @@ s[2:99]     # "cdef"：越界按截断处理，不报错
 - 三个位置都可省略，省略即为 `None`；位置只能是整数或 `None`。
 - 缺省步长为 1，步长不能为 0。
 - 负索引、越界截断和负步长遵循 Python 语义。
-- 切片总是创建新序列，并计入相应的复制与分配成本。
+- 切片总是创建新序列。
 
-切片赋值等编译期限制见第 9 节。
+切片赋值等编译期限制见第 10 节。
 
 ### 元组特有规则
 
@@ -127,7 +127,7 @@ for first, second in [(1, 2), (3, 4)]:
     print(first + second)
 ```
 
-右侧可以是 list、tuple、str 或 dict（遍历其键）。长度不匹配报可捕获的 `value_error`，不可迭代值报 `type_error`。目标叶子只能是名字；编译期拒绝的目标形式见第 9 节。
+右侧可以是 list、tuple、str 或 dict（遍历其键）。长度不匹配报可捕获的 `value_error`，不可迭代值报 `type_error`。目标叶子只能是名字；编译期拒绝的目标形式见第 10 节。
 
 ### 与 Python 的关键差异
 
@@ -211,7 +211,7 @@ result = {key: value for key, value in [("a", 1), ("a", 2)]}
 print(result)              # {'a': 2}
 ```
 
-**资源约束。** 结果容器逐项构造，并受列表/字典规模与资源配额约束。编译期不支持的推导式形式见第 9 节。
+**资源约束。** 结果容器逐项构造，并受列表/字典规模与资源配额约束。编译期不支持的推导式形式见第 10 节。
 
 ## 4. 函数
 
@@ -307,7 +307,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - `e.message`：字符串，可读错误文本；
 - `e.frames`：调用栈 list，每项是 record，固定含两个字段：
   - `function`：函数名字符串；
-  - `line`：源码行号整数，或 `None`（该帧定义在别的 VM，已脱敏）。
+  - `line`：源码行号整数；其他工作空间定义的代码不显示行号，固定为 `None`。
 
   栈从最外层调用排列到实际错误点，最后一帧是错误点。调用方帧的行号是实际发起该调用的那一行；调用跨多行时，不会退回到语句或表达式的起始行。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
 
@@ -317,14 +317,14 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 `e` 及其帧 record 是安全副本：修改它们不影响内部错误。
 
-调用栈只包含当前执行环境中的帧。授予函数（包括输出 writer）在本 VM 的帧栈上执行，但定义在别的 VM，因此这类帧以授予名出现、`line` 为 `None`。
+调用栈只包含当前工作空间中的调用。其他工作空间定义的函数以授予名显示，`line` 为 `None`。
 
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`、`import_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
-- 文件与 FFI：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
-- 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
+- 文件与外部函数：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
+- 其他工作空间的资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
 ```python
 try:
@@ -338,18 +338,18 @@ except resource_exhausted as e:
 
 `input_error` 表示输入已经结束：不会再有新的输入行时，`input()` 抛出它，脚本可以捕获。因此可以用 `except input_error` 结束读到结尾的循环；如果输入只是暂时没到，`input()` 会等待，不会报错。
 
-`internal_error`（意外的运行时失败）与 `host_error`（此脚本语言安全模型之外的、无法保证可恢复性的错误）始终不可捕获。
+`internal_error`（意外的内部失败）与 `host_error`（外部函数发生无法安全恢复的失败）始终不可捕获。
 
 ## 6. 内建函数
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
-- `len(x)`（str/list/dict/tuple）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
+- `len(x)`（str/list/dict/tuple）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。
 - 文件与目录（纯文本）：见下文。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
 ### 文件与目录
 
-每个 VM 都有纯文本文件系统，路径形如 `/notes/a.txt`。下列操作既可作为内建函数调用，也可作为 VM 句柄方法调用；句柄形式操作该 VM 的文件系统（见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
+当前工作空间提供纯文本文件系统，路径形如 `/notes/a.txt`。脚本通过以下内建读写它：
 
 | 操作 | 用途 |
 |---|---|
@@ -380,7 +380,7 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - 删除、重命名和复制要求源路径是文件。源路径为目录时报 `is_directory`，文件不存在时报 `file_not_found`。
 - 重命名和复制会创建缺失的目标父目录，但不覆盖已有文件；目标文件已存在时报 `file_exists`。
-- 重命名不增加文件数；复制要求文件数配额还能容纳一个新文件。
+- 重命名不增加文件数；复制会新增文件，因此受文件数限制。
 
 **目录操作**
 
@@ -388,12 +388,12 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - 删除、重命名和复制要求源路径是目录。源路径为文件时报 `not_directory`，目录不存在时报 `file_not_found`。
 - 重命名和复制不覆盖已有文件或目录；目标已存在时报 `file_exists`。
 - 删除、重命名和复制目录时，根目录不能作为源或目标；也禁止把目录移动或复制到自身内部。这些情况报 `runtime_error`。
-- 复制目录要求文件数与内存配额足以容纳复制出的目录树。
+- 复制目录会新增整棵目录树，因此受文件数与内存限制。
 
 **公共路径与失败规则**
 
 - 所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`。
-- 变更操作会在修改文件树之前完成路径校验与配额检查，失败不会留下部分变更。
+- 变更操作会在修改文件树之前完成路径与资源检查，失败不会留下部分变更。
 
 ### 列表、元组与字典方法
 
@@ -405,8 +405,6 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `d.items()`：按插入顺序返回新的 `(key, value)` 二元元组列表；之后修改字典不会改变已返回的列表。
 - `d.get(key)` / `d.get(key, default)`：返回键对应的值；键不存在时返回 `None` 或 `default`。
 - `d.pop(key)` / `d.pop(key, default)`：删除并返回键对应的值；未提供默认值时，缺键报 `key_error`，否则返回默认值。
-
-`d.items()` 的结果列表以及其中每个二元元组，都分别计入列表/元组槽位与资源配额。
 
 ### 字符串方法
 
@@ -425,9 +423,7 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 "abc".rpartition("=")    # ("", "", "abc")
 ```
 
-字符串方法返回新值，不修改原字符串。扫描、匹配和结果构造都计入指令配额，字符串结果按实际长度分配。`split`/`splitlines` 还计入结果列表槽位，`partition`/`rpartition` 还计入三元元组槽位。
-
-上述列表、元组、字典和字符串方法集合都是封闭的；未列出的方法报 `attribute_error`。
+字符串方法返回新值，不修改原字符串。上述列表、元组、字典和字符串方法集合都是封闭的；未列出的方法报 `attribute_error`。
 
 ## 7. 记录（record）：自定义含成员的对象
 
@@ -495,8 +491,6 @@ p: Point = Point(1, 2)
 
 宽度检查放行带额外字段的值时，属性报错仍保留接收方写下的注解标签。例如 `p: Point = Coord(1, 2)` 后的 `p.z` 可显示为 `record Point {x: int, y: int} has no field 'z'`——`Point` 只是诊断标签，不表示值的 schema 被改写。
 
-跨 VM 与跨 FFI 边界的只有结构。record 与 schema 不能跨 FFI 边界（把 record 传过去会报 `ffi_error`，先 `unwrap`）；经授予函数在父子 VM 之间按引用传递，契约检查跨 VM 依然成立，但子 VM 中的报错只使用授予名（`functions={"f": ...}` 里的 `f`）与结构描述，定义方的函数名和类型标签不会出现。
-
 ## 8. 创建虚拟机（VM）
 
 在 sericite 里可以创建新的 VM，VM 内跑的代码也还是 sericite：
@@ -528,7 +522,30 @@ VM 可以被自动回收，但使用 `dispose()` 手动清理是更好的做法�
 
 ## 9. 模块与 import
 
-可以从本 VM 的 VFS 导入模块与包：
+模块与包从当前工作空间的文件系统加载。每个模块都有独立的全局命名空间，但与导入它的代码共用工作空间。
+
+### 模块、包与文件路径
+
+例如，当前工作空间中有以下文件：
+
+```text
+/
+├── main.sericite
+├── util.sericite
+└── lib/
+    ├── __init__.sericite
+    ├── math.sericite
+    ├── util.sericite
+    └── sub/
+        ├── __init__.sericite
+        └── mod.sericite
+```
+
+模块名 `util` 对应 `/util.sericite`，`lib.math` 对应 `/lib/math.sericite`。目标也可以是包：`lib.math` 可对应 `/lib/math/__init__.sericite`。
+
+每个中间目录都必须是含 `__init__.sericite` 的包，不支持无初始化文件的 namespace package。同一名字同时存在模块文件和包，或父级不是包时，导入报 `import_error`。
+
+### 导入形式与绑定
 
 ```python
 import util
@@ -539,27 +556,44 @@ from util import answer as value
 import lib.math
 import lib.math as math
 from lib.math import double
-
-from . import util
-from .util import answer
 ```
 
-模块名 `util` 对应 `/util.sericite`；`lib.math` 对应 `/lib/math.sericite`，也可以是包 `/lib/math/__init__.sericite`。中间目录必须是含 `__init__.sericite` 的包，不支持无初始化文件的 namespace package。同一名字同时存在模块文件和包时报 `import_error`，父级不是包时报 `import_error`。
+`import util` 只绑定模块对象；`from util import answer` 只绑定指定属性，不会把模块的其他名字倒入当前作用域。
 
-`import lib.math` 绑定顶层包 `lib`，并成功加载后把 `math` 挂为其属性；`import lib.math as math` 则直接绑定目标模块。`from pkg import child` 优先读取包的已有导出；没有该导出时尝试加载子模块 `pkg.child`。
+`import lib.math` 绑定顶层包 `lib`，并在成功加载后把 `math` 挂为其属性；`import lib.math as math` 直接绑定目标模块。`from pkg import child` 优先读取包的已有导出；没有该导出时，尝试加载子模块 `pkg.child`。
 
-相对导入以当前定义模块的包为基准：`.` 表示当前包，`..` 表示上一级包。包外的入口模块不能使用相对导入，越过最顶层包也会报 `import_error`。相对与绝对形式解析到同一模块时共享缓存。
+通配符导入等编译期限制见第 10 节。
 
-import 在实际执行到语句时加载模块，可以出现在函数、条件和 `try` 中；绑定名遵循普通词法作用域。不支持 `from util import *`。
+### 相对导入
 
-模块拥有独立的全局命名空间，但不是子 VM：它与导入者共享本 VM 的 VFS、虚拟 IO、授予能力和配额。模块函数读取自己定义模块的全局变量；`import util` 只绑定模块对象，`from util import answer` 只绑定指定属性，不会把模块的其他名字倒入当前作用域。
+相对导入以当前定义模块的包为基准：`.` 表示当前包，`..` 表示上一级包。
 
-- 同一 VM 中，同一规范路径的模块成功执行一次后进入缓存；重复 import 返回同一个模块对象，缓存跨 `exec()` 保留。
+```python
+# /lib/math.sericite
+from . import util       # 加载 lib.util
+from .util import answer
+
+# /lib/sub/mod.sericite
+from ..util import answer  # 加载 lib.util
+```
+
+包外的入口模块不能使用相对导入，越过最顶层包也会报 `import_error`。相对形式先解析为规范模块名，再按与绝对导入相同的规则加载。
+
+### 执行环境与作用域
+
+- import 在实际执行到语句时才加载模块，可以出现在函数、条件和 `try` 中；绑定名遵循普通词法作用域。
+- 模块与导入者共用文件、输入输出、已授予函数和资源限制；模块函数的全局变量仍从自己的定义模块读取。
+
+### 缓存、失败与错误
+
+- 在同一工作空间中，同一规范模块名成功执行一次后进入缓存；重复 import 返回同一个模块对象，缓存随工作空间保留。
 - 修改源码文件不会自动重新加载缓存模块。
 - 导入失败不缓存失败结果，修复文件后可以重试；失败前的输出和文件副作用不回滚。
-- 直接或间接循环导入以可捕获的 `import_error` 失败。模块不存在、缺少指定导出也使用该 kind；模块自身的语法、运行和资源错误保留原 kind。
-- 模块对象支持点号读取，不支持属性写入，也不能跨宿主 FFI 边界。
-- 被授予函数内部执行 import 时，从函数定义方 VM 的 VFS 和模块缓存加载，不使用调用方的同名文件。
+- 直接或间接循环导入、模块不存在、缺少指定导出均报可捕获的 `import_error`；模块自身的语法、运行和资源错误保留原 kind。
+
+### 模块对象
+
+模块对象支持点号读取，不支持属性写入。
 
 ## 10. 明确不能写（编译期直接拒绝）
 

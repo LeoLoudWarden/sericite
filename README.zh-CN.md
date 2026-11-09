@@ -39,14 +39,14 @@ sericite -c 'print(argv)' first second
 
 非 UTF-8 的 Windows 环境可先在 PowerShell 中设置 `$env:PYTHONUTF8 = "1"`，再运行上述命令。
 
-多文件项目与 root 应用能力配置：
+多文件项目与程序能力配置：
 
 ```bash
-sericite app.sericite                       # 自动加载静态可达的 import 模块
+sericite app.sericite                       # 自动准备静态可达的导入依赖
 sericite --capabilities capabilities.py app.sericite
 ```
 
-入口文件所在目录是项目根，可达模块按相同相对路径复制到 root VFS；capabilities 是操作者显式信任、只负责 FFI/配额/初始 VFS 的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
+入口文件所在目录是项目根，导入依赖会自动准备好；capabilities 是操作者显式信任、用于配置函数、配额和初始文件的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
 
 ```python
 from sericite import SericiteEngine

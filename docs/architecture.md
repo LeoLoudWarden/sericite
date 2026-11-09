@@ -34,11 +34,12 @@ The `compiler` package is split into cohesive parts:
 
 The `engine` package is split into cohesive parts:
 
-- `_model`: limits, frames, functions, schemas/records, native wrappers, VMContext/VMHandle
+- `_model`: limits, frames, functions, schemas/records, module objects, native wrappers, VMContext/VMHandle
 - `_values`: value semantics, rendering, contract helpers, FFI deep-copy
 - `_core`: lifecycle, dispatch loop, exception unwinding, call machinery
 - `_builtins`: built-in functions, child-VM creation
 - `_operators`: operator/index/attribute semantics, container/record natives
+- `_modules`: module-name/VFS-path resolution, packages and module frames, import resumption, loading/success caches, and home-route accounting
 - `_hostdbg`: VM-handle method charging, debug snapshots
 - `__init__`: assembles `SericiteEngine` from these parts and re-exports the public API
 
@@ -88,6 +89,9 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. The engine's VM index and permanent accounting structures must not own a `VMContext`; handles and execution environments retain it, and live descendants retain their ancestors' accounting chain through their routes.
   - b. An unreachable context is eventually unregistered by Python GC through a finalizer; self-references and cross-VM cycles must not become permanent leaks. Finalizers must not execute scripts, FFI, or output writers.
   - c. `dispose()` can unregister a target subtree in any state; a running target stops after the current instruction exits safely, without executing the target script's `finally` blocks.
+18.
+  - a. Module imports reuse the calling VM's frame stack and unified dispatch rather than creating a child VM. Name resolution, VFS reads, and module caches belong to the definition-side home; loading and cache creation use caller/home causal accounting.
+  - b. A module enters the success cache only after its frame completes. Exception unwinding or `exec()` discarding unfinished execution must clear the corresponding loading state, leaving no partial module to contaminate later imports.
 
 ## 4. Script interface
 
@@ -172,7 +176,7 @@ Caveats:
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
 - Resource governance: see the previous section. The prototype went through one round of adversarial security review (including an independent third-party perspective); all discovered denial-of-service and information-leak paths were fixed and locked in with regression tests.
 - Every VM has its own private virtual filesystem, configurable before the run and harvestable after.
-- Module system: lazily loads modules and packages from the current VM's VFS, with dotted and relative imports; independent module globals, successful-import caching, cycle detection, and definition-side home resolution all use the unified frame stack and quotas.
+- Module system: supports VFS modules, packages, and relative imports through the unified execution, debugging, and quota paths.
 
 Deliberate trade-offs: additional container methods, variadic arguments, and chained comparisons are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
 

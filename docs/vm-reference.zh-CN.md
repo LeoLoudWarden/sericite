@@ -2,9 +2,7 @@
 
 [English](vm-reference.md)
 
-本文面向**需要创建和驱动 VM 的读者**：在 Sericite 脚本里创建子 VM，或经宿主 API 驱动任意 VM。VM 的状态、驱动方法、exec 投递、配额与函数授予的契约都在这里。
-
-脚本内的 VM 值与宿主侧的 `VMHandle` 提供同一组驱动方法，驱动语义相同；下文统一用 `sub.` 书写，宿主侧换成自己的句柄变量即可。有一处刻意的不对称：宿主侧拿到的快照带有额外的宿主专属诊断字段（§4）。
+本文面向**已经理解隔离工作空间、需要在 Sericite 脚本中创建和驱动子 VM 的读者**。VM 的状态、驱动方法、exec 投递、配额与函数授予的脚本契约都在这里；Python 宿主 API 见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
 ## 1. VM 是什么
 
@@ -23,30 +21,26 @@ sub = VM(code, output_writer=forward, buffer_output=False)
 
 `output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
 
-root VM 不由脚本创建：直接运行程序时由 CLI 创建（见 [CLI 参考](cli-reference.zh-CN.md)）；嵌入 Python 时由 `SericiteEngine.create_root()` 创建（见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)）。
-
 ## 3. 状态与生命周期
 
 VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
 
 `terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作——`done`/`error` 等终态 VM 仍可被 `exec` 投递。
 
-VM 上下文是资源，VM 句柄是指向它的能力值。只要句柄或授予环境仍可达，上下文就会保留；终态 VM 因此仍能用于调试快照和后续 `exec` 投递。
+VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环境访问它，它就会保留；终态 VM 因此仍能用于调试快照和后续 `exec` 投递。
 
-当一台 VM 及其所有可达对象构成不可达的引用岛时（包括经授予函数形成的自引用或跨 VM 循环），垃圾回收会最终自动销毁它。自动回收不保证在某个语句或作用域边界立即发生；需要确定释放时点时仍应显式调用 `dispose()`。
+当一台 VM 彻底不可达后，垃圾回收会最终自动销毁它，包括存在自引用或跨 VM 循环的情况。自动回收不保证在某个语句或作用域边界立即发生；需要确定释放时点时仍应显式调用 `dispose()`。
 
 `dispose()` 可以销毁任意状态的 VM，包括正在运行或等待输入的 VM；它会终止并注销目标及其所有存活后代，不要求子先父后。它会：
 
 - 立即释放目标及其所有存活后代占用的 `max_total_vms` 槽位；
 - 让正在运行的目标在当前指令安全退出后停止，不执行目标脚本的 `finally`；
 - 幂等——重复释放是空操作；
-- 使句柄失效——已释放句柄上的其他方法以 `runtime_error` 失败。
+- 使 VM 值失效——已释放 VM 上的其他方法以 `runtime_error` 失败。
 
-函数的 home 是它所属世界所在的那台 VM。该 VM 被销毁后，从它逃逸到其他子树的函数——包括授予给它的宿主函数——也会失效；调用时以可捕获的 `runtime_error` 失败，不会暴露宿主内部错误。授予语义见第 6 节；内部规则见[架构说明](architecture.zh-CN.md)第 5.4 节。
+定义函数所属的 VM 被销毁后，从该 VM 传到其他 VM 的函数也会失效；调用时以可捕获的 `runtime_error` 失败。授予语义见第 6 节。
 
-脚本内 `dispose()` 只计入实际 caller、不计入待销毁 target，配额不足时在变更前失败；完整计费模型见[架构说明](architecture.zh-CN.md)第 5.4 节。
-
-`vm_id` 永不复用，父级的累计指令/内存账本与 `child_count` 也不会退还。
+资源不足时，`dispose()` 会在销毁前失败。销毁不会退还父级已经消耗的累计指令或内存额度；内部生命周期与计费规则见[架构说明](architecture.zh-CN.md)第 5.4 节。
 
 ## 4. 驱动方法
 
@@ -85,13 +79,13 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 推荐工作流：运行前预置文件与输入，运行后读取结果。
 
-输入耗尽且没有更多提供者是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，宿主侧的 `run()` 向宿主抛出 `SericiteError`；脚本内的 `sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
+输入耗尽且没有更多输入来源是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，`sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
 子 VM 因配额耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的配额错误仍不可捕获。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
 
 终态 VM 仍可被操作，但两类方法的行为不同：
 
-- 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、VFS 读取等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照；
+- 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、文件读取等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照；
 - 写入或驱动方法（上述文件/目录变更方法、`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
 
 计费模型（哪些操作由谁计量）见[架构说明](architecture.zh-CN.md)第 5.4 节。
@@ -109,19 +103,19 @@ sub = VM('print("live")', output_writer=forward)
 
 writer：
 
-- 在每次 `print()` 完成输出计量和缓冲后接收一个字符串；
-- 遵循授予函数语义：在实际 caller 的帧栈上执行并受其与祖先的配额约束，同时保留定义侧的模块变量、闭包、授予环境和 IO；
+- 在每次 `print()` 完成输出处理和缓冲后接收一个字符串；
+- 遵循授予函数语义：保留定义方的模块变量、闭包、已授予函数和输入输出，并受定义方与调用方的资源限制；
 - 调用父级 `print()` 时，输出因此继续沿父级配置链转发；
 - 返回值被忽略，异常按普通规则在触发它的 `print()` 处传播；
 - 必须同步完成——若试图通过 `input()` 暂停，会在该 `print()` 处抛出 `runtime_error`。
 
-默认 `buffer_output=True`，为 `run()`/`exec()`/`stdout()` 和快照保留完整 stdout。设为 `False` 后，输出仍计量并转发，但不再保留，上述缓冲输出视图为空。输出与 writer 配置跨 `exec` 投递保留。
+默认 `buffer_output=True`，为 `run()`/`exec()`/`stdout()` 和快照保留完整 stdout。设为 `False` 后，输出仍转发但不再保留，上述缓冲输出视图为空。输出与 writer 配置跨 `exec` 投递保留。
 
 ### exec：向既有 VM 投递新源码
 
 `exec(source)` 让 VM 换上新程序但保留它的世界：
 
-- **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；VFS、输入队列与授予的函数不受影响。
+- **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；文件系统、输入队列、授予的函数和已导入模块的缓存不受影响。
 - **状态与丢弃规则**：除 `terminated` 与正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。
 - **编译原子性**：编译先于任何状态改变完成，编译失败的源码让 VM 保持原样。
 - **配额按生命周期累计**：指令、内存与输出消耗跨投递累计，而非按投递计算。
@@ -139,20 +133,9 @@ writer：
 | `error` | `kind`、`message`、`line`、`column`、`frames`，无错误时为 `None` |
 | `instruction_count` | 当前指令与工作量账 |
 
-复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 句柄或宿主对象。
+复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 值。
 
 `error.frames` 是该 VM 的调用栈。每项是 `{"function": str, "line": int | None}`；栈顺序与行号脱敏规则同脚本异常 record，见[语言参考](language-reference.zh-CN.md)第 5 节。
-
-在宿主侧（`VMHandle` 上）调用这些方法时，返回的字典是上述安全视图的严格超集，额外带有宿主专属诊断字段：
-
-| 字段 | 含义 |
-|---|---|
-| `vm_id` | 引擎内编号 |
-| `parent_id` | 父 VM 的引擎内编号；根为 `None` |
-| `depth` | 嵌套深度；根为 0 |
-| `child_count` | 累计创建的直接子 VM 数 |
-
-脚本自己的调用永远只返回上面的安全视图，无法看到这些字段。
 
 ## 5. 配额
 
@@ -168,7 +151,7 @@ writer：
 | `max_string_bytes` | 1,048,576 | 单字符串上限 |
 | `max_int_bits` | 4096 | 整数位宽上限 |
 | `max_total_bytes` | 67,108,864 | 近似内存总账高水位 |
-| `max_total_vms` | 1000 | 引擎同时存活且尚未销毁的 VM 数上限，包括 root；销毁后释放槽位 |
+| `max_total_vms` | 1000 | 整个运行时同时存活且尚未销毁的 VM 数上限，包括入口 VM；销毁后释放槽位 |
 | `max_descendant_vms` | 1000 | 单台 VM 的整棵子树中同时存活的后代数上限，不含自身；销毁后释放槽位 |
 | `max_vm_depth` | 8 | VM 嵌套深度上限 |
 | `max_fs_files` | 1000 | 单 VM 文件数上限 |
@@ -178,7 +161,7 @@ writer：
 
 只有累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes` 接受用 `-1` 表示不设上限。包括存活数量字段 `max_total_vms`、`max_descendant_vms` 在内的其余字段都是结构性配额，必须是非负有限整数；所有字段都拒绝其他负数和非整数值。
 
-创建 VM 时会检查所有祖先的 `max_descendant_vms`，因此无论按何种树形结构创建子 VM，都无法绕过某一层限制。不可信子 VM 达到自己的后代上限后以 `resource_exhausted` 终止，仍存活的父级可以捕获；`max_total_vms` 继续作为整个引擎的全局防线。
+创建 VM 时会检查所有祖先的 `max_descendant_vms`，因此无论按何种树形结构创建子 VM，都无法绕过某一层限制。不可信子 VM 达到自己的后代上限后以 `resource_exhausted` 终止，仍存活的父级可以捕获；`max_total_vms` 继续作为整个运行时的全局防线。
 
 直接子级配额 `max_child_vms` 已移除。需要禁止某台 VM 创建任何后代时，将它自己的 `max_descendant_vms` 设为 `0`；这不影响父级创建该 VM。
 
@@ -188,11 +171,11 @@ writer：
 - 无限父级下的有限请求采用该有限上限；
 - 只有两侧都无限才得到无限，因此有限祖先始终是硬上限。
 
-授予函数合并 home 与 caller 配额时也遵守同一规则。
+授予函数也会同时受定义方与调用方的配额约束。
 
-无限只跳过上限检查，不跳过记账：诊断账本继续增长。
+无限配额只取消上限检查，不会停止记录用量。
 
-指令、内存和子 VM 消耗按因果路由计入相关祖先。计费模型见[架构说明](architecture.zh-CN.md)第 5 节；Python 宿主经 `SericiteLimits` 为 root 配置同一组字段，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 3 节。
+子 VM 的指令、内存和创建消耗也会计入相关祖先。完整计费模型见[架构说明](architecture.zh-CN.md)第 5 节。
 
 ## 6. 授予函数
 
@@ -208,11 +191,11 @@ sub.run()                        # 输出 42
 被授予的 sericite 函数：
 
 - 保留定义方的模块变量、闭包和已授予环境；
-- `print`、VFS、子 VM 创建等世界服务仍解析回定义方（home）；
-- 函数体在调用方帧栈执行；
-- 世界服务和目标执行由 home/target 与 caller 的联合因果路由约束，共享祖先只计一次；
-- 返回值的所有权进入实际调用方。
+- 函数中的 `print`、文件操作、子 VM 创建和 import 仍使用定义方的环境，包括定义方的文件系统与模块缓存；
+- 调用同时受定义方与调用方的资源限制。
+
+通过授予函数在父子 VM 之间传递的 record 按引用共享，字段契约仍然有效。接收方中的报错只使用授予名与结构描述，不显示定义方的函数名和类型标签。
 
 被授予函数的参数名构成接收方可见的公开调用签名，可用于关键字参数；错误消息中的定义方参数名仍按脱敏规则隐藏。
 
-授予或转授函数就是授予它可达的世界——包括捕获的 VM 句柄，接收方因此获得对它的 `terminate()`/`dispose()` 权限。只应授予允许子 VM 读取或修改其可达状态的函数。VM 句柄本身不能通过 FFI 传给宿主。机制细节与设计不变量见[架构说明](architecture.zh-CN.md)不变量 13 与第 5.4 节；宿主向 root 授予 Python 函数（FFI）见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5 节。
+授予或转授函数就是授予它可达的世界——包括捕获的 VM 值，接收方因此获得对它的 `terminate()`/`dispose()` 权限。只应授予允许子 VM 读取或修改其可达状态的函数。机制细节与设计不变量见[架构说明](architecture.zh-CN.md)不变量 13 与第 5.4 节。
