@@ -543,6 +543,99 @@ class _Compiler:
             )
         )
 
+    def _compile_comprehension(
+        self, node: ast.ListComp | ast.DictComp, code: isa.CodeUnit
+    ) -> None:
+        line = node.lineno
+        analyzed = self._scopes[id(node)].code
+        child = isa.CodeUnit(
+            name=analyzed.name,
+            params=analyzed.params,
+            local_names=analyzed.local_names,
+            cell_names=analyzed.cell_names,
+            free_names=analyzed.free_names,
+        )
+        result_name = f"$comp_result_{self._tmp_counter}"
+        self._tmp_counter += 1
+        self.emit(
+            child,
+            isa.BUILD_LIST if isinstance(node, ast.ListComp) else isa.BUILD_DICT,
+            0,
+            line,
+        )
+        self.emit(child, isa.STORE_NAME, result_name, line)
+        self._function_depth += 1
+        loop_stack, self._loops = self._loops, []
+        finally_stack, self._finally_stack = self._finally_stack, []
+        self._label_stack.append({})
+        try:
+            self._compile_comprehension_generators(
+                node, 0, child, result_name, analyzed.params[0]
+            )
+        finally:
+            self._loops = loop_stack
+            self._finally_stack = finally_stack
+            self._label_stack.pop()
+            self._function_depth -= 1
+        self.emit(child, isa.LOAD_NAME, result_name, line)
+        self.emit(child, isa.RETURN, None, line)
+        _analyze_stack(child, self._filename)
+        self.emit(code, isa.LOAD_CONST, None, line)
+        self.emit(code, isa.LOAD_CONST, None, line)
+        self.emit(code, isa.MAKE_FUNCTION, (child, 0, len(analyzed.params) + 1), line)
+        self.compile_expression(node.generators[0].iter, code)
+        self.emit(code, isa.CALL, 1, line)
+
+    def _compile_comprehension_generators(
+        self,
+        node: ast.ListComp | ast.DictComp,
+        index: int,
+        code: isa.CodeUnit,
+        result_name: str,
+        input_name: str,
+    ) -> None:
+        generator = node.generators[index]
+        line = generator.target.lineno
+        iter_name = f"$comp_iter_{self._tmp_counter}"
+        self._tmp_counter += 1
+        if index == 0:
+            self.emit(code, isa.LOAD_NAME, input_name, line)
+        else:
+            self.compile_expression(generator.iter, code)
+        self.emit(code, isa.GET_ITER, iter_name, line)
+        start = len(code.instrs)
+        for_iter = self.emit(code, isa.FOR_ITER, (iter_name, None), line)
+        self._compile_store_target(generator.target, code, line)
+        condition_jumps: list[int] = []
+        for condition in generator.ifs:
+            self.compile_expression(condition, code)
+            condition_jumps.append(
+                self.emit(code, isa.JUMP_IF_FALSE, None, condition.lineno)
+            )
+        if index + 1 < len(node.generators):
+            self._compile_comprehension_generators(
+                node, index + 1, code, result_name, input_name
+            )
+        elif isinstance(node, ast.ListComp):
+            self.emit(code, isa.LOAD_NAME, result_name, node.elt.lineno)
+            self.emit(code, isa.LOAD_ATTR, ("append", None, None), node.elt.lineno)
+            self.compile_expression(node.elt, code)
+            self.emit(code, isa.CALL, 1, node.elt.lineno)
+            self.emit(code, isa.POP, None, node.elt.lineno)
+        else:
+            key_name = f"$comp_key_{self._tmp_counter}"
+            self._tmp_counter += 1
+            self.compile_expression(node.key, code)
+            self.emit(code, isa.STORE_NAME, key_name, node.key.lineno)
+            self.compile_expression(node.value, code)
+            self.emit(code, isa.LOAD_NAME, result_name, node.value.lineno)
+            self.emit(code, isa.LOAD_NAME, key_name, node.key.lineno)
+            self.emit(code, isa.STORE_INDEX, None, node.lineno)
+        for condition_jump in condition_jumps:
+            code.instrs[condition_jump].arg = start
+        self.emit(code, isa.JUMP, start, line)
+        code.instrs[for_iter].arg = (iter_name, len(code.instrs))
+
     def compile_expression(self, node: ast.AST, code: isa.CodeUnit) -> None:
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Constant):
@@ -597,6 +690,9 @@ class _Compiler:
                 self.compile_expression(key, code)
                 self.compile_expression(value, code)
             self.emit(code, isa.BUILD_DICT, len(node.keys), line)
+            return
+        if isinstance(node, (ast.ListComp, ast.DictComp)):
+            self._compile_comprehension(node, code)
             return
         if isinstance(node, ast.BinOp):
             self.compile_expression(node.left, code)

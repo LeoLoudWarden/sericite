@@ -166,7 +166,7 @@ Caveats:
 
 - Built-in types: int, float, str, bool, None, list, dict, tuple; operators, comparisons, membership, short-circuit logic.
 - Records and schemas: `class` defines a runtime structural contract (fields + per-field contracts), dot member access, fixed shape, `wrap`/`unwrap` conversion to and from dicts; annotations (parameters / return / annotated assignment) execute as real runtime contracts with blame-style errors; class and annotation names are compile-time labels used only in error text.
-- Control flow: `if/elif/else`, `while`, `for`, `break/continue`, `try/except/else/finally`, `raise`, ternary expressions.
+- Control flow: `if/elif/else`, `while`, `for`, `break/continue`, `try/except/else/finally`, `raise`, ternary expressions, and list/dict comprehensions with independent scopes.
 - Functions: definitions, recursion, positional and keyword arguments, default arguments, decorators, independent call frames, lexical closures with by-reference capture.
 - VMs within VMs: any layer can create child VMs; a child cannot tell its depth; the parent can preset files, feed input, single-step (statement- and instruction-level), snapshot, and terminate.
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
@@ -188,4 +188,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 9. Explicitly not supported yet
 
-String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, starred unpacking, chained comparisons, slice assignment, `import`, `del`, class field defaults/methods/inheritance.
+String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, set comprehensions, generator expressions, `**` unpacking, starred unpacking, chained comparisons, slice assignment, `import`, `del`, class field defaults/methods/inheritance.
