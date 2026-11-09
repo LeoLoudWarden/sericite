@@ -321,7 +321,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
-- 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
+- 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`、`import_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
 - 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
