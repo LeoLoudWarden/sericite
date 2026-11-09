@@ -14,38 +14,76 @@ x = input()               # read one line (a string)
 
 Built-in types: `int`, `float`, `str`, `bool`, `None`, `list`, `dict`, `tuple`, plus user-defined `record`s (see section 7).
 
+### Built-in values and basic operations
+
 ```python
 7 / 2        # 3.5 (division always yields float)
 7 // 2       # 3
 7 % 3        # 1
-2 ** 3       # 8; exponentiation is right-associative
+
 "ab" + "cd"
-"=" * 20
 """line1
-line2""" # multi-line
+line2"""     # multi-line string
 f"{1/3:.2f}" # f-string
-[1, 2] + [3] # list concatenation
-[1, 2] * 2  # list repetition returns a new list
-(1, 2) + (3,) # tuple concatenation; a one-item tuple needs a trailing comma
+
 not x        # logical not; and / or short-circuit
-1 < 2        # comparison: == != < <= > >= (no chaining like a < b < c)
-"a" in {"a": 1}    # in / not in: dict keys, list/tuple elements, str substrings
-nan = float("nan")
-nan == nan                   # False: NaN is not equal to itself
-[nan] == [nan]               # False: two new containers compared element by element
-lst = [nan]
-lst == lst                   # True: the same object
+1 < 2        # supports == != < <= > >=
+"a" in {"a": 1}  # dict keys, list/tuple elements, or str substrings
 ```
+
+Container equality compares elements recursively, with an identity fast path for the same object:
+
+```python
+nan = float("nan")
+nan == nan       # False: NaN is not equal to itself
+[nan] == [nan]   # False: two new containers compared element by element
+lst = [nan]
+lst == lst       # True: the same object
+```
+
+### Assignment and augmented assignment
 
 `a = b = value` evaluates `value` once and then binds each name in order; multiple targets with attributes or subscripts are not supported.
 
-Augmented assignment supports `+=`, `-=`, `*=`, `**=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way. All ordinary binary-operation rules apply: in particular, list `+=` creates a new concatenated list rather than extending the original in place.
+Augmented assignment supports `+=`, `-=`, `*=`, `**=`, `/=`, `//=`, and `%=`. The target may be a name, a list/dict subscript, or a record field. `target += rhs` is equivalent to `target = target + rhs`, except that the target address is evaluated only once; the other operators work the same way.
 
-Lists support bidirectional `*` repetition with integers. Zero or negative counts produce an empty list. The result is a new shallow copy whose elements remain shared; copying work and result-list slots are metered by result size.
+All ordinary binary-operation rules also apply to augmented assignment. In particular, list `+=` and `*=` create a new concatenated or repeated list rather than modifying the original in place.
 
-Numeric `**` accepts only int/float, excluding `bool`. Non-negative integer exponents produce integers, with estimated bit width and work checked before computation; negative integer exponents produce floats. Zero to a negative power raises `zero_division`, an operation that would produce a complex value raises `type_error`, and float overflow raises `conversion_error`.
+### Exponentiation
 
-Strings, lists, and tuples support read-only slices, `value[start:stop]` and `value[start:stop:step]`:
+```python
+2 ** 3       # 8
+2 ** 3 ** 2  # 512: right-associative, equivalent to 2 ** (3 ** 2)
+-2 ** 2      # -4: exponentiation binds more tightly than unary minus
+(-2) ** 2    # 4
+2 ** -2      # 0.25
+```
+
+`**` accepts only int/float, excluding `bool`. Two integers with a non-negative integer exponent produce an int; a float operand or a negative integer exponent produces a float. The estimated bit width and work of an integer result are checked before computation.
+
+Error contract:
+
+- zero to a negative power: `zero_division`;
+- an operation that would produce a complex value: `type_error`;
+- floating-point result overflow: `conversion_error`.
+
+### Common sequence operations
+
+Strings, lists, and tuples support same-type `+` concatenation, bidirectional `*` repetition with integers, integer-index reads, and read-only slicing. Lists also support subscript writes.
+
+```python
+"ab" + "cd"       # "abcd"
+[1, 2] + [3]      # [1, 2, 3]
+(1, 2) + (3,)     # (1, 2, 3)
+
+"=" * 3           # "==="
+2 * [1, 2]        # [1, 2, 1, 2]
+(1, 2) * 0        # ()
+```
+
+Zero or negative repetition produces an empty sequence of the same type. Concatenation and repetition return new sequences; list and tuple repetition is shallow, so their elements remain shared. Copying work, result strings, and result list/tuple slots are metered by result size.
+
+Slices use `value[start:stop]` or `value[start:stop:step]`:
 
 ```python
 s = "abcdef"
@@ -56,9 +94,28 @@ s[::-1]     # "fedcba": negative step walks backwards
 s[2:99]     # "cdef": out-of-range positions clip, no error
 ```
 
-Rules: all three positions may be omitted (omission means `None`), and the default step is 1. Each position must be an integer or `None`, and the step cannot be zero; slice assignment is not supported. Negative indices, out-of-range clipping, and negative steps follow Python semantics. Slicing has a cost: it always creates a new string, list, or tuple.
+- All three positions may be omitted (omission means `None`); each position must be an integer or `None`.
+- The default step is 1, and the step cannot be zero.
+- Negative indices, out-of-range clipping, and negative steps follow Python semantics.
+- Slicing always creates a new sequence and incurs the corresponding copying and allocation costs.
 
-Tuples are immutable sequences. They support `len`, truth testing, iteration, indexing, slicing, membership, structural equality, same-type `+` concatenation, and bidirectional `*` repetition with integers. Zero or negative repetition produces an empty tuple; every result is a new value. Tuples cannot be assigned into, mixed with lists in concatenation, ordered with `<`/`>`, or used as dict keys. `tuple` is an annotation-only contract name, not a conversion function.
+See section 9 for compile-time restrictions such as slice assignment.
+
+### Tuple-specific rules
+
+A one-item tuple needs a trailing comma:
+
+```python
+empty = ()
+single = (1,)
+pair = 1, "x"     # parentheses are optional
+```
+
+Tuples support `len`, truth testing, iteration, membership, and structural equality, but not ordering comparisons. They cannot be assigned into, mixed with lists in concatenation, or used as dict keys; these misuses raise `type_error`.
+
+`tuple` is an annotation-only contract name, not a conversion function. See section 7 for the complete contract-name rules.
+
+### Name unpacking
 
 Fixed-length, nested unpacking into names is supported:
 
@@ -70,14 +127,15 @@ for first, second in [(1, 2), (3, 4)]:
     print(first + second)
 ```
 
-The right-hand side may be any currently iterable type: list, tuple, str, or dict (its keys). A length mismatch raises the catchable `value_error`; a non-iterable value raises `type_error`. Target leaves must be names: starred unpacking, list targets, and subscript/attribute leaves are not supported.
+The right-hand side may be a list, tuple, str, or dict (iterating over its keys). A length mismatch raises the catchable `value_error`; a non-iterable value raises `type_error`. Target leaves must be names; see section 9 for target forms rejected at compile time.
 
-Key differences from Python (mistakes raise `type_error`):
+### Key differences from Python
 
-- `bool` does not participate in arithmetic: `True + 1` is an error.
-- Cross-type ordering comparison is an error: `1 < "a"` raises (`==`/`!=` may cross types, evaluating to False/True).
+These rules differ from Python:
+
+- `bool` does not participate in arithmetic: `True + 1` raises `type_error`.
+- Cross-type ordering comparison raises `type_error`: `1 < "a"` raises; `==`/`!=` may cross types, evaluating to False/True.
 - Dict keys may only be `str/int/float/bool/None`; reading a missing key raises `key_error`.
-- Strings and tuples support integer-index reads and slicing, but no writes. Lists support indexed reads/writes and slicing.
 
 ## 3. Control flow
 
@@ -110,9 +168,9 @@ pass                        # empty statement, legal
 label = "big" if x >= 10 else "small"   # ternary (short-circuits: only the chosen branch runs)
 ```
 
-Note: a for target is a single name or a fixed-length, nested tuple of names. Iterating a list is a live view (edits during iteration are visible), tuples are immutable sequences, and iterating a dict is a snapshot of its keys.
+A `for` target may be a single name or use the name-unpacking rules from section 2. Iterating a list is a live view (edits during iteration are visible), while iterating a dict is a snapshot of its keys.
 
-**List and dict comprehensions**
+### List and dict comprehensions
 
 ```python
 squares = [x * x for x in range(6) if x % 2]
@@ -121,7 +179,39 @@ mapping = {key: value for key, value in [("a", 1), ("b", 2)]}
 reverse = {value: key for key, value in mapping.items()}
 ```
 
-Comprehensions support multiple `for` clauses, multiple `if` filters, and fixed-length tuple unpacking, with the same iteration behavior as ordinary `for`. Each comprehension has its own scope: targets neither leak nor overwrite same-named outer variables. The outermost iterable is evaluated once in the enclosing scope; later iterables, filters, and result expressions run in the comprehension scope from left to right. Dict comprehensions evaluate key before value, and a duplicate key retains the later value. Result containers grow item by item and remain subject to container-size and resource quotas. Set comprehensions and generator expressions are not supported yet.
+Comprehensions support multiple `for` clauses, multiple `if` filters, and the name-unpacking rules from section 2, with the same iteration behavior as ordinary `for`.
+
+**Scope.** Each comprehension has its own scope: targets neither leak nor overwrite same-named outer variables, but the comprehension can read outer variables.
+
+```python
+x = 9
+result = [x for x in [1, 2]]
+print(result, x)           # [1, 2] 9
+
+def scale(factor):
+    return [x * factor for x in [1, 2]]
+print(scale(3))            # [3, 6]
+```
+
+**Evaluation order.** The outermost iterable is evaluated once in the enclosing scope. Later iterables, filters, and result expressions run from left to right in the comprehension scope, so they can read the current targets.
+
+```python
+x = [3, 4]
+result = [x for x in x]
+print(result, x)           # [3, 4] [3, 4]
+
+pairs = [(x, y) for x in ["ab", "c"] for y in x]
+print(pairs)               # [('ab', 'a'), ('ab', 'b'), ('c', 'c')]
+```
+
+**Dict results.** Dict comprehensions evaluate the key before the value, and a duplicate key retains the later value.
+
+```python
+result = {key: value for key, value in [("a", 1), ("a", 2)]}
+print(result)              # {'a': 2}
+```
+
+**Resource limits.** Result containers grow item by item and remain subject to container-size and resource quotas. See section 9 for comprehension forms rejected at compile time.
 
 ## 4. Functions
 
@@ -257,7 +347,7 @@ except resource_exhausted as e:
 - Files and directories (text only): see below.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
-**Files and directories**
+### Files and directories
 
 Each VM has a text-only filesystem, with paths such as `/notes/a.txt`. These operations are available as built-ins and as VM-handle methods; the handle form operates on that VM's filesystem (see the [VM reference](vm-reference.md) §4).
 
@@ -305,7 +395,7 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
 - Mutating operations complete path validation and quota checks before changing the file tree. Failure leaves no partial change.
 
-**List, tuple, and dict methods**
+### List, tuple, and dict methods
 
 - `lst.append(x)`: append one item in place and return `None`.
 - `lst.pop()` / `lst.pop(i)`: remove and return the last item or the item at `i`; negative indices work as in indexing. An empty list or invalid index raises `index_error`.
@@ -316,7 +406,9 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
 - `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
 
-**String methods**
+The result list from `d.items()` and each of its pair tuples are charged separately against list/tuple slot and resource quotas.
+
+### String methods
 
 - `s.strip()` / `s.lstrip()` / `s.rstrip()`: remove whitespace from both ends, the left, or the right. Forms such as `s.strip(chars)` instead remove any of the individual characters listed in `chars`, not a whole prefix or suffix.
 - `s.split()`: split on runs of whitespace and ignore whitespace at the ends. `s.split(sep, maxsplit=-1)` splits on a non-empty string `sep`; `sep=None` selects whitespace splitting. `maxsplit` limits the number of splits, with a negative value meaning no limit.
@@ -324,9 +416,18 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `separator.join(values)`: join strings from a `str`, list, tuple, or dict (its keys) using the separator; every item must be a `str`.
 - `s.find(sub, start=None, end=None)`: return the first position of the substring, or `-1` when absent; an optional search range may be supplied.
 - `s.replace(old, new, count=-1)`: replace non-overlapping occurrences, with `count` limiting replacements and a negative value replacing all. An empty `old` inserts between characters and at both ends, following Python semantics.
-- `s.partition(sep)` / `s.rpartition(sep)`: split at the first/last non-empty separator into a `(before, sep, after)` tuple; when absent, return `(s, "", "")` or `("", "", s)` respectively.
+- `s.partition(sep)` / `s.rpartition(sep)`: split at the first/last non-empty separator into a `(before, sep, after)` tuple:
 
-String methods return new values rather than modifying the original string. Scanning, matching, and result construction all count against the instruction quota: string results charge their actual length, `split`/`splitlines` also charge result-list slots, and `partition`/`rpartition` also charge three tuple slots. `d.items()` charges both the result list and every pair tuple. These are closed method sets: unlisted list, tuple, dict, or string methods raise `attribute_error`.
+```python
+"a=b=c".partition("=")   # ("a", "=", "b=c")
+"a=b=c".rpartition("=")  # ("a=b", "=", "c")
+"abc".partition("=")     # ("abc", "", "")
+"abc".rpartition("=")    # ("", "", "abc")
+```
+
+String methods return new values rather than modifying the original string. Scanning, matching, and result construction count against the instruction quota, and string results charge their actual length. `split`/`splitlines` also charge result-list slots, while `partition`/`rpartition` charge three tuple slots.
+
+These are closed list, tuple, dict, and string method sets: unlisted methods raise `attribute_error`.
 
 ## 7. Records: custom objects with members
 
@@ -427,9 +528,10 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 
 ## 9. Explicitly not writable (rejected at compile time)
 
-- `import` and `del`
-- `*args`/`**kwargs`, starred unpacking, chained comparisons, and slice assignment
-- set comprehensions, generator expressions, list unpacking targets, subscript/attribute unpacking leaves, and dunder names
+- `import`, `del`, and dunder names
+- `*args`/`**kwargs`, chained comparisons, and slice assignment
+- starred unpacking, list targets, and subscript/attribute unpacking leaves
+- set comprehensions and generator expressions
 - class field defaults, methods, and inheritance
 - annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
 - rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`/`tuple`) — contract names may only appear in annotation positions
