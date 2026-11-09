@@ -528,16 +528,29 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 
 ## 9. Modules and import
 
-Flat modules can currently be imported from the current VM's VFS:
+Modules and packages can be imported from the current VM's VFS:
 
 ```python
 import util
 import util as u
 from util import answer
 from util import answer as value
+
+import lib.math
+import lib.math as math
+from lib.math import double
+
+from . import util
+from .util import answer
 ```
 
-The module name `util` maps to `/util.sericite`. Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope. Dotted modules, packages, relative imports, and `from util import *` are not supported yet.
+The module name `util` maps to `/util.sericite`; `lib.math` maps to `/lib/math.sericite` or the package `/lib/math/__init__.sericite`. Intermediate directories must be packages with `__init__.sericite`; namespace packages without an initializer are not supported. If both a module file and a package exist for the same name, or a parent is not a package, the import fails with `import_error`.
+
+`import lib.math` binds the top-level package `lib` and, after loading it successfully, exposes `math` as its attribute. `import lib.math as math` binds the target module directly. `from pkg import child` first checks an existing package export, then attempts to load the submodule `pkg.child` when no such export exists.
+
+Relative imports are based on the defining module's package: `.` means the current package and `..` its parent. An entry module outside a package cannot use relative imports, and escaping the top-level package raises `import_error`. Relative and absolute forms that resolve to the same module share its cache entry.
+
+Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope. `from util import *` is not supported.
 
 A module has its own global namespace but is not a child VM: it shares the importing VM's VFS, virtual IO, granted capabilities, and quotas. A module function reads globals from its defining module. `import util` binds only the module object, while `from util import answer` binds only the named attribute; other module names do not spill into the current scope.
 
@@ -550,7 +563,7 @@ A module has its own global namespace but is not a child VM: it shares the impor
 
 ## 10. Explicitly not writable (rejected at compile time)
 
-- Dotted/relative imports, `from x import *`, `del`, and dunder names
+- `from x import *`, `del`, and dunder names
 - `*args`/`**kwargs`, chained comparisons, and slice assignment
 - starred unpacking, list targets, and subscript/attribute unpacking leaves
 - set comprehensions and generator expressions

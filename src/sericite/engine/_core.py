@@ -633,6 +633,7 @@ class _EngineCore:
                 return False
         while len(context.frames) > floor:
             frame = context.frames[-1]
+            frame.pending_import = None
             handler = self._find_handler(frame, error.kind)
             if handler is None:
                 if len(context.frames) == floor + 1:
@@ -961,7 +962,16 @@ class _EngineCore:
             else:
                 stack.append(module)
         elif op == isa.IMPORT_FROM:
-            stack[-1] = self._import_from(context, stack[-1], arg)
+            if frame.pending_import is not None:
+                self._resume_import_from(frame, stack)
+            else:
+                imported, pending = self._import_from(context, frame, stack[-1], arg)
+                if pending:
+                    advance = False
+                else:
+                    stack[-1] = imported
+        elif op == isa.IMPORT_ROOT:
+            stack[-1] = self._import_root(stack[-1])
         elif op == isa.RETURN:
             value = stack.pop() if stack else None
             module = self._finish_module_frame(frame)

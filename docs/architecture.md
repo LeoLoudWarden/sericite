@@ -172,8 +172,9 @@ Caveats:
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
 - Resource governance: see the previous section. The prototype went through one round of adversarial security review (including an independent third-party perspective); all discovered denial-of-service and information-leak paths were fixed and locked in with regression tests.
 - Every VM has its own private virtual filesystem, configurable before the run and harvestable after.
+- Module system: lazily loads modules and packages from the current VM's VFS, with dotted and relative imports; independent module globals, successful-import caching, cycle detection, and definition-side home resolution all use the unified frame stack and quotas.
 
-Deliberate trade-offs: additional container methods, variadic arguments, chained comparisons, `import` are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
+Deliberate trade-offs: additional container methods, variadic arguments, and chained comparisons are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
 
 ## 8. Known limits and semantic deviations
 
@@ -188,4 +189,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 9. Explicitly not supported yet
 
-String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, set comprehensions, generator expressions, `**` unpacking, starred unpacking, chained comparisons, slice assignment, `import`, `del`, class field defaults/methods/inheritance.
+String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, set comprehensions, generator expressions, `**` unpacking, starred unpacking, chained comparisons, slice assignment, wildcard imports, `del`, class field defaults/methods/inheritance.

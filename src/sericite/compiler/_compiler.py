@@ -144,18 +144,33 @@ class _Compiler:
             if len(code.instrs) > first:
                 code.instrs[first].stmt_start = True
 
+    def _compile_import_chain(
+        self, module: str | None, level: int, code: isa.CodeUnit, line: int
+    ) -> None:
+        parts = module.split(".") if module else []
+        if not parts:
+            self.emit(code, isa.IMPORT, ("", level), line)
+            return
+        for index in range(len(parts)):
+            if index:
+                self.emit(code, isa.POP, None, line)
+            name = ".".join(parts[: index + 1])
+            self.emit(code, isa.IMPORT, (name, level), line)
+
     def compile_statement(self, node: ast.stmt, code: isa.CodeUnit) -> None:
         line = node.lineno
         if isinstance(node, ast.Import):
             for alias in node.names:
-                self.emit(code, isa.IMPORT, alias.name, line)
-                name = alias.asname or alias.name
+                self._compile_import_chain(alias.name, 0, code, line)
+                name = alias.asname or alias.name.split(".")[0]
+                if alias.asname is None and "." in alias.name:
+                    self.emit(code, isa.IMPORT_ROOT, None, line)
                 self._store_name(code, name, line)
                 self._label_stack[-1].pop(name, None)
             return
         if isinstance(node, ast.ImportFrom):
             for alias in node.names:
-                self.emit(code, isa.IMPORT, node.module, line)
+                self._compile_import_chain(node.module, node.level, code, line)
                 self.emit(code, isa.IMPORT_FROM, alias.name, line)
                 name = alias.asname or alias.name
                 self._store_name(code, name, line)

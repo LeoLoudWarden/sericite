@@ -98,7 +98,8 @@ class _ScopeCollector(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            self.scope.bound[alias.asname or alias.name] = None
+            name = alias.asname or alias.name.split(".")[0]
+            self.scope.bound[name] = None
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         for alias in node.names:

@@ -528,16 +528,29 @@ VM 可以被自动回收，但使用 `dispose()` 手动清理是更好的做法�
 
 ## 9. 模块与 import
 
-当前支持从本 VM 的 VFS 导入平铺模块：
+可以从本 VM 的 VFS 导入模块与包：
 
 ```python
 import util
 import util as u
 from util import answer
 from util import answer as value
+
+import lib.math
+import lib.math as math
+from lib.math import double
+
+from . import util
+from .util import answer
 ```
 
-模块名 `util` 对应 `/util.sericite`。import 在实际执行到语句时加载模块，可以出现在函数、条件和 `try` 中；绑定名遵循普通词法作用域。当前不支持点号模块、包、相对导入和 `from util import *`。
+模块名 `util` 对应 `/util.sericite`；`lib.math` 对应 `/lib/math.sericite`，也可以是包 `/lib/math/__init__.sericite`。中间目录必须是含 `__init__.sericite` 的包，不支持无初始化文件的 namespace package。同一名字同时存在模块文件和包时报 `import_error`，父级不是包时报 `import_error`。
+
+`import lib.math` 绑定顶层包 `lib`，并成功加载后把 `math` 挂为其属性；`import lib.math as math` 则直接绑定目标模块。`from pkg import child` 优先读取包的已有导出；没有该导出时尝试加载子模块 `pkg.child`。
+
+相对导入以当前定义模块的包为基准：`.` 表示当前包，`..` 表示上一级包。包外的入口模块不能使用相对导入，越过最顶层包也会报 `import_error`。相对与绝对形式解析到同一模块时共享缓存。
+
+import 在实际执行到语句时加载模块，可以出现在函数、条件和 `try` 中；绑定名遵循普通词法作用域。不支持 `from util import *`。
 
 模块拥有独立的全局命名空间，但不是子 VM：它与导入者共享本 VM 的 VFS、虚拟 IO、授予能力和配额。模块函数读取自己定义模块的全局变量；`import util` 只绑定模块对象，`from util import answer` 只绑定指定属性，不会把模块的其他名字倒入当前作用域。
 
@@ -550,7 +563,7 @@ from util import answer as value
 
 ## 10. 明确不能写（编译期直接拒绝）
 
-- 点号/相对导入、`from x import *`、`del` 与双下划线名称
+- `from x import *`、`del` 与双下划线名称
 - `*args`/`**kwargs`、链式比较与切片赋值
 - 带星号解构、列表目标、下标/属性解构叶子
 - 集合推导式与生成器表达式

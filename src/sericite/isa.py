@@ -37,6 +37,7 @@ CALL = "CALL"
 CALL_KW = "CALL_KW"
 IMPORT = "IMPORT"
 IMPORT_FROM = "IMPORT_FROM"
+IMPORT_ROOT = "IMPORT_ROOT"
 RETURN = "RETURN"
 
 JUMP_OPS = {JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE_KEEP, JUMP_IF_FALSE_KEEP}
@@ -75,6 +76,7 @@ class CodeUnit:
     name: str
     params: list[str]
     filename: str = "<sericite>"
+    package: str = ""
     local_names: tuple[str, ...] = ()
     cell_names: tuple[str, ...] = ()
     free_names: tuple[str, ...] = ()
