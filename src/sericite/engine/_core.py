@@ -402,6 +402,8 @@ class _EngineCore:
         _stamp_origin(code, context.vm_id, source_id)
         self._meter(context).allocate(_const_bytes(code))
         module_locals = context.frames[0].locals if context.frames else {}
+        for old_frame in context.frames:
+            self._discard_module_frame(old_frame)
         context.frames = [Frame(code=code, locals=module_locals)]
         context.error = None
         context.last_line = None
@@ -485,6 +487,8 @@ class _EngineCore:
         finally:
             if context.state == "waiting_input":
                 context.state = "ready"
+            for discarded in context.frames[frame_depth:]:
+                self._discard_module_frame(discarded)
             del context.frames[frame_depth:]
             frame.pc = frame_pc
             del frame.stack[stack_depth:]
@@ -557,6 +561,7 @@ class _EngineCore:
             return
         trace = []
         sources = []
+        filenames = []
         last = len(frames) - 1
         for index, frame in enumerate(frames):
             visible = frame.code.origin_vm == context.vm_id
@@ -570,7 +575,8 @@ class _EngineCore:
                 SericiteFrame(frame.display_name or frame.code.name, frame_line)
             )
             sources.append(frame.code.source_id if visible else None)
-        error._set_trace(context.vm_id, tuple(trace), tuple(sources))
+            filenames.append(frame.code.filename if visible else None)
+        error._set_trace(context.vm_id, tuple(trace), tuple(sources), tuple(filenames))
 
     def _fail(self, context: VMContext, error: SericiteError, line: int | None) -> None:
         try:
@@ -585,7 +591,13 @@ class _EngineCore:
             line = None
         if error.kind == "resource_exhausted" and error._resource_vm_id is None:
             error._resource_vm_id = context.vm_id
-        context.error = error.bind(context.filename, line)
+        filename = context.filename
+        filenames = error._trace_filenames.get(context.vm_id, ())
+        if filenames:
+            logical = filenames[-1]
+            if logical is not None and not logical.startswith("<sericite:"):
+                filename = logical
+        context.error = error.bind(filename, line)
         context.state = (
             "resource_exhausted" if error.kind == "resource_exhausted" else "error"
         )
@@ -625,6 +637,7 @@ class _EngineCore:
             if handler is None:
                 if len(context.frames) == floor + 1:
                     return False
+                self._discard_module_frame(frame)
                 context.frames.pop()
                 continue
             del frame.stack[handler.stack_depth :]
@@ -941,8 +954,19 @@ class _EngineCore:
             argc, kw_names = arg
             self._call(context, frame, argc, kw_names)
             advance = False
+        elif op == isa.IMPORT:
+            module = self._import_module(context, frame, arg)
+            if module is None:
+                advance = False
+            else:
+                stack.append(module)
+        elif op == isa.IMPORT_FROM:
+            stack[-1] = self._import_from(context, stack[-1], arg)
         elif op == isa.RETURN:
             value = stack.pop() if stack else None
+            module = self._finish_module_frame(frame)
+            if module is not None:
+                value = module
             if frame.return_contract is not None:
                 self._meter(context).work(_contract_cost(frame.return_contract))
                 if not _contract_holds(value, frame.return_contract):

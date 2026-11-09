@@ -7,6 +7,8 @@ _STACK_DELTAS = {
     isa.LOAD_CONST: 1,
     isa.LOAD_NAME: 1,
     isa.LOAD_DEREF: 1,
+    isa.IMPORT: 1,
+    isa.IMPORT_FROM: 0,
     isa.DUP: 1,
     isa.STORE_NAME: -1,
     isa.STORE_DEREF: -1,

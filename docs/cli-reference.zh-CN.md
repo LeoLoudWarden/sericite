@@ -77,7 +77,7 @@ root 模块启动时带有一个字符串列表变量 `argv`：
 
 ## 3. include：同一 root 的源码组合
 
-`--include` 是 CLI 的代码复用入口，不是 Sericite 的 `import`——真正的模块系统需要另行设计，不承诺与 include 有相同语义：
+`--include` 是 CLI 的源码组合入口，与 Sericite 的 `import` 语义不同。import 从 VM 的既有 VFS 加载独立模块；当前 CLI 不会自动把入口文件旁的其他源码复制进 VFS，需要时可由 `--capabilities` 的 `files` 预置。include 的行为如下：
 
 1. 一次性模式按参数顺序读取所有 include，最后接主文件、命令字符串或 stdin 源码；REPL 的启动单元只包含 include。
 2. 所有文本组合成**一个编译单元**，在同一个 root VM、同一个模块全局作用域中运行。

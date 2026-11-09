@@ -296,9 +296,7 @@ class CliTests(unittest.TestCase):
         )
 
     def test_repl_compile_failure_does_not_desynchronize_source_ids(self):
-        result = self.run_cli(
-            stdin="def f():\n    return 1 / 0\n\nimport os\n(\nf()\n)\n"
-        )
+        result = self.run_cli(stdin="def f():\n    return 1 / 0\n\ndel x\n(\nf()\n)\n")
         self.assertEqual(result.returncode, 0)
         self.assertIn("syntax_error", result.stderr)
         self.assertIn(

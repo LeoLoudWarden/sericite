@@ -146,6 +146,21 @@ class _Compiler:
 
     def compile_statement(self, node: ast.stmt, code: isa.CodeUnit) -> None:
         line = node.lineno
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                self.emit(code, isa.IMPORT, alias.name, line)
+                name = alias.asname or alias.name
+                self._store_name(code, name, line)
+                self._label_stack[-1].pop(name, None)
+            return
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                self.emit(code, isa.IMPORT, node.module, line)
+                self.emit(code, isa.IMPORT_FROM, alias.name, line)
+                name = alias.asname or alias.name
+                self._store_name(code, name, line)
+                self._label_stack[-1].pop(name, None)
+            return
         if isinstance(node, ast.Assign):
             self.compile_expression(node.value, code)
             targets = node.targets

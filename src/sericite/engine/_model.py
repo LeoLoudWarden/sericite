@@ -81,6 +81,21 @@ class _Cell:
         self.value = _UNBOUND
 
 
+class SericiteModule:
+    __slots__ = ("home", "locals", "name", "path")
+
+    def __init__(
+        self, name: str, path: str, locals: dict[str, object], home: object
+    ) -> None:
+        self.name = name
+        self.path = path
+        self.locals = locals
+        self.home = home
+
+    def __repr__(self) -> str:
+        return "<module>"
+
+
 @dataclass
 class Frame:
     code: isa.CodeUnit
@@ -98,6 +113,7 @@ class Frame:
     display_name: str | None = None
     # The VM that defined this code; builtins (IO/filesystem/quotas and other world services) resolve back to it.
     home: object = None
+    module: SericiteModule | None = None
 
 
 class SericiteFunction:
@@ -253,6 +269,8 @@ class VMContext:
     next_source_id: int = 1
     frames: list[Frame] = field(default_factory=list)
     granted: dict[str, object] = field(default_factory=dict)
+    modules: dict[str, SericiteModule] = field(default_factory=dict)
+    loading_modules: dict[str, SericiteModule] = field(default_factory=dict)
     output_writer: object = None
     state: str = "ready"
     last_line: int | None = None

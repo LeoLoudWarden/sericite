@@ -96,6 +96,14 @@ class _ScopeCollector(ast.NodeVisitor):
     def visit_DictComp(self, node: ast.DictComp) -> None:
         self._visit_comprehension(node, "<dictcomp>")
 
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.scope.bound[alias.asname or alias.name] = None
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            self.scope.bound[alias.asname or alias.name] = None
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # The class name binds in the current scope; field names are not scope names —
         # only field contract annotations are evaluated at definition (and may reference outer names).

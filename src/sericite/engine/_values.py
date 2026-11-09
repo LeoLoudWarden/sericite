@@ -13,6 +13,7 @@ from ._model import (
     _VM_OPTIONS,
     SericiteFunction,
     SericiteLimits,
+    SericiteModule,
     SericiteRecord,
     SericiteSchema,
     VMHandle,
@@ -216,6 +217,7 @@ def _stamp_origin(code: isa.CodeUnit, vm_id: int, source_id: int = 0) -> None:
         seen.add(id(unit))
         unit.origin_vm = vm_id
         unit.source_id = source_id
+        unit.filename = code.filename
         for instr in unit.instrs:
             if instr.op == isa.MAKE_FUNCTION:
                 units.append(instr.arg[0])
@@ -496,6 +498,8 @@ def _type_name(value: object) -> str:
         return "function"
     if isinstance(value, VMHandle):
         return "VM"
+    if isinstance(value, SericiteModule):
+        return "module"
     if isinstance(value, SericiteRecord):
         return "record"
     if isinstance(value, SericiteSchema):

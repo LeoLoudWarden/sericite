@@ -53,7 +53,7 @@ def compile_source(source: object, filename: str) -> isa.CodeUnit:
         ) from None
     try:
         _validate(tree, filename)
-        code = isa.CodeUnit(name="<module>", params=[])
+        code = isa.CodeUnit(name="<module>", params=[], filename=filename)
         scopes = _analyze_scopes(tree, code)
         compiler = _Compiler(filename, scopes)
         compiler.compile_body(tree.body, code)

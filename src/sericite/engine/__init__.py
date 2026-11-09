@@ -16,12 +16,14 @@ from ._model import (
     Frame,
     SericiteFunction,
     SericiteLimits,
+    SericiteModule,
     SericiteRecord,
     SericiteSchema,
     VMContext,
     VMHandle,
     _NativeFunction,
 )
+from ._modules import _EngineModules
 from ._operators import _EngineOperators
 from ._values import _estimate_size, _StringRenderer
 
@@ -32,6 +34,7 @@ __all__ = [
     "SericiteFrame",
     "SericiteFunction",
     "SericiteLimits",
+    "SericiteModule",
     "SericiteRecord",
     "SericiteSchema",
     "VMContext",
@@ -42,5 +45,7 @@ __all__ = [
 ]
 
 
-class SericiteEngine(_EngineBuiltins, _EngineOperators, _EngineHostDebug, _EngineCore):
+class SericiteEngine(
+    _EngineBuiltins, _EngineOperators, _EngineHostDebug, _EngineModules, _EngineCore
+):
     """Unified dispatch engine: all VMs at every nesting level execute here."""
