@@ -22,7 +22,7 @@ sericite --capabilities capabilities.py app.sericite
 ## 2. 命令与参数
 
 ```text
-sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
+sericite [-h] [--version] [--capabilities FILE]
          [(SOURCE_FILE | -c SOURCE) [ARG ...]]
 ```
 
@@ -30,23 +30,22 @@ sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
 |---|---|
 | `-h`, `--help` | 显示帮助并退出 |
 | `--version` | 显示运行时版本 |
-| `SOURCE_FILE` | 读取并运行 UTF-8 源文件；`-` 表示从 stdin 读取完整源码；省略时进入 REPL |
+| `SOURCE_FILE` | 读取并运行 UTF-8 源文件及其静态可达模块；`-` 表示从 stdin 读取完整源码；省略时进入 REPL |
 | `-c SOURCE`, `--command SOURCE` | 直接执行命令行中的源码字符串 |
 | `ARG ...` | 传给脚本的参数，不由 CLI 解释 |
 | `--capabilities FILE` | 从可信 Python 文件调用 `configure()`，配置 root VM |
-| `--include FILE` | 在主源码或 REPL 前组合一个文件；可重复，顺序即命令行顺序 |
 
 `SOURCE_FILE` 与 `-c` 互斥；两者都省略时进入 REPL。CLI 选项放在源码入口之前；入口之后的内容全部属于脚本，包括 `--flag` 这类横线参数和单独的 `--`。
 
 在入口前写 `--` 可以显式结束 CLI 选项，也可以用它传入以横线开头的文件名。入口前的 `--` 由 CLI 消费，不进入 `argv`。文件路径按当前工作目录解析；`.sericite` 是约定后缀，不做强制校验。
 
-主文件、include 文件和 stdin 源码按 UTF-8 解码，并忽略开头可选的一个 UTF-8 BOM；行号和列号按忽略后的文本计算。
+主文件、静态可达模块和 stdin 源码按 UTF-8 解码，并忽略开头可选的一个 UTF-8 BOM；行号和列号按忽略后的文本计算。
 
 ```bash
 sericite -c 'print("hello")'
 sericite -c 'print(argv)' first --flag
 printf 'print("hello")\n' | sericite -
-sericite --include base.sericite --include util.sericite app.sericite first
+sericite app.sericite first
 sericite --capabilities capabilities.py -c 'run()'
 ```
 
@@ -54,12 +53,12 @@ sericite --capabilities capabilities.py -c 'run()'
 
 ### REPL
 
-不带 `SOURCE_FILE` 或 `-c` 时，CLI 创建一台持久 root，执行 include 后进入交互循环：
+不带 `SOURCE_FILE` 或 `-c` 时，CLI 创建一台持久 root 并进入交互循环：
 
 - `>>>` 等待新输入，`...` 等待多行语句完成；空输入不执行。
-- 变量、函数、schema 和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
+- 变量、函数、schema、导入模块和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
 - 单个表达式用 `repr` 回显结果；其他语句只有自身产生的输出。
-- 单次编译或运行错误写 stderr，随后可以继续输入；include 或能力配置的启动失败仍使进程以 1 退出。
+- 单次编译或运行错误写 stderr，随后可以继续输入；能力配置的启动失败仍使进程以 1 退出。
 - EOF 使 REPL 正常退出，退出码为 0。
 
 暂不提供历史记录、自动补全、复杂行编辑或调试命令。
@@ -75,54 +74,41 @@ root 模块启动时带有一个字符串列表变量 `argv`：
 
 它是普通模块变量：可以读取、修改或重绑定，并跨 `exec()` 保留；子 VM 不隐式继承。嵌入侧可用 `create_root(argv=...)` 初始化，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节。
 
-## 3. include：同一 root 的源码组合
+## 3. 多文件项目与 import
 
-`--include` 是 CLI 的源码组合入口，与 Sericite 的 `import` 语义不同。import 从 VM 的既有 VFS 加载独立模块；当前 CLI 不会自动把入口文件旁的其他源码复制进 VFS，需要时可由 `--capabilities` 的 `files` 预置。include 的行为如下：
+文件模式以入口文件所在目录为项目根。CLI 把入口文件及静态 import 可达的 `.sericite` 文件复制到 root VFS，并保持相同的相对路径，然后正常执行入口：
 
-1. 一次性模式按参数顺序读取所有 include，最后接主文件、命令字符串或 stdin 源码；REPL 的启动单元只包含 include。
-2. 所有文本组合成**一个编译单元**，在同一个 root VM、同一个模块全局作用域中运行。
-3. 函数、变量和副作用按顺序共享；主源码或后续 REPL 输入可以直接使用 include 定义的名字。
-4. 不去重、不缓存、不创建命名空间或子 VM；重复 include 会重复执行。
-5. 整体编译成功后才执行。任一文件编译失败时，所有文件都没有运行副作用。
-6. 合并后的源码仍受引擎的 4MB 上限约束。
-
-例如 `math_utils.sericite`：
-
-```python
-def double(x):
-    return x * 2
+```text
+project/
+  main.sericite
+  math_utils.sericite
 ```
 
-运行：
+```python
+# main.sericite
+from math_utils import double
+print(double(21))
+```
 
 ```bash
-sericite --include math_utils.sericite -c 'print(double(21))'
+sericite project/main.sericite
 # 42
 ```
 
-错误诊断按源码来源标记位置：
+包、点号模块和相对导入使用同一套 VFS 路径，语言语义见[语言参考](language-reference.zh-CN.md)第 9 节。项目加载有以下边界：
 
-- include 与主文件映射回原始文件及其局部行号；
-- 命令字符串显示为 `<command>`，stdin 源码显示为 `<stdin>`；
-- 嵌套 VM 的错误仍使用 `<sericite:vm_N>`。
+- 只复制静态可达的源码，不复制整个目录；未引用的源码和 `read_file()` 读取的数据文件不会因此进入 VFS。
+- 符号链接解析后越出入口目录的候选文件不会加载。
+- 复制只是启动快照。实际 import 仍只读 VFS，不会执行到语句时动态读取真实磁盘。
+- 未执行到的 import 保持惰性；缺失、非法或循环模块在实际执行到时按语言规则报错。
+- `-c`、stdin 和 REPL 不建立宿主目录快照，只从已有 VFS 导入；可用 `--capabilities` 的 `files` 预置模块。
+- 项目文件先写入，能力配置的 `files` 后写入，因此后者可以显式覆盖同一 VFS 路径。
 
-运行期错误在单行摘要后追加调用栈。例如 `sericite --include runtime.sericite -c 'outer()'` 的输出：
+错误诊断中，入口文件保留操作者给出的宿主路径，导入模块使用 `/pkg/mod.sericite` 这样的逻辑 VFS 路径；命令字符串显示为 `<command>`，stdin 显示为 `<stdin>`。调用栈逐帧使用各自文件与局部行号。
 
-```text
-/path/runtime.sericite:2: name_error: name 'missing' is not defined
-Traceback (most recent call last):
-  File "<command>", line 1, in <module>
-  File "/path/runtime.sericite", line 5, in outer
-  File "/path/runtime.sericite", line 2, in inner
-```
+REPL 中，每帧映射到定义该代码的那次输入；当前输入的行号校正只作用于该次输入。无法确定来源时显示 `<sericite>` 和 `line ?`；其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
 
-调用栈帧的行号沿用上述来源规则（示例中的 `<command>` 是 `-c` 源码）：
-
-- REPL 中，每帧映射到定义该代码的那次输入；当前输入的行号校正只作用于该次输入；
-- include 定义的函数始终保留 include 文件名与文件内行号；
-- 无法确定来源时显示 `<sericite>` 和 `line ?`；其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
-
-尚未进入 VM 执行的编译错误没有调用栈，保持单行诊断。
+尚未进入 VM 执行的入口编译错误没有调用栈，保持单行诊断；模块在运行期编译，其错误可以按语言规则捕获并带有调用栈。
 
 ## 4. capabilities：可信 Python 启动配置
 
@@ -171,12 +157,12 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 - 其中的 Python **不在 Sericite 沙箱内执行**，其 CPU、内存和外部副作用也不由引擎计量（成本责任见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5.4 节）。
 - 只允许操作者选择配置文件；不要让模型或 Sericite 源码决定加载哪一个。
 
-主源码与 include 仍在 root VM 中执行，不因配置文件存在而得到宿主权限。它们只能调用显式授予的函数；`files` 也只预置 root 的内存 VFS，不映射真实磁盘。
+主源码与导入模块仍在 root VM 中执行，不因配置文件存在而得到宿主权限。它们只能调用显式授予的函数；`files` 也只预置 root 的内存 VFS，不映射真实磁盘。
 
 执行顺序固定为：
 
 ```text
-读取源码 → 执行 configure() → 创建并编译 root → 预置 VFS → 运行 → 输出
+读取源码并建立项目 VFS 快照 → 执行 configure() → 创建并编译 root → 预置/覆盖 VFS → 运行 → 输出
 ```
 
 配置文件不能接管会话循环或 VM 驱动。需要这种嵌入行为时使用 Python API，而不是扩展 CLI 配置钩子。

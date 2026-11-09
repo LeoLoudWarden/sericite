@@ -23,8 +23,7 @@ def _parser() -> argparse.ArgumentParser:
             "  sericite\n"
             "  sericite app.sericite first second\n"
             "  sericite -c 'print(argv)' first second\n"
-            "  sericite --capabilities caps.py app.sericite\n"
-            "  sericite --include base.sericite app.sericite"
+            "  sericite --capabilities caps.py app.sericite"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -38,13 +37,6 @@ def _parser() -> argparse.ArgumentParser:
         "--capabilities",
         metavar="FILE",
         help="trusted Python file defining configure() for the root VM",
-    )
-    parser.add_argument(
-        "--include",
-        action="append",
-        default=[],
-        metavar="FILE",
-        help="prepend source in the same root scope; repeat in desired order",
     )
     parser.add_argument(
         "items",
@@ -74,7 +66,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             cli_args.append(value)
             items = values[index + 1 :]
             break
-        if value in {"--include", "--capabilities"}:
+        if value == "--capabilities":
             cli_args.extend(values[index : index + 2])
             index += 2
             continue

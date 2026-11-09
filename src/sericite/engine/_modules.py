@@ -134,9 +134,7 @@ class _EngineModules:
             raise SericiteError("source too large", kind="syntax_error", filename=path)
         code = compile_source(source, path)
         code.package = package
-        source_id = home.next_source_id
-        home.next_source_id += 1
-        _stamp_origin(code, home.vm_id, source_id)
+        _stamp_origin(code, home.vm_id, None)
         meter.allocate(_const_bytes(code))
         meter.allocate(192 + (len(path) + len(full_name) + len(package)) * 4)
         module = SericiteModule(

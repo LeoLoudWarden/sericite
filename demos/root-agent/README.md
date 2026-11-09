@@ -118,4 +118,4 @@ Full JSON contains prompts, model-generated code, and tool results; review it be
 - `mock_server.py`: local OpenAI-compatible stub.
 - `.env.example`: environment template.
 
-`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/cli-reference.md) for general options, includes, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [Sericite-PY reference](../../docs/sericite-py-reference.md).
+`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/cli-reference.md) for general options, multi-file projects, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [Sericite-PY reference](../../docs/sericite-py-reference.md).
