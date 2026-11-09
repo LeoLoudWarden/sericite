@@ -59,7 +59,7 @@ All ordinary binary-operation rules also apply to augmented assignment. In parti
 2 ** -2      # 0.25
 ```
 
-`**` accepts only int/float, excluding `bool`. Two integers with a non-negative integer exponent produce an int; a float operand or a negative integer exponent produces a float. The estimated bit width and work of an integer result are checked before computation.
+`**` accepts only int/float, excluding `bool`. Two integers with a non-negative integer exponent produce an int; a float operand or a negative integer exponent produces a float.
 
 Error contract:
 
@@ -81,7 +81,7 @@ Strings, lists, and tuples support same-type `+` concatenation, bidirectional `*
 (1, 2) * 0        # ()
 ```
 
-Zero or negative repetition produces an empty sequence of the same type. Concatenation and repetition return new sequences; list and tuple repetition is shallow, so their elements remain shared. Copying work, result strings, and result list/tuple slots are metered by result size.
+Zero or negative repetition produces an empty sequence of the same type. Concatenation and repetition return new sequences; list and tuple repetition is shallow, so their elements remain shared.
 
 Slices use `value[start:stop]` or `value[start:stop:step]`:
 
@@ -97,9 +97,9 @@ s[2:99]     # "cdef": out-of-range positions clip, no error
 - All three positions may be omitted (omission means `None`); each position must be an integer or `None`.
 - The default step is 1, and the step cannot be zero.
 - Negative indices, out-of-range clipping, and negative steps follow Python semantics.
-- Slicing always creates a new sequence and incurs the corresponding copying and allocation costs.
+- Slicing always creates a new sequence.
 
-See section 9 for compile-time restrictions such as slice assignment.
+See section 10 for compile-time restrictions such as slice assignment.
 
 ### Tuple-specific rules
 
@@ -127,7 +127,7 @@ for first, second in [(1, 2), (3, 4)]:
     print(first + second)
 ```
 
-The right-hand side may be a list, tuple, str, or dict (iterating over its keys). A length mismatch raises the catchable `value_error`; a non-iterable value raises `type_error`. Target leaves must be names; see section 9 for target forms rejected at compile time.
+The right-hand side may be a list, tuple, str, or dict (iterating over its keys). A length mismatch raises the catchable `value_error`; a non-iterable value raises `type_error`. Target leaves must be names; see section 10 for target forms rejected at compile time.
 
 ### Key differences from Python
 
@@ -211,7 +211,7 @@ result = {key: value for key, value in [("a", 1), ("a", 2)]}
 print(result)              # {'a': 2}
 ```
 
-**Resource limits.** Result containers grow item by item and remain subject to container-size and resource quotas. See section 9 for comprehension forms rejected at compile time.
+**Resource limits.** Result containers grow item by item and remain subject to container-size and resource quotas. See section 10 for comprehension forms rejected at compile time.
 
 ## 4. Functions
 
@@ -307,7 +307,7 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
 - `e.message`: a string containing the readable error text;
 - `e.frames`: a list of call frames. Each frame is a record with exactly two fields:
   - `function`: the function name string;
-  - `line`: the source line integer, or `None` (a frame defined in another VM, redacted).
+  - `line`: the source line integer; code defined in another workspace does not disclose it and always uses `None`.
 
   Frames are ordered from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call; for a call spanning multiple lines, it does not fall back to the first line of the statement or expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
@@ -317,14 +317,14 @@ Bare `raise` and saved rethrows through `finally` preserve the original frames; 
 
 `e` and its frame records are safe copies: mutating them does not affect the internal error.
 
-The trace contains only frames from the current execution environment. Granted functions (including output writers) execute on this VM's frame stack but are defined in another VM, so such frames appear under the granted name with `line` set to `None`.
+The trace contains only calls in the current workspace. Functions defined in another workspace appear under their granted names with `line` set to `None`.
 
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`, `import_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
-- Files and FFI: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
-- Cross-VM resource failure: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
+- Files and external functions: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
+- Resource failure from another workspace: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
 
 ```python
 try:
@@ -338,18 +338,18 @@ except resource_exhausted as e:
 
 `input_error` means the input has ended: `input()` raises it when no further line will arrive, and scripts can catch it. So `except input_error` can end a loop that reads until input ends; if input is merely delayed, `input()` waits instead of raising.
 
-`internal_error` (an unexpected runtime failure) and `host_error` (a failure outside this language's security model whose recoverability cannot be guaranteed) are always uncatchable.
+`internal_error` (an unexpected internal failure) and `host_error` (an external function failed in a way that cannot be recovered safely) are always uncatchable.
 
 ## 6. Built-in functions
 
 - `input()` / `print(...)`: read a line / write values separated by spaces. `print(..., end=text)` replaces the default trailing newline with `text`; use `end=""` for no trailing newline. `end` is keyword-only and must be a string.
-- `len(x)` (str/list/dict/tuple), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively. Rendering work and the result string are metered.
+- `len(x)` (str/list/dict/tuple), `int(x)`, `float(x)`, `str(x)`, `repr(x)`, `range(...)` (returns a list). `repr` quotes and escapes strings so newlines, tabs, quotes, and backslashes appear on one line; containers use the same safe rendering recursively.
 - Files and directories (text only): see below.
 - Records: `wrap(schema, d)`, `unwrap(record)` — see section 7.
 
 ### Files and directories
 
-Each VM has a text-only filesystem, with paths such as `/notes/a.txt`. These operations are available as built-ins and as VM-handle methods; the handle form operates on that VM's filesystem (see the [VM reference](vm-reference.md) §4).
+The current workspace provides a text-only filesystem, with paths such as `/notes/a.txt`. Scripts access it through these built-ins:
 
 | Operation | Purpose |
 |---|---|
@@ -380,7 +380,7 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - Delete, rename, and copy require a file source. A directory raises `is_directory`; a missing file raises `file_not_found`.
 - Rename and copy create missing destination parents but refuse to overwrite an existing file, raising `file_exists`.
-- Rename does not increase the number of files. Copy requires room for one more file under the file-count quota.
+- Rename does not increase the number of files. Copy adds a file and is therefore subject to the file-count limit.
 
 **Directory operations**
 
@@ -388,12 +388,12 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - Delete, rename, and copy require a directory source. A file raises `not_directory`; a missing directory raises `file_not_found`.
 - Rename and copy refuse to overwrite an existing file or directory, raising `file_exists`.
 - Directory deletion, rename, and copy reject the root directory as a source or destination. Moving or copying a directory into its own tree is also forbidden. These cases raise `runtime_error`.
-- Directory copy requires sufficient file-count and memory quotas for the copied tree.
+- Directory copy adds a whole tree and is therefore subject to file-count and memory limits.
 
 **Common path and failure rules**
 
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
-- Mutating operations complete path validation and quota checks before changing the file tree. Failure leaves no partial change.
+- Mutating operations complete path and resource checks before changing the file tree. Failure leaves no partial change.
 
 ### List, tuple, and dict methods
 
@@ -405,8 +405,6 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 - `d.items()`: return a new list of `(key, value)` pairs in insertion order; later dict mutations do not change that list.
 - `d.get(key)` / `d.get(key, default)`: return the value for `key`, or `None`/`default` when absent.
 - `d.pop(key)` / `d.pop(key, default)`: remove and return the value for `key`; a missing key raises `key_error` unless a default is supplied.
-
-The result list from `d.items()` and each of its pair tuples are charged separately against list/tuple slot and resource quotas.
 
 ### String methods
 
@@ -425,9 +423,7 @@ The result list from `d.items()` and each of its pair tuples are charged separat
 "abc".rpartition("=")    # ("", "", "abc")
 ```
 
-String methods return new values rather than modifying the original string. Scanning, matching, and result construction count against the instruction quota, and string results charge their actual length. `split`/`splitlines` also charge result-list slots, while `partition`/`rpartition` charge three tuple slots.
-
-These are closed list, tuple, dict, and string method sets: unlisted methods raise `attribute_error`.
+String methods return new values rather than modifying the original string. These are closed list, tuple, dict, and string method sets: unlisted methods raise `attribute_error`.
 
 ## 7. Records: custom objects with members
 
@@ -495,8 +491,6 @@ Names in error messages are **compile-time, scope-local labels**, used only as d
 
 When width checking accepts a value with extra fields, attribute errors still retain the annotation label written by the receiver. For example, after `p: Point = Coord(1, 2)`, `p.z` can report `record Point {x: int, y: int} has no field 'z'` — `Point` is only a diagnostic label and does not mean the value's schema was rewritten.
 
-Only structure crosses the VM and FFI boundaries. Records and schemas cannot cross the FFI boundary (a record passed across it raises `ffi_error` — `unwrap` first). They pass between parent and child VMs by reference through granted functions, and contract checks still hold across VMs — but errors reported inside the child VM use only the granted name (the key in `functions={"f": ...}`) with structural descriptions; the definition-side function name and type labels never appear.
-
 ## 8. Creating VMs
 
 Sericite code can create new VMs, and the code inside a VM is also sericite:
@@ -528,7 +522,30 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 
 ## 9. Modules and import
 
-Modules and packages can be imported from the current VM's VFS:
+Modules and packages load from the current workspace's filesystem. Each module has its own global namespace but shares the workspace with the code importing it.
+
+### Modules, packages, and file paths
+
+For example, suppose the current workspace contains:
+
+```text
+/
+├── main.sericite
+├── util.sericite
+└── lib/
+    ├── __init__.sericite
+    ├── math.sericite
+    ├── util.sericite
+    └── sub/
+        ├── __init__.sericite
+        └── mod.sericite
+```
+
+The module name `util` maps to `/util.sericite`, and `lib.math` maps to `/lib/math.sericite`. The target may also be a package: `lib.math` can map to `/lib/math/__init__.sericite`.
+
+Every intermediate directory must be a package with an `__init__.sericite`; namespace packages without an initializer are not supported. If both a module file and a package exist for the same name, or a parent is not a package, the import fails with `import_error`.
+
+### Import forms and bindings
 
 ```python
 import util
@@ -539,27 +556,44 @@ from util import answer as value
 import lib.math
 import lib.math as math
 from lib.math import double
-
-from . import util
-from .util import answer
 ```
 
-The module name `util` maps to `/util.sericite`; `lib.math` maps to `/lib/math.sericite` or the package `/lib/math/__init__.sericite`. Intermediate directories must be packages with `__init__.sericite`; namespace packages without an initializer are not supported. If both a module file and a package exist for the same name, or a parent is not a package, the import fails with `import_error`.
+`import util` binds only the module object, while `from util import answer` binds only the named attribute; other module names do not spill into the current scope.
 
 `import lib.math` binds the top-level package `lib` and, after loading it successfully, exposes `math` as its attribute. `import lib.math as math` binds the target module directly. `from pkg import child` first checks an existing package export, then attempts to load the submodule `pkg.child` when no such export exists.
 
-Relative imports are based on the defining module's package: `.` means the current package and `..` its parent. An entry module outside a package cannot use relative imports, and escaping the top-level package raises `import_error`. Relative and absolute forms that resolve to the same module share its cache entry.
+See section 10 for compile-time restrictions such as wildcard imports.
 
-Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope. `from util import *` is not supported.
+### Relative imports
 
-A module has its own global namespace but is not a child VM: it shares the importing VM's VFS, virtual IO, granted capabilities, and quotas. A module function reads globals from its defining module. `import util` binds only the module object, while `from util import answer` binds only the named attribute; other module names do not spill into the current scope.
+Relative imports are based on the defining module's package: `.` means the current package and `..` its parent.
 
-- After a canonical path executes successfully in a VM, it is cached; repeated imports return the same module object, and the cache persists across `exec()`.
+```python
+# /lib/math.sericite
+from . import util       # loads lib.util
+from .util import answer
+
+# /lib/sub/mod.sericite
+from ..util import answer  # loads lib.util
+```
+
+An entry module outside a package cannot use relative imports, and escaping the top-level package raises `import_error`. A relative form is resolved to a canonical module name, then loaded under the same rules as an absolute import.
+
+### Execution environment and scope
+
+- Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope.
+- A module shares files, virtual IO, granted functions, and resource limits with its importer. A module function reads globals from its defining module.
+
+### Cache, failures, and errors
+
+- After a canonical module name executes successfully in a workspace, it is cached; repeated imports return the same module object, and the cache lasts for the workspace's lifetime.
 - Changing a source file does not automatically reload a cached module.
 - Failed imports are not cached, so the import can be retried after fixing the file; output and file side effects that already happened are not rolled back.
-- Direct and indirect circular imports fail with catchable `import_error`. Missing modules and missing requested exports use the same kind; syntax, runtime, and resource errors raised by the module itself retain their original kinds.
-- Module objects support attribute reads but not attribute writes, and cannot cross the host FFI boundary.
-- An import inside a granted function loads from the defining VM's VFS and module cache, not from same-named files in the caller.
+- Direct and indirect circular imports, missing modules, and missing requested exports raise the catchable `import_error`; syntax, runtime, and resource errors raised by the module itself retain their original kinds.
+
+### Module objects
+
+Module objects support attribute reads but not attribute writes.
 
 ## 10. Explicitly not writable (rejected at compile time)
 

@@ -60,7 +60,20 @@ For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the 
 
 ## 4. Driving VMs
 
-The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/file operations/`dispose`, …) correspond one-to-one with the methods of VM values inside scripts, with one deliberate asymmetry: host-side snapshots carry additional host-only diagnostic fields. States and contracts are in the [VM reference](vm-reference.md) §§3–4. The host side adds exactly one privilege — host management is not script accounting:
+The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/file operations/`dispose`, …) correspond one-to-one with the methods of VM values inside scripts. Shared states and contracts are in the [VM reference](vm-reference.md) §§3–4.
+
+A host-side snapshot is a strict superset of the script-safe view, adding:
+
+| Field | Meaning |
+|---|---|
+| `vm_id` | Engine-local identifier; never reused |
+| `parent_id` | Engine-local identifier of the parent VM; `None` for a root |
+| `depth` | Nesting depth; a root is 0 |
+| `child_count` | Cumulative direct children created; disposing a child does not decrease it |
+
+Script calls receive only the safe view and cannot see these host fields.
+
+The host side also has one privilege — host management is not script accounting:
 
 - Direct `feed_input()`, `write_file()`, file reads, stdout access, snapshots, and `dispose()` do not enter the script's memory ledger;
 - Resource-specific limits such as file count, file bytes, and output bytes still apply;
@@ -94,7 +107,7 @@ Arguments and results are deep-copied in both directions and restricted to recur
 - `list`, `dict`, and `tuple`; list/tuple types are preserved in both directions;
 - Dict keys obey the same type whitelist.
 
-Records/schemas, VM handles, functions, and other host objects cannot cross. Call `unwrap()` in the script to turn a record into a dict first. Container sizes, strings, integer width, total nodes, and nesting depth are bounded, and the copying work itself is charged per node against engine quotas.
+Records/schemas, module objects, VM handles, functions, and other host objects cannot cross; attempting to do so raises `ffi_error`. Call `unwrap()` in the script to turn a record into a dict first. Container sizes, strings, integer width, total nodes, and nesting depth are bounded, and the copying work itself is charged per node against engine quotas.
 
 ### 5.3 Exceptions and reentrancy
 

@@ -39,14 +39,14 @@ sericite -c 'print(argv)' first second
 
 In a non-UTF-8 Windows environment, set `$env:PYTHONUTF8 = "1"` in PowerShell before running the commands above.
 
-For multi-file projects and root-application capabilities:
+For multi-file projects and application capabilities:
 
 ```bash
-sericite app.sericite                       # load statically reachable import modules
+sericite app.sericite                       # automatically prepare statically reachable imports
 sericite --capabilities capabilities.py app.sericite
 ```
 
-The entry file's directory is the project root, and reachable modules are copied into the root VFS at the same relative paths. Capabilities are operator-trusted Python configuration limited to FFI, limits, and initial VFS files. See the [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) for the contract and the [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.md) for a complete application. Embed Python when an existing host needs to own VM lifecycles:
+The entry file's directory is the project root, and import dependencies are prepared automatically. Capabilities are operator-trusted Python configuration for functions, limits, and initial files. See the [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) for the contract and the [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.md) for a complete application. Embed Python when an existing host needs to own VM lifecycles:
 
 ```python
 from sericite import SericiteEngine

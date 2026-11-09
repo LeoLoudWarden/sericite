@@ -12,9 +12,9 @@ sericite app.sericite
 sericite --capabilities capabilities.py app.sericite
 ```
 
-- **REPL**：不带源码参数启动持久 root 上的交互会话。
+- **REPL**：不带源码参数启动持久交互会话。
 - **纯 CLI**：运行只使用内建能力的 Sericite 程序。
-- **CLI + 能力配置**：Python 文件只提供可信 FFI、配额和初始 VFS，应用主体仍运行在 root Sericite VM 中；同样适用于 REPL。
+- **CLI + 能力配置**：Python 文件提供可信函数、配额和初始文件，应用主体仍运行在隔离的 Sericite 环境中；同样适用于 REPL。
 - **Python 嵌入**：既有宿主系统直接使用 `SericiteEngine` API；这不经过 CLI，详见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
 `sericite` 是已安装的命令；在源码开发环境中也可写成 `uv run sericite`。`python -m sericite` 使用同一入口。
@@ -33,7 +33,7 @@ sericite [-h] [--version] [--capabilities FILE]
 | `SOURCE_FILE` | 读取并运行 UTF-8 源文件及其静态可达模块；`-` 表示从 stdin 读取完整源码；省略时进入 REPL |
 | `-c SOURCE`, `--command SOURCE` | 直接执行命令行中的源码字符串 |
 | `ARG ...` | 传给脚本的参数，不由 CLI 解释 |
-| `--capabilities FILE` | 从可信 Python 文件调用 `configure()`，配置 root VM |
+| `--capabilities FILE` | 从可信 Python 文件调用 `configure()`，配置入口程序 |
 
 `SOURCE_FILE` 与 `-c` 互斥；两者都省略时进入 REPL。CLI 选项放在源码入口之前；入口之后的内容全部属于脚本，包括 `--flag` 这类横线参数和单独的 `--`。
 
@@ -53,10 +53,10 @@ sericite --capabilities capabilities.py -c 'run()'
 
 ### REPL
 
-不带 `SOURCE_FILE` 或 `-c` 时，CLI 创建一台持久 root 并进入交互循环：
+不带 `SOURCE_FILE` 或 `-c` 时，CLI 创建持久会话并进入交互循环：
 
 - `>>>` 等待新输入，`...` 等待多行语句完成；空输入不执行。
-- 变量、函数、schema、导入模块和 VFS 跨输入保留，每次输入都通过 root 的 `exec()` 投递执行。
+- 变量、函数、schema、导入模块和文件跨输入保留。
 - 单个表达式用 `repr` 回显结果；其他语句只有自身产生的输出。
 - 单次编译或运行错误写 stderr，随后可以继续输入；能力配置的启动失败仍使进程以 1 退出。
 - EOF 使 REPL 正常退出，退出码为 0。
@@ -65,18 +65,26 @@ sericite --capabilities capabilities.py -c 'run()'
 
 ### 脚本 argv
 
-root 模块启动时带有一个字符串列表变量 `argv`：
+入口程序启动时带有一个字符串列表变量 `argv`：
 
 - 文件模式为 `[SOURCE_FILE, *ARG]`；
 - `-c` 模式为 `["-c", *ARG]`；
 - stdin 源码模式为 `["-", *ARG]`；
 - REPL 初始为 `[]`。
 
-它是普通模块变量：可以读取、修改或重绑定，并跨 `exec()` 保留；子 VM 不隐式继承。嵌入侧可用 `create_root(argv=...)` 初始化，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节。
+它是普通模块变量：可以读取、修改或重绑定，并跨多次输入保留；子 VM 不隐式继承。嵌入侧可用 `create_root(argv=...)` 初始化，见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节。
+
+### 错误诊断与来源映射
+
+错误诊断中，入口文件使用操作者提供的路径，导入模块使用 `/pkg/mod.sericite` 这样的虚拟路径；命令字符串显示为 `<command>`，stdin 显示为 `<stdin>`。调用栈逐帧使用各自文件与局部行号。
+
+REPL 中，每帧映射到定义该代码的那次输入；当前输入的行号校正只作用于该次输入。无法确定来源时显示 `<sericite>` 和 `line ?`；其他工作空间定义的代码不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
+
+入口文件在启动阶段发现的语法错误没有调用栈，保持单行诊断；导入模块的错误可以按语言规则捕获，并带有调用栈。
 
 ## 3. 多文件项目与 import
 
-文件模式以入口文件所在目录为项目根。CLI 把入口文件及静态 import 可达的 `.sericite` 文件复制到 root VFS，并保持相同的相对路径，然后正常执行入口：
+文件模式以入口文件所在目录为项目根。CLI 把入口文件及静态 import 可达的 `.sericite` 文件复制到程序的虚拟文件系统（VFS），保持相同的相对路径，然后正常执行入口：
 
 ```text
 project/
@@ -101,14 +109,8 @@ sericite project/main.sericite
 - 符号链接解析后越出入口目录的候选文件不会加载。
 - 复制只是启动快照。实际 import 仍只读 VFS，不会执行到语句时动态读取真实磁盘。
 - 未执行到的 import 保持惰性；缺失、非法或循环模块在实际执行到时按语言规则报错。
-- `-c`、stdin 和 REPL 不建立宿主目录快照，只从已有 VFS 导入；可用 `--capabilities` 的 `files` 预置模块。
+- `-c`、stdin 和 REPL 不建立目录快照，只从已有 VFS 导入；可用 `--capabilities` 的 `files` 预置模块。
 - 项目文件先写入，能力配置的 `files` 后写入，因此后者可以显式覆盖同一 VFS 路径。
-
-错误诊断中，入口文件保留操作者给出的宿主路径，导入模块使用 `/pkg/mod.sericite` 这样的逻辑 VFS 路径；命令字符串显示为 `<command>`，stdin 显示为 `<stdin>`。调用栈逐帧使用各自文件与局部行号。
-
-REPL 中，每帧映射到定义该代码的那次输入；当前输入的行号校正只作用于该次输入。无法确定来源时显示 `<sericite>` 和 `line ?`；其他 VM 的定义侧帧不披露行号，显示为 `line ?`（脱敏规则见[语言参考](language-reference.zh-CN.md)第 5 节）。
-
-尚未进入 VM 执行的入口编译错误没有调用栈，保持单行诊断；模块在运行期编译，其错误可以按语言规则捕获并带有调用栈。
 
 ## 4. capabilities：可信 Python 启动配置
 
@@ -136,14 +138,14 @@ def configure():
 
 | 键 | 类型与作用 |
 |---|---|
-| `functions` | `dict[str, callable]`；授予 root 的宿主函数，沿用 FFI 数据与异常契约 |
-| `limits` | `SericiteLimits`；该 root 的整套配额配置 |
-| `files` | `dict[str, str]`；运行前写入 root VFS 的虚拟路径与纯文本 |
+| `functions` | `dict[str, callable]`；授予入口程序的 Python 函数，沿用 FFI 数据与异常契约 |
+| `limits` | `SericiteLimits`；入口程序的整套配额配置 |
+| `files` | `dict[str, str]`；运行前写入程序 VFS 的虚拟路径与纯文本 |
 
 - 未知键、缺少可调用的 `configure()`、返回非 dict 或字段类型错误都会使启动失败。
-- `functions` 的授予名仍由引擎校验。
-- `files` 通过公开 VM 句柄写入，仍受文件数、单文件字节等限制。
-- 可信的长期 root 可以把累计配额设为 `-1`；存活 VM 数与其他结构性配额仍保持有限。资源安全含义见[安全模型](security.zh-CN.md)第 3 节。
+- `functions` 的授予名仍按语言规则校验。
+- `files` 仍受文件数、单文件字节等限制。
+- 可信的长期程序可以把累计配额设为 `-1`；存活 VM 数与其他结构性配额仍保持有限。资源安全含义见[安全模型](security.zh-CN.md)第 3 节。
 
 FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，配额字段与无限配额的继承规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节，不在此复制。
 
@@ -157,29 +159,29 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 - 其中的 Python **不在 Sericite 沙箱内执行**，其 CPU、内存和外部副作用也不由引擎计量（成本责任见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5.4 节）。
 - 只允许操作者选择配置文件；不要让模型或 Sericite 源码决定加载哪一个。
 
-主源码与导入模块仍在 root VM 中执行，不因配置文件存在而得到宿主权限。它们只能调用显式授予的函数；`files` 也只预置 root 的内存 VFS，不映射真实磁盘。
+主源码与导入模块仍在同一 Sericite 工作环境中执行，不因配置文件存在而得到宿主权限。它们只能调用显式授予的函数；`files` 也只预置程序的内存 VFS，不映射真实磁盘。
 
 执行顺序固定为：
 
 ```text
-读取源码并建立项目 VFS 快照 → 执行 configure() → 创建并编译 root → 预置/覆盖 VFS → 运行 → 输出
+读取源码并建立项目 VFS 快照 → 执行 configure() → 创建并编译入口程序 → 预置/覆盖 VFS → 运行 → 输出
 ```
 
-配置文件不能接管会话循环或 VM 驱动。需要这种嵌入行为时使用 Python API，而不是扩展 CLI 配置钩子。
+配置文件不能接管会话循环或执行流程。需要这种嵌入行为时使用 Python API，而不是扩展 CLI 配置钩子。
 
 ## 5. 输入、输出与退出码
 
-CLI 标准流沿用 Python 宿主环境的编码，不主动重新配置。Windows 等非 UTF-8 环境可在当前 PowerShell 会话设置 `$env:PYTHONUTF8 = "1"`，随后以 UTF-8 标准流运行相同的 CLI 命令。该设置只配置宿主环境；源文件仍按第 2 节的 UTF-8 合同读取，嵌入 API 的字符串、虚拟 IO 与回调接口不变。
+CLI 标准流沿用运行环境的编码，不主动重新配置。Windows 等非 UTF-8 环境可在当前 PowerShell 会话设置 `$env:PYTHONUTF8 = "1"`，随后以 UTF-8 标准流运行相同的 CLI 命令。该设置只配置运行环境；源文件仍按第 2 节的 UTF-8 合同读取，嵌入 API 的字符串、虚拟 IO 与回调接口不变。
 
-- 脚本 `input()` 从宿主 stdin 逐行读取；EOF 抛出可捕获的 `input_error`。一次性模式下未捕获时打印调用栈并以 1 退出；REPL 中未捕获时打印错误并继续会话。
+- 脚本 `input()` 从标准输入逐行读取；EOF 抛出可捕获的 `input_error`。一次性模式下未捕获时打印调用栈并以 1 退出；REPL 中未捕获时打印错误并继续会话。
 - `sericite -` 会消费全部 stdin 作为源码，因此运行时 `input()` 会遇到已关闭的输入流并抛出 `input_error`。
-- root 每次 `print()` 产生的 stdout 会立即写到宿主 stdout 并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份 root stdout 缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
-- 下游 stdout 管道关闭表示外部输出消费者已经结束：CLI 停止当前执行（包括嵌套 VM 的输出转发），丢弃后续输出并安静退出 0。这是 CLI 的外部终止，不是 Sericite 脚本错误；不保证执行 Sericite 的 `finally` 块。
-- 编译/运行错误写 stderr；运行失败时，root 已产生的 stdout 不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续。
+- 程序每次 `print()` 都立即写入标准输出并 flush，包括 `end=""` 的无换行输出；不必等程序结束。CLI 不额外保留一份程序输出缓冲。子 VM 输出仍由父 VM 显式取得：用 `sub.run()` 等接口（输出转发见[虚拟机参考](vm-reference.zh-CN.md)第 4 节）。
+- 下游标准输出管道关闭表示外部输出消费者已经结束：CLI 停止当前执行（包括嵌套 VM 的输出转发），丢弃后续输出并安静退出 0。这是 CLI 的外部终止，不是 Sericite 脚本错误；不保证执行 Sericite 的 `finally` 块。
+- 编译/运行错误写 stderr；运行失败时，程序已产生的输出不丢失。配置错误也只写 stderr。一次性模式在错误后退出；REPL 在单次输入错误后继续。
 
 | 退出码 | 含义 |
 |---:|---|
-| 0 | root 正常完成、REPL 以 EOF 结束，或下游 stdout 管道关闭 |
+| 0 | 程序正常完成、REPL 以 EOF 结束，或下游标准输出管道关闭 |
 | 1 | 文件/配置读取或校验失败、一次性执行或 REPL 启动错误、一次性执行的输入耗尽（`input_error`） |
 | 2 | 命令行用法错误 |
 
@@ -199,4 +201,4 @@ Sericite 借用 Python 语法子集。尚未安装专门扩展时，可在 VS Co
 
 这只提供高亮、缩进和括号匹配；Python linter 不了解 Sericite 的白名单、内建函数和运行期契约，不能代替 CLI 的真实编译诊断。
 
-完整 root 驱动示例见 [`demos/root-agent/`](../demos/root-agent/README.zh-CN.md)。
+完整应用示例见 [`demos/root-agent/`](../demos/root-agent/README.zh-CN.md)。

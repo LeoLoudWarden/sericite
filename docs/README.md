@@ -13,12 +13,12 @@ Sericite's documentation is organized by reader task and rate of change: usage r
 
 | Document | Audience and contents | 中文 |
 |---|---|---|
-| [CLI reference](cli-reference.md) | Running programs: commands, multi-file projects, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
-| [Language reference](language-reference.md) | Writing scripts: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
-| [VM reference](vm-reference.md) | Driving and debugging VMs: states, driving methods, exec delivery, quotas, grant semantics | [vm-reference.zh-CN.md](vm-reference.zh-CN.md) |
-| [Sericite-PY reference](sericite-py-reference.md) | Python embedding: engine API, FFI, host-side error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |
+| [CLI reference](cli-reference.md) | Program operators: commands, multi-file projects, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
+| [Language reference](language-reference.md) | Script authors: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
+| [VM reference](vm-reference.md) | Script authors who understand isolated workspaces: child-VM states, driving, quotas, and grants | [vm-reference.zh-CN.md](vm-reference.zh-CN.md) |
+| [Sericite-PY reference](sericite-py-reference.md) | Python embedders: engine API, FFI, host diagnostics, and error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |
 
-Read the language reference to write scripts, the CLI reference to run root applications, the VM reference to drive and debug VMs, and the Sericite-PY reference when an existing Python system owns VM lifecycles.
+Read the language reference to write scripts without needing engine or host details, the CLI reference to run programs, and the VM reference to drive child VMs inside scripts. Python-host differences are concentrated in the Sericite-PY reference.
 
 ## Design and boundaries
 
