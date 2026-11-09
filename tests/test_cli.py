@@ -12,7 +12,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class CliTests(unittest.TestCase):
-    def run_cli(self, *args: object, stdin: str = "") -> subprocess.CompletedProcess:
+    def run_cli(
+        self, *args: object, stdin: str = "", cwd: Path = PROJECT_ROOT
+    ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [
                 sys.executable,
@@ -26,13 +28,14 @@ class CliTests(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
-            cwd=PROJECT_ROOT,
+            cwd=cwd,
             timeout=30,
             check=False,
         )
 
     def write(self, directory: Path, name: str, text: str) -> Path:
         path = directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
 
@@ -119,7 +122,7 @@ class CliTests(unittest.TestCase):
                 result = self.run_cli(flag)
                 self.assertEqual(result.returncode, 0)
                 self.assertIn("--capabilities", result.stdout)
-                self.assertIn("--include", result.stdout)
+                self.assertNotIn("--include", result.stdout)
                 self.assertIn("--command", result.stdout)
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0)
@@ -170,16 +173,14 @@ class CliTests(unittest.TestCase):
         result = self.run_cli("--unknown")
         self.assertEqual(result.returncode, 2)
 
-    def test_utf8_bom_is_accepted_for_file_include_and_stdin(self):
+    def test_utf8_bom_is_accepted_for_file_import_and_stdin(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            main = self.write(directory, "main.sericite", '\ufeffprint("main")\n')
+            main = self.write(
+                directory, "main.sericite", "\ufeffimport base\nprint(base.value)\n"
+            )
+            self.write(directory, "base.sericite", "\ufeffvalue = 42\n")
             result = self.run_cli(main)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, "main\n")
-
-            include = self.write(directory, "base.sericite", "\ufeffvalue = 42\n")
-            result = self.run_cli("--include", include, "-c", "print(value)")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "42\n")
 
@@ -197,10 +198,11 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn(f"{invalid}:1:9: syntax_error", result.stderr)
 
-            include = self.write(directory, "runtime.sericite", "\ufeff\n1 / 0\n")
-            result = self.run_cli("--include", include, "-c", "pass")
+            main = self.write(directory, "main.sericite", "import runtime\n")
+            self.write(directory, "runtime.sericite", "\ufeff\n1 / 0\n")
+            result = self.run_cli(main)
             self.assertEqual(result.returncode, 1)
-            self.assertIn(f"{include}:2: zero_division", result.stderr)
+            self.assertIn("/runtime.sericite:2: zero_division", result.stderr)
 
             double_bom = self.write(
                 directory, "double.sericite", '\ufeff\ufeffprint("bad")\n'
@@ -307,19 +309,26 @@ class CliTests(unittest.TestCase):
             result.stderr,
         )
 
-    def test_repl_traceback_maps_include_function_to_include_file(self):
+    def test_repl_traceback_maps_imported_function_to_vfs_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            include = self.write(
-                Path(tmp), "bad_rt.sericite", "def g():\n    return 1 / 0\n"
+            directory = Path(tmp)
+            capabilities = self.write(
+                directory,
+                "caps.py",
+                "def configure():\n"
+                "    return {'files': {'/bad_rt.sericite': "
+                "'def g():\\n    return 1 / 0\\n'}}\n",
             )
-            result = self.run_cli("--include", include, stdin="g()\n")
+            result = self.run_cli(
+                "--capabilities", capabilities, stdin="from bad_rt import g\ng()\n"
+            )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
             result.stderr,
-            f"{include}:2: zero_division: division by zero\n"
+            "/bad_rt.sericite:2: zero_division: division by zero\n"
             "Traceback (most recent call last):\n"
             '  File "<stdin>", line 1, in <module>\n'
-            f'  File "{include}", line 2, in g\n',
+            '  File "/bad_rt.sericite", line 2, in g\n',
         )
 
     def test_repl_current_multiline_expression_keeps_its_own_location(self):
@@ -409,42 +418,50 @@ class CliTests(unittest.TestCase):
         self.assertEqual(offset, 0)
         self.assertEqual(source.location(2), ("<stdin>", 2))
 
-    def test_repl_uses_include_capabilities_files_and_empty_argv(self):
+    def test_repl_uses_import_capabilities_files_and_empty_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            include = self.write(directory, "base.sericite", "x = 41\n")
             capabilities = self.write(
                 directory,
                 "caps.py",
                 "def configure():\n"
                 "    return {\n"
                 "        'functions': {'double': lambda x: x * 2},\n"
-                "        'files': {'/message.txt': 'from vfs'},\n"
+                "        'files': {'/base.sericite': 'x = 41\\n', "
+                "'/message.txt': 'from vfs'},\n"
                 "    }\n",
             )
             result = self.run_cli(
-                "--include",
-                include,
                 "--capabilities",
                 capabilities,
-                stdin=('print(double(x + 1))\nread_file("/message.txt")\nargv\n'),
+                stdin=(
+                    "import base\n"
+                    "print(double(base.x + 1))\n"
+                    'read_file("/message.txt")\nargv\n'
+                ),
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
         self.assertEqual(
             result.stdout,
-            ">>> 84\n>>> 'from vfs'\n>>> []\n>>> ",
+            ">>> >>> 84\n>>> 'from vfs'\n>>> []\n>>> ",
         )
 
-    def test_repl_include_startup_failure_is_fatal(self):
+    def test_repl_import_syntax_failure_is_recoverable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            invalid = self.write(
-                Path(tmp), "invalid.sericite", "if True print('bad')\n"
+            capabilities = self.write(
+                Path(tmp),
+                "caps.py",
+                "def configure():\n"
+                "    return {'files': {'/invalid.sericite': "
+                "'if True print(\"bad\")\\n'}}\n",
             )
-            result = self.run_cli("--include", invalid)
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stdout, "")
-        self.assertIn("syntax_error", result.stderr)
+            result = self.run_cli(
+                "--capabilities", capabilities, stdin="import invalid\nprint('alive')\n"
+            )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, ">>> >>> alive\n>>> ")
+        self.assertIn("/invalid.sericite:1:9: syntax_error", result.stderr)
 
     def test_command_and_stdin_source(self):
         result = self.run_cli(
@@ -456,56 +473,191 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "from stdin\n")
 
-    def test_includes_share_scope_in_order_and_repeat(self):
+    def test_project_imports_have_namespaces_and_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            initial = self.write(directory, "initial.sericite", "order = []\n")
-            first = self.write(
-                directory, "first.sericite", 'order.append("first")\nvalue = 20\n'
+            self.write(
+                directory,
+                "util.sericite",
+                "order = []\nvalue = 20\ndef double(x):\n    return x * 2\n",
             )
-            second = self.write(
+            self.write(
+                directory,
+                "first.sericite",
+                "import util\nutil.order.append('first')\n",
+            )
+            self.write(
                 directory,
                 "second.sericite",
-                'order.append("second")\ndef double(x):\n    return x * 2\n',
+                "import util\nutil.order.append('second')\n",
             )
-            result = self.run_cli(
-                "--include",
-                initial,
-                "--include",
-                first,
-                "--include",
-                second,
-                "--include",
-                first,
-                "-c",
-                'order.append("main")\nprint(order)\nprint(double(value))',
+            main = self.write(
+                directory,
+                "main.sericite",
+                "import first\nimport second\nimport first\nimport util\n"
+                "util.order.append('main')\n"
+                "print(util.order)\nprint(util.double(util.value))\n",
             )
+            result = self.run_cli(main)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            result.stdout,
-            "['first', 'second', 'first', 'main']\n40\n",
-        )
+        self.assertEqual(result.stdout, "['first', 'second', 'main']\n40\n")
 
-    def test_include_error_locations_and_atomic_compilation(self):
+    def test_project_packages_and_relative_imports(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            runtime = self.write(
-                directory, "runtime.sericite", 'print("included")\n1 / 0\n'
+            self.write(directory, "pkg/__init__.sericite", "from . import base\n")
+            self.write(directory, "pkg/base.sericite", "value = 40\n")
+            self.write(
+                directory,
+                "pkg/mod.sericite",
+                "from .base import value\nresult = value + 2\n",
             )
-            result = self.run_cli("--include", runtime, "-c", "pass")
-            self.assertEqual(result.returncode, 1)
-            self.assertEqual(result.stdout, "included\n")
-            self.assertIn(f"{runtime}:2: zero_division", result.stderr)
+            main = self.write(
+                directory,
+                "main.sericite",
+                "from pkg.mod import result\nprint(result)\n",
+            )
+            result = self.run_cli(main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "42\n")
 
-            invalid = self.write(
-                directory, "invalid.sericite", "if True print('bad')\n"
+    def test_project_copies_only_reachable_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "util.sericite", "value = 1\n")
+            self.write(directory, "unrelated.sericite", "value = 'secret'\n")
+            self.write(directory, "note.txt", "not copied\n")
+            main = self.write(
+                directory,
+                "main.sericite",
+                "import util\n"
+                "print(path_exists('/main.sericite'), path_exists('/util.sericite'))\n"
+                "print(path_exists('/unrelated.sericite'), path_exists('/note.txt'))\n",
             )
-            result = self.run_cli(
-                "--include", runtime, "--include", invalid, "-c", "pass"
+            result = self.run_cli(main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "True True\nFalse False\n")
+
+    def test_command_does_not_implicitly_load_cwd_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "util.sericite", "value = 1\n")
+            result = self.run_cli("-c", "import util", cwd=directory)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("import_error", result.stderr)
+
+    def test_capabilities_files_override_project_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "util.sericite", "value = 1\n")
+            main = self.write(
+                directory, "main.sericite", "import util\nprint(util.value)\n"
             )
+            capabilities = self.write(
+                directory,
+                "caps.py",
+                "def configure():\n"
+                "    return {'files': {'/util.sericite': 'value = 2\\n'}}\n",
+            )
+            result = self.run_cli("--capabilities", capabilities, main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "2\n")
+
+    def test_project_import_symlink_cannot_escape_entry_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            outside = self.write(directory, "outside.sericite", "value = 1\n")
+            project = directory / "project"
+            project.mkdir()
+            try:
+                (project / "util.sericite").symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlink unavailable: {exc}")
+            main = self.write(project, "main.sericite", "import util\n")
+            result = self.run_cli(main)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("import_error", result.stderr)
+
+    def test_deep_inactive_dependency_chain_uses_iterative_loading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for index in range(300):
+                text = (
+                    f"if False:\n    import m{index - 1:03d}\n"
+                    if index
+                    else "value = 0\n"
+                )
+                if index == 299:
+                    text += "print('alive')\n"
+                self.write(directory, f"m{index:03d}.sericite", text)
+            result = self.run_cli(directory / "m299.sericite")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "alive\n")
+        self.assertNotIn("RecursionError", result.stderr)
+
+    def test_deep_executed_dependency_chain_fails_at_vm_frame_quota(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for index in range(140):
+                text = f"import m{index + 1:03d}\n" if index < 139 else "value = 1\n"
+                self.write(directory, f"m{index:03d}.sericite", text)
+            result = self.run_cli(directory / "m000.sericite")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("resource_exhausted", result.stderr)
+        self.assertIn("call depth limit exceeded", result.stderr)
+        self.assertNotIn("RecursionError", result.stderr)
+        self.assertNotIn("_project.py", result.stderr)
+
+    def test_project_snapshot_precedes_capabilities_configure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "util.sericite", "value = 1\n")
+            main = self.write(
+                directory, "main.sericite", "import util\nprint(util.value)\n"
+            )
+            capabilities = self.write(
+                directory,
+                "caps.py",
+                "from pathlib import Path\n"
+                "def configure():\n"
+                "    Path(__file__).with_name('util.sericite').write_text("
+                "'value = 2\\n', encoding='utf-8')\n"
+                "    return {}\n",
+            )
+            result = self.run_cli("--capabilities", capabilities, main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "1\n")
+
+    def test_include_option_is_removed(self):
+        result = self.run_cli("--include", "base.sericite")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unrecognized arguments: --include", result.stderr)
+
+    def test_import_errors_are_lazy_and_use_vfs_locations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "runtime.sericite", "print('imported')\n1 / 0\n")
+            main = self.write(directory, "main.sericite", "import runtime\n")
+            result = self.run_cli(main)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "imported\n")
+            self.assertIn("/runtime.sericite:2: zero_division", result.stderr)
+
+            self.write(directory, "invalid.sericite", "if True print('bad')\n")
+            main = self.write(
+                directory,
+                "main.sericite",
+                "if False:\n    import invalid\nprint('main')\n",
+            )
+            result = self.run_cli(main)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "main\n")
+
+            main = self.write(directory, "main.sericite", "import invalid\n")
+            result = self.run_cli(main)
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stdout, "")
-            self.assertIn(f"{invalid}:1:", result.stderr)
+            self.assertIn("/invalid.sericite:1:", result.stderr)
             self.assertIn("syntax_error", result.stderr)
 
             main = self.write(directory, "main.sericite", "print(missing)\n")
@@ -514,23 +666,27 @@ class CliTests(unittest.TestCase):
 
     def test_traceback_maps_each_frame_to_its_source(self):
         with tempfile.TemporaryDirectory() as tmp:
-            runtime = self.write(
-                Path(tmp),
+            directory = Path(tmp)
+            self.write(
+                directory,
                 "runtime.sericite",
                 "def inner():\n"
                 "    return missing\n\n"
                 "def outer():\n"
                 "    return inner()\n",
             )
-            result = self.run_cli("--include", runtime, "-c", "outer()")
+            main = self.write(
+                directory, "main.sericite", "from runtime import outer\nouter()\n"
+            )
+            result = self.run_cli(main)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(
             result.stderr,
-            f"{runtime}:2: name_error: name 'missing' is not defined\n"
+            "/runtime.sericite:2: name_error: name 'missing' is not defined\n"
             "Traceback (most recent call last):\n"
-            '  File "<command>", line 1, in <module>\n'
-            f'  File "{runtime}", line 5, in outer\n'
-            f'  File "{runtime}", line 2, in inner\n',
+            f'  File "{main}", line 2, in <module>\n'
+            '  File "/runtime.sericite", line 5, in outer\n'
+            '  File "/runtime.sericite", line 2, in inner\n',
         )
 
     def test_capabilities_functions_limits_and_files(self):

@@ -22,7 +22,7 @@ sericite --capabilities capabilities.py app.sericite
 ## 2. Commands and options
 
 ```text
-sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
+sericite [-h] [--version] [--capabilities FILE]
          [(SOURCE_FILE | -c SOURCE) [ARG ...]]
 ```
 
@@ -30,23 +30,22 @@ sericite [-h] [--version] [--capabilities FILE] [--include FILE ...]
 |---|---|
 | `-h`, `--help` | Show help and exit |
 | `--version` | Show the runtime version |
-| `SOURCE_FILE` | Read and run a UTF-8 source file; `-` reads all source from stdin; omit it for the REPL |
+| `SOURCE_FILE` | Read and run a UTF-8 source file and its statically reachable modules; `-` reads all source from stdin; omit it for the REPL |
 | `-c SOURCE`, `--command SOURCE` | Execute a source string directly |
 | `ARG ...` | Arguments passed to the script without CLI interpretation |
 | `--capabilities FILE` | Call `configure()` in a trusted Python file to configure the root VM |
-| `--include FILE` | Prepend a source file before the main source or REPL; repeat in the desired order |
 
 `SOURCE_FILE` and `-c` are mutually exclusive; omitting both enters the REPL. Put CLI options before the source entry. Everything after the entry belongs to the script, including dash-prefixed values such as `--flag` and a standalone `--`.
 
 A `--` before the entry explicitly ends CLI options and can pass a filename beginning with a dash. That pre-entry `--` is consumed by the CLI and does not enter `argv`. Paths resolve against the current working directory; `.sericite` is a convention, not an enforced suffix.
 
-Main files, includes, and stdin source are decoded as UTF-8, with one optional leading UTF-8 BOM ignored; line and column positions are counted after that BOM is removed.
+The main file, statically reachable modules, and stdin source are decoded as UTF-8, with one optional leading UTF-8 BOM ignored; line and column positions are counted after that BOM is removed.
 
 ```bash
 sericite -c 'print("hello")'
 sericite -c 'print(argv)' first --flag
 printf 'print("hello")\n' | sericite -
-sericite --include base.sericite --include util.sericite app.sericite first
+sericite app.sericite first
 sericite --capabilities capabilities.py -c 'run()'
 ```
 
@@ -54,12 +53,12 @@ There is currently no individual command-line flag for each limit. `python -m se
 
 ### REPL
 
-With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root, runs the includes, and enters an interactive loop:
+With neither `SOURCE_FILE` nor `-c`, the CLI creates a persistent root and enters an interactive loop:
 
 - `>>>` waits for a new entry and `...` waits for a multiline statement to finish; blank input is not executed.
-- Variables, functions, schemas, and the VFS persist across entries, each delivered through the root's `exec()`.
+- Variables, functions, schemas, imported modules, and the VFS persist across entries, each delivered through the root's `exec()`.
 - A single expression echoes its result with `repr`; other statements produce only their own output.
-- A compilation or runtime error goes to stderr and the session continues. An include or capability startup failure still exits with status 1.
+- A compilation or runtime error goes to stderr and the session continues. A capability startup failure still exits with status 1.
 - EOF exits the REPL normally with status 0.
 
 History, completion, advanced line editing, and debugging commands are not included.
@@ -75,54 +74,41 @@ The root module starts with a string-list variable named `argv`:
 
 It is an ordinary module variable: it can be read, modified, or rebound, and it persists across `exec()` deliveries. Child VMs do not inherit it implicitly. Embedded roots can set it with `create_root(argv=...)`; see the [Sericite-PY reference](sericite-py-reference.md) §2.
 
-## 3. Includes: source composition in one root
+## 3. Multi-file projects and import
 
-`--include` is a CLI code-reuse facility, not Sericite `import` — a future module system is a separate design, with no promise of include-compatible semantics:
+File mode treats the entry file's directory as the project root. The CLI copies the entry and statically import-reachable `.sericite` files into the root VFS at the same relative paths, then executes the entry normally:
 
-1. One-shot mode reads every include in option order, followed by the main file, command, or stdin source. The REPL startup unit contains only includes.
-2. Combine all text into **one compilation unit**, running in one root VM and one module-global scope.
-3. Functions, variables, and side effects are shared in order; the main source or later REPL entries can use included names directly.
-4. There is no deduplication, cache, namespace, or child VM. Repeating an include repeats its execution.
-5. Execution starts only after the combined source compiles. If any part fails compilation, no part has run.
-6. The combined source remains subject to the engine's 4MB limit.
-
-For example, `math_utils.sericite`:
-
-```python
-def double(x):
-    return x * 2
+```text
+project/
+  main.sericite
+  math_utils.sericite
 ```
 
-Run:
+```python
+# main.sericite
+from math_utils import double
+print(double(21))
+```
 
 ```bash
-sericite --include math_utils.sericite -c 'print(double(21))'
+sericite project/main.sericite
 # 42
 ```
 
-Error diagnostics mark positions by source of origin:
+Packages, dotted modules, and relative imports use the same VFS paths; see the [language reference](language-reference.md) §9 for language semantics. Project loading has these boundaries:
 
-- includes and the main file map back to the original file and its local line number;
-- a command string appears as `<command>` and stdin source as `<stdin>`;
-- nested VMs retain `<sericite:vm_N>`.
+- Only statically reachable sources are copied, not the whole directory; unreferenced sources and data files read with `read_file()` do not enter the VFS through this mechanism.
+- Candidate files whose resolved symlinks escape the entry directory are not loaded.
+- Copying creates a startup snapshot. Actual imports still read only the VFS and never dynamically read the real disk when execution reaches the statement.
+- Imports that are not executed remain lazy; missing, invalid, or circular modules fail according to the language rules only when reached.
+- `-c`, stdin, and the REPL do not create a host-directory snapshot and import only from the existing VFS; `--capabilities` can preset modules through `files`.
+- Project files are written first and capability `files` second, so the latter can explicitly override the same VFS path.
 
-Runtime errors append a traceback after the one-line summary. For example, `sericite --include runtime.sericite -c 'outer()'` prints:
+In diagnostics, the entry retains the host path supplied by the operator, while imported modules use logical VFS paths such as `/pkg/mod.sericite`. Commands appear as `<command>` and stdin as `<stdin>`. Each traceback frame uses its own file and local line number.
 
-```text
-/path/runtime.sericite:2: name_error: name 'missing' is not defined
-Traceback (most recent call last):
-  File "<command>", line 1, in <module>
-  File "/path/runtime.sericite", line 5, in outer
-  File "/path/runtime.sericite", line 2, in inner
-```
+In the REPL, each frame maps to the input that defined its code, and the current input's line adjustment applies only to that input. Unknown sources show `<sericite>` and `line ?`; frames defined in another VM do not disclose their line and show `line ?` (redaction rules are in the [language reference](language-reference.md) §5).
 
-Traceback frame lines follow the same source rules (`<command>` in the example is the `-c` source):
-
-- in the REPL, each frame maps to the input that defined its code; the current input's line adjustment applies only to that input;
-- functions defined in includes always keep the include filename and local line;
-- when the source is unavailable, the CLI shows `<sericite>` and `line ?`; frames defined in another VM do not disclose their line and show `line ?` (redaction rules are in the [language reference](language-reference.md) §5).
-
-Errors rejected before VM execution begins have no traceback and retain the single-line diagnostic.
+Entry errors rejected before VM execution have no traceback and retain the single-line diagnostic. Modules compile at runtime, so their errors can be caught according to the language rules and carry a traceback.
 
 ## 4. Capabilities: trusted Python startup configuration
 
@@ -171,12 +157,12 @@ A capability file can use `__file__` to locate its resources. It is not a Serici
 - Its Python does **not** run inside the Sericite sandbox, and its CPU, memory, and external side effects are not metered by the engine (cost responsibility: [Sericite-PY reference](sericite-py-reference.md) §5.4).
 - Only the operator may select this file; never let a model or Sericite source choose it.
 
-Main and included sources still run in the root VM and gain no host privileges merely because a capability file exists. They can call only explicitly granted functions. `files` initializes only the root's in-memory VFS; it does not map the real disk.
+Main and imported sources still run in the root VM and gain no host privileges merely because a capability file exists. They can call only explicitly granted functions. `files` initializes only the root's in-memory VFS; it does not map the real disk.
 
 The execution order is fixed:
 
 ```text
-read source → run configure() → create and compile root → seed VFS → run → output
+read source and snapshot project VFS → run configure() → create and compile root → seed/override VFS → run → output
 ```
 
 A capability file cannot take over the session loop or VM driving. Use the Python API for that embedding style rather than adding lifecycle hooks to the CLI.

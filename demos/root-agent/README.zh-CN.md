@@ -118,4 +118,4 @@ LOG_LLM_FULL_JSON = False
 - `mock_server.py`：本地 OpenAI 兼容桩。
 - `.env.example`：环境变量模板。
 
-`requests` 与 `python-dotenv` 只属于 `demo` extra，不是引擎或基础 CLI 的运行时依赖。通用参数、include、退出码和信任边界见 [CLI 参考](../../docs/cli-reference.zh-CN.md)；需要由既有 Python 系统掌管 VM 生命周期时，使用 [Sericite-PY 参考](../../docs/sericite-py-reference.zh-CN.md)中的嵌入 API。
+`requests` 与 `python-dotenv` 只属于 `demo` extra，不是引擎或基础 CLI 的运行时依赖。通用参数、多文件项目、退出码和信任边界见 [CLI 参考](../../docs/cli-reference.zh-CN.md)；需要由既有 Python 系统掌管 VM 生命周期时，使用 [Sericite-PY 参考](../../docs/sericite-py-reference.zh-CN.md)中的嵌入 API。

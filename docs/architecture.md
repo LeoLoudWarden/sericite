@@ -21,7 +21,7 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree, name metadata, and subtree aggregates for prepaid recursive directory costs) |
 | `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Output can be forwarded through an explicitly configured writer: script side in the [VM reference](vm-reference.md) §4, host-side root callback in the [Sericite-PY reference](sericite-py-reference.md) §2 |
 | `errors` | `SericiteError` and the central error-kind registry |
-| `cli` / `__main__` | Command-line entry points: source loading with include composition and source-line mapping, trusted capability-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
+| `cli` / `__main__` | Command-line entry points: source loading, VFS snapshots of statically reachable project modules and source-line mapping, trusted capability-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
 
 The `compiler` package is split into cohesive parts:
 

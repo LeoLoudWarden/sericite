@@ -13,7 +13,7 @@ Sericite 的文档按读者任务和变化频率分层：使用参考跟随公�
 
 | 文档 | 读者与内容 | English |
 |---|---|---|
-| [CLI 参考](cli-reference.zh-CN.md) | 直接运行程序：命令、include、可信能力配置、退出码 | [cli-reference.md](cli-reference.md) |
+| [CLI 参考](cli-reference.zh-CN.md) | 直接运行程序：命令、多文件项目、可信能力配置、退出码 | [cli-reference.md](cli-reference.md) |
 | [语言参考](language-reference.zh-CN.md) | 编写脚本：语言子集、内建、record、VM 与异常语义 | [language-reference.md](language-reference.md) |
 | [虚拟机参考](vm-reference.zh-CN.md) | 驱动与调试 VM：状态、驱动方法、exec 投递、配额、授予语义 | [vm-reference.md](vm-reference.md) |
 | [Sericite-PY 参考](sericite-py-reference.zh-CN.md) | 嵌入 Python：引擎 API、FFI、宿主错误处理 | [sericite-py-reference.md](sericite-py-reference.md) |

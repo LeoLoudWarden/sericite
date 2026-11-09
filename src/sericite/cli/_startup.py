@@ -24,7 +24,7 @@ def _read_file(path: str, role: str) -> str:
 def _load_source(
     args: argparse.Namespace, source_name: str | None, *, interactive: bool
 ) -> _CombinedSource:
-    parts = [(path, _read_file(path, "include")) for path in args.include]
+    parts = []
     if interactive:
         pass
     elif args.command is not None:

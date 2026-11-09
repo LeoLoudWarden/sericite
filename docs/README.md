@@ -13,7 +13,7 @@ Sericite's documentation is organized by reader task and rate of change: usage r
 
 | Document | Audience and contents | 中文 |
 |---|---|---|
-| [CLI reference](cli-reference.md) | Running programs: commands, includes, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
+| [CLI reference](cli-reference.md) | Running programs: commands, multi-file projects, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
 | [Language reference](language-reference.md) | Writing scripts: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
 | [VM reference](vm-reference.md) | Driving and debugging VMs: states, driving methods, exec delivery, quotas, grant semantics | [vm-reference.zh-CN.md](vm-reference.zh-CN.md) |
 | [Sericite-PY reference](sericite-py-reference.md) | Python embedding: engine API, FFI, host-side error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |

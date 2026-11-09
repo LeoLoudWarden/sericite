@@ -5,6 +5,7 @@ from ..engine import SericiteEngine, SericiteError, VMHandle
 from ._diagnostics import _format_error
 from ._hostio import _read_stdin, _StdoutClosed, _write_stdout
 from ._options import _parse_args
+from ._project import _load_project
 from ._repl import _repl
 from ._sources import _CombinedSource
 from ._sources import _ReplSourceMap as _ReplSourceMap
@@ -43,6 +44,11 @@ def _main(argv: Sequence[str] | None = None) -> int:
 
     try:
         source = _load_source(args, source_name, interactive=interactive)
+        project_files = (
+            _load_project(source_name, source.text)
+            if source_name is not None and source_name != "-"
+            else {}
+        )
         config = _load_capabilities(args.capabilities) if args.capabilities else {}
     except _CliError as exc:
         print(f"sericite: {exc}", file=sys.stderr)
@@ -59,6 +65,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
             buffer_output=False,
             argv=script_argv,
         )
+        for path, text in project_files.items():
+            root.write_file(path, text)
         for path, text in (config.get("files") or {}).items():
             root.write_file(path, text)
     except SericiteError as exc:
