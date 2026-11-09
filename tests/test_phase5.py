@@ -537,11 +537,9 @@ class ForLoopTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "type_error")
 
-    def test_for_tuple_target_rejected(self):
-        engine = SericiteEngine()
-        with self.assertRaises(SericiteError) as ctx:
-            engine.create_root("for a, b in [1]:\n    pass\n")
-        self.assertEqual(ctx.exception.kind, "syntax_error")
+    def test_for_tuple_target(self):
+        output = run("for a, b in [(1, 2)]:\n    print(a + b)\n")
+        self.assertEqual(output, "3\n")
 
     def test_while_else(self):
         source = 'i = 0\nwhile i < 2:\n    i = i + 1\nelse:\n    print("done")\n'

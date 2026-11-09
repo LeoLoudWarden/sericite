@@ -47,6 +47,15 @@ class _EngineOperators:
                 self._meter(context).allocate(len(result) * 8)
                 self._meter(context).work(len(result))
                 return result
+            if type(left) is tuple and type(right) is tuple:
+                size = len(left) + len(right)
+                if size > context.limits.max_list_size:
+                    raise SericiteError(
+                        "tuple size limit exceeded", kind="resource_exhausted"
+                    )
+                self._meter(context).allocate(size * 8)
+                self._meter(context).work(size)
+                return left + right
             if _is_number(left) and _is_number(right):
                 return self._check_int(context, left + right)
             raise _operand_error(op, left, right)
@@ -66,6 +75,21 @@ class _EngineOperators:
                 self._meter(context).allocate(size * 4)
                 self._meter(context).work(size // 64)
                 return text * count
+            if (type(left) is tuple and type(right) is int) or (
+                type(left) is int and type(right) is tuple
+            ):
+                items = left if type(left) is tuple else right
+                count = right if type(left) is tuple else left
+                size = len(items) * count if count > 0 else 0
+                if size > context.limits.max_list_size:
+                    raise SericiteError(
+                        "tuple size limit exceeded", kind="resource_exhausted"
+                    )
+                if size == 0:
+                    return ()
+                self._meter(context).allocate(size * 8)
+                self._meter(context).work(size)
+                return items * count
             if _is_number(left) and _is_number(right):
                 return self._check_int(context, left * right)
             raise _operand_error(op, left, right)
@@ -151,7 +175,7 @@ class _EngineOperators:
                     f"missing key: {_to_str(index)!s}", kind="key_error"
                 )
             return value[index]
-        if isinstance(value, (str, list)):
+        if isinstance(value, (str, list, tuple)):
             if type(index) is not int:
                 raise SericiteError(
                     f"indices must be int, got {_type_name(index)}",
@@ -172,7 +196,7 @@ class _EngineOperators:
         stop: object,
         step: object,
     ) -> object:
-        if not isinstance(value, (str, list)):
+        if not isinstance(value, (str, list, tuple)):
             raise SericiteError(
                 f"'{_type_name(value)}' is not sliceable", kind="type_error"
             )
@@ -196,7 +220,8 @@ class _EngineOperators:
         else:
             if size > context.limits.max_list_size:
                 raise SericiteError(
-                    "list size limit exceeded", kind="resource_exhausted"
+                    f"{_type_name(value)} size limit exceeded",
+                    kind="resource_exhausted",
                 )
             self._meter(context).allocate(size * 8)
             self._meter(context).work(size)

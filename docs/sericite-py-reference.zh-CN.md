@@ -91,7 +91,7 @@ assert vm.run() == "42\n"
 参数和返回值在宿主与 VM 之间双向深拷贝，只允许递归纯数据：
 
 - `None`、`bool`、`int`、`float`、`str`；
-- `list`、`dict`；宿主返回的 tuple 会转成 list；
+- `list`、`dict`、`tuple`；两个方向都保留 list/tuple 类型；
 - dict 键同样受类型白名单约束。
 
 record/schema、VM 句柄、函数及其他宿主对象不能越界。需要传递 record 时，先在脚本内 `unwrap()` 成 dict。容器大小、字符串、整数位宽、总节点数和嵌套深度都有限制，复制工作本身按节点计入引擎配额。

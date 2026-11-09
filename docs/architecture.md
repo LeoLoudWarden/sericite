@@ -70,7 +70,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - d. A cross-VM resource error internally records the VM that owns the actually exhausted account on the causal route, and that identifier must never enter script-visible values.
 11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
 12.
-  - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict, recursive): handles, functions, records/schemas, and host-native objects must never cross.
+  - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict/tuple, recursive): handles, functions, records/schemas, and host-native objects must never cross.
   - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 5.3.
   - c. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
 13.
@@ -164,7 +164,7 @@ Caveats:
 
 ## 7. Current prototype capability overview
 
-- Built-in types: int, float, str, bool, None, list, dict; operators, comparisons, membership, short-circuit logic.
+- Built-in types: int, float, str, bool, None, list, dict, tuple; operators, comparisons, membership, short-circuit logic.
 - Records and schemas: `class` defines a runtime structural contract (fields + per-field contracts), dot member access, fixed shape, `wrap`/`unwrap` conversion to and from dicts; annotations (parameters / return / annotated assignment) execute as real runtime contracts with blame-style errors; class and annotation names are compile-time labels used only in error text.
 - Control flow: `if/elif/else`, `while`, `for`, `break/continue`, `try/except/else/finally`, `raise`, ternary expressions.
 - Functions: definitions, recursion, positional and keyword arguments, default arguments, decorators, independent call frames, lexical closures with by-reference capture.
@@ -178,9 +178,9 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 ## 8. Known limits and semantic deviations
 
 - Host callback execution time and memory are self-policed by the host and are not metered. Engine-side FFI argument/result copying is charged per node, and host return structures are also bounded by a node budget and depth limit.
-- The total memory ledger is approximate (strings counted as chars ×4, list slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
+- The total memory ledger is approximate (strings counted as chars ×4, list/tuple slots ×8, dict entries ×16), monotonically increasing (high-water mark), with no simulated release — conservative but safe.
 - `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules (invariant 10).
-- Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `{...}`, or `record(...)` instead of being expanded repeatedly.
+- Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `(...)`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
 - Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in the [VM reference](vm-reference.md) §3).
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
@@ -188,4 +188,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, chained
 
 ## 9. Explicitly not supported yet
 
-String, list, and dict methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, chained comparisons, slice assignment, tuples, `import`, `del`, class field defaults/methods/inheritance.
+String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, `**` unpacking, starred unpacking, chained comparisons, slice assignment, `import`, `del`, class field defaults/methods/inheritance.

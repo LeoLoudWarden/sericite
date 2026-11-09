@@ -91,7 +91,7 @@ A granted name must be a valid identifier, must not start with `__`, and must no
 Arguments and results are deep-copied in both directions and restricted to recursive pure data:
 
 - `None`, `bool`, `int`, `float`, and `str`;
-- `list` and `dict`; a host-returned tuple becomes a list;
+- `list`, `dict`, and `tuple`; list/tuple types are preserved in both directions;
 - Dict keys obey the same type whitelist.
 
 Records/schemas, VM handles, functions, and other host objects cannot cross. Call `unwrap()` in the script to turn a record into a dict first. Container sizes, strings, integer width, total nodes, and nesting depth are bounded, and the copying work itself is charged per node against engine quotas.

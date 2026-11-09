@@ -12,7 +12,7 @@ x = input()               # 读入一行（字符串）
 
 ## 2. 类型与运算
 
-内建类型：`int`、`float`、`str`、`bool`、`None`、`list`、`dict`，以及自定义的 `record`（见第 7 节）。
+内建类型：`int`、`float`、`str`、`bool`、`None`、`list`、`dict`、`tuple`，以及自定义的 `record`（见第 7 节）。
 
 ```python
 7 / 2        # 3.5（除法恒为浮点）
@@ -24,9 +24,10 @@ x = input()               # 读入一行（字符串）
 line2"""     # 多行
 f"{1/3:.2f}" # f-string
 [1, 2] + [3] # 列表拼接
+(1, 2) + (3,) # 元组拼接；单元素元组需要尾逗号
 not x        # 逻辑非；and / or 短路求值
 1 < 2        # 比较：== != < <= > >=（不支持链式 a < b < c）
-"a" in {"a": 1}    # in / not in：dict 查键、list 查元素、str 查子串
+"a" in {"a": 1}    # in / not in：dict 查键、list/tuple 查元素、str 查子串
 nan = float("nan")
 nan == nan                   # False：NaN 不等于自身
 [nan] == [nan]               # False：两个新容器逐元素比较
@@ -38,7 +39,7 @@ lst == lst                   # True：同一个对象
 
 增强赋值支持 `+=`、`-=`、`*=`、`/=`、`//=`、`%=`，目标可以是名字、列表/字典下标或 record 字段。`target += rhs` 等价于 `target = target + rhs`，但目标地址只求值一次；其他运算符同理。运算规则与普通二元运算完全一致，例如列表 `+=` 仍创建拼接后的新列表，而不是原地扩展。
 
-字符串和列表支持只读切片 `value[start:stop]` 与 `value[start:stop:step]`：
+字符串、列表和元组支持只读切片 `value[start:stop]` 与 `value[start:stop:step]`：
 
 ```python
 s = "abcdef"
@@ -49,14 +50,28 @@ s[::-1]     # "fedcba"：负步长反向
 s[2:99]     # "cdef"：越界按截断处理，不报错
 ```
 
-规则：三个位置都可省略，省略即为 `None`；位置只能是整数或 `None`，缺省步长为 1，步长不能为 0；不支持切片赋值。负索引、越界截断和负步长遵循 Python 语义。切片有开销：总是创建新的字符串或列表。
+规则：三个位置都可省略，省略即为 `None`；位置只能是整数或 `None`，缺省步长为 1，步长不能为 0；不支持切片赋值。负索引、越界截断和负步长遵循 Python 语义。切片有开销：总是创建新的字符串、列表或元组。
+
+元组是不可变序列，支持 `len`、真值、迭代、索引、切片、成员判断、结构相等、同类型 `+` 拼接，以及与整数的双向 `*` 重复。重复次数为零或负数时返回空元组；所有结果都是新值。元组不能写入、不能与列表混合拼接，也不支持大小比较或作为字典键。`tuple` 是仅注解位的契约名，不是转换函数。
+
+支持固定长度、可嵌套的名字解构：
+
+```python
+a, b = (1, 2)
+a, b = b, a
+x, (y, z) = [3, (4, 5)]
+for first, second in [(1, 2), (3, 4)]:
+    print(first + second)
+```
+
+右侧可以是任意当前可迭代类型：list、tuple、str 或 dict（键）；长度不匹配报可捕获的 `value_error`，不可迭代值报 `type_error`。目标叶子只能是名字；不支持带星号的解构、列表目标，或下标/属性叶子。
 
 与 Python 的关键差异（写错会报 `type_error`）：
 
 - `bool` 不参与算术：`True + 1` 报错。
 - 跨类型大小比较报错：`1 < "a"` 报错（`==`/`!=` 可以跨类型，结果为 False/True）。
 - 字典键只允许 `str/int/float/bool/None`，缺键读取报 `key_error`。
-- 字符串支持整数索引读取与切片，但不能写；列表支持索引读写与切片。
+- 字符串和元组支持整数索引读取与切片，但不能写；列表支持索引读写与切片。
 
 ## 3. 控制流
 
@@ -77,7 +92,7 @@ while i < 10:
 else:
     print("没被 break")     # while/else
 
-for item in [1, 2, 3]:      # for 可迭代：list、dict（键）、str（逐字符）、range() 结果
+for item in [1, 2, 3]:      # for 可迭代：list、tuple、dict（键）、str（逐字符）、range() 结果
     print(item)
 for k in {"a": 1, "b": 2}:
     print(k, "->", ...)     # 取值用 d[k]
@@ -89,7 +104,7 @@ pass                        # 空语句，合法
 label = "big" if x >= 10 else "small"   # 三元表达式（短路：只算被选中的分支）
 ```
 
-注意：for 的循环变量只能是单个名字（`for a, b in ...` 不支持）；遍历 list 是活视图（边遍历边改会反映），遍历 dict 是键快照。
+注意：for 的目标是单个名字或固定长度、可嵌套的名字元组；遍历 list 是活视图（边遍历边改会反映），遍历 tuple 是不可变序列，遍历 dict 是键快照。
 
 ## 4. 函数
 
@@ -200,7 +215,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
 
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`。
-- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
+- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与 FFI：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
 - 跨 VM 资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
 
@@ -221,7 +236,7 @@ except resource_exhausted as e:
 ## 6. 内建函数
 
 - `input()` / `print(...)`：一行输入 / 以空格分隔输出各个值。`print(..., end=text)` 用 `text` 替代默认的末尾换行，`end=""` 表示不追加换行；`end` 是仅关键字参数，必须是字符串。
-- `len(x)`（str/list/dict）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
+- `len(x)`（str/list/dict/tuple）、`int(x)`、`float(x)`、`str(x)`、`repr(x)`、`range(...)`（返回 list）。`repr` 为字符串加引号并转义换行、制表符、引号和反斜杠，使任意文本可用单行显示；容器递归使用同一套安全渲染。渲染工作与结果字符串均计入配额。
 - 文件与目录（纯文本）：见下文。
 - record 相关：`wrap(schema, d)`、`unwrap(record)`，见第 7 节。
 
@@ -308,8 +323,8 @@ p.x = 10                 # 点号写成员，仍受字段契约约束
 
 class 体只允许字段声明，两种形式：`x`（契约 any，任意值）或 `y: int`（指定契约）。暂不支持默认值、方法、继承。可用的契约名：
 
-- `int`/`float`/`str`/`bool`/`list`/`dict`、`any`，或另一个 schema（嵌套约束）；
-- `any`/`bool`/`list`/`dict` 是仅注解位的契约名：不可调用、不可赋值；
+- `int`/`float`/`str`/`bool`/`list`/`dict`/`tuple`、`any`，或另一个 schema（嵌套约束）；
+- `any`/`bool`/`list`/`dict`/`tuple` 是仅注解位的契约名：不可调用、不可赋值；
 - `int`/`float`/`str` 同时仍是转换内建。
 
 `None` 是值，不是契约。参数、返回值、字段和带注解的赋值都不能写显式 `None` 注解，否则报 `syntax_error`；不需要契约检查时省略注解。
@@ -392,11 +407,11 @@ VM 可以被自动回收，但使用 `dispose()` 手动清理是更好的做法�
 ## 9. 明确不能写（编译期直接拒绝）
 
 - `import` 与 `del`
-- `*args`/`**kwargs`、链式比较与切片赋值
-- 元组与双下划线名称
+- `*args`/`**kwargs`、带星号解构、链式比较与切片赋值
+- 列表解构目标、下标/属性解构叶子与双下划线名称
 - class 字段默认值、方法与继承
 - 语句级裸注解赋值（`x: T` 不赋值）——class 体字段声明 `y: int` 是唯一例外
-- 重绑定内建名（`print`/`len`/`wrap` 等）或契约名（`any`/`bool`/`list`/`dict`）——契约名只能出现在注解位
+- 重绑定内建名（`print`/`len`/`wrap` 等）或契约名（`any`/`bool`/`list`/`dict`/`tuple`）——契约名只能出现在注解位
 
 ## 10. 一个完整例子
 

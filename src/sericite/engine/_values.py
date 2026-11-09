@@ -169,13 +169,13 @@ def _record_text(
 class _Iterator:
     __slots__ = ("items", "pos")
 
-    def __init__(self, items: list[object]) -> None:
+    def __init__(self, items: list[object] | tuple[object, ...]) -> None:
         self.items = items
         self.pos = 0
 
 
 def _make_iterator(value: object) -> _Iterator:
-    if type(value) is list:
+    if type(value) in (list, tuple):
         return _Iterator(value)
     if type(value) is str:
         return _Iterator(list(value))
@@ -251,6 +251,8 @@ def _to_host(
         return value
     if type(value) is list:
         return [_to_host(item, budget, depth + 1, meter=meter) for item in value]
+    if type(value) is tuple:
+        return tuple(_to_host(item, budget, depth + 1, meter=meter) for item in value)
     if type(value) is dict:
         return {
             _to_host(key, budget, depth + 1, meter=meter): _to_host(
@@ -297,11 +299,14 @@ def _from_host(
         return value
     if type(value) in (list, tuple):
         if len(value) > limits.max_list_size:
-            raise SericiteError("FFI result list too large", kind="ffi_error")
+            raise SericiteError(
+                f"FFI result {_type_name(value)} too large", kind="ffi_error"
+            )
         meter.allocate(len(value) * 8)
-        return [
+        result = [
             _from_host(item, budget, limits, depth + 1, meter=meter) for item in value
         ]
+        return tuple(result) if type(value) is tuple else result
     if type(value) is dict:
         if len(value) > limits.max_dict_size:
             raise SericiteError("FFI result dict too large", kind="ffi_error")
@@ -344,14 +349,14 @@ def _estimate_size(value: object, *, meter: Meter) -> None:
     if type(value) is str:
         meter.work(len(value) // 64)
         size = len(value) * 4
-    elif type(value) is list:
+    elif type(value) in (list, tuple):
         size = len(value) * 8
     elif type(value) is dict:
         size = len(value) * 16
     else:
         size = 8
     meter.allocate(size)
-    if type(value) is list:
+    if type(value) in (list, tuple):
         for item in value:
             _estimate_size(item, meter=meter)
     elif type(value) is dict:
@@ -367,7 +372,7 @@ def _truthy(value: object) -> bool:
         return value
     if type(value) in (int, float):
         return value != 0
-    if isinstance(value, (str, list, dict)):
+    if isinstance(value, (str, list, dict, tuple)):
         return len(value) > 0
     return True
 
@@ -393,7 +398,7 @@ def _equals(
         return left == right
     if isinstance(left, bool) or left is None:
         return left == right
-    if isinstance(left, (list, dict, SericiteRecord)):
+    if isinstance(left, (list, tuple, dict, SericiteRecord)):
         pair = (id(left), id(right))
         if _active is not None:
             if pair in _active:
@@ -420,7 +425,7 @@ def _equals_container(
     cache: dict | None,
     meter: Meter,
 ) -> bool:
-    if type(left) is list:
+    if type(left) in (list, tuple):
         return len(left) == len(right) and all(
             _equals(a, b, active, cache, meter=meter) for a, b in zip(left, right)
         )
@@ -452,7 +457,7 @@ def _contains(
         if type(item) is str:
             meter.work(len(item))
         return item in container
-    if type(container) is list:
+    if type(container) in (list, tuple):
         return any(
             _equals(element, item, _active, _cache, meter=meter)
             for element in container
@@ -479,6 +484,8 @@ def _type_name(value: object) -> str:
         return "str"
     if type(value) is list:
         return "list"
+    if type(value) is tuple:
+        return "tuple"
     if type(value) is dict:
         return "dict"
     if isinstance(value, SericiteFunction):
@@ -588,11 +595,13 @@ class _StringRenderer:
                 self._work(value.bit_length() // 64)
             self._add(str(value))
             return
-        if type(value) in (list, dict) or isinstance(value, SericiteRecord):
+        if type(value) in (list, tuple, dict) or isinstance(value, SericiteRecord):
             ident = id(value)
             if ident in self.seen:
                 if type(value) is list:
                     self._add("[...]")
+                elif type(value) is tuple:
+                    self._add("(...)")
                 elif type(value) is dict:
                     self._add("{...}")
                 else:
@@ -601,16 +610,21 @@ class _StringRenderer:
             if depth > 64:
                 self._add("<max depth>")
                 return
+            if type(value) is tuple and not value:
+                self._add("()")
+                return
             self.seen.add(ident)
-            if type(value) is list:
-                self._add("[")
+            if type(value) in (list, tuple):
+                self._add("[" if type(value) is list else "(")
                 for index, item in enumerate(value):
                     if index:
                         self._add(", ")
                     self.render(item, True, depth + 1)
                     if self.exhausted:
                         return
-                self._add("]")
+                if type(value) is tuple and len(value) == 1:
+                    self._add(",")
+                self._add("]" if type(value) is list else ")")
                 return
             if isinstance(value, SericiteRecord):
                 self._add("record(")

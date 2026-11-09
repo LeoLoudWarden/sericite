@@ -59,6 +59,13 @@ def _reject_none_annotation(annotation: ast.expr | None, filename: str) -> None:
         _reject(annotation, filename, "None is not a contract; omit the annotation")
 
 
+def _is_unpack_target(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) or (
+        isinstance(node, ast.Tuple)
+        and all(_is_unpack_target(element) for element in node.elts)
+    )
+
+
 def _validate(tree: ast.Module, filename: str) -> None:
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
@@ -205,10 +212,6 @@ def _validate(tree: ast.Module, filename: str) -> None:
             _reject(node, filename, "** arguments are not supported")
         if isinstance(node, ast.Dict) and any(key is None for key in node.keys):
             _reject(node, filename, "** unpacking is not supported")
-        if isinstance(node, ast.Tuple):
-            parent = parents.get(node)
-            if not isinstance(parent, ast.ExceptHandler) or parent.type is not node:
-                _reject(node, filename, "tuples are not supported")
         if isinstance(node, ast.ExceptHandler) and node.type is not None:
             filter_node = node.type
             if isinstance(filter_node, ast.Constant) and filter_node.value is Ellipsis:
@@ -282,8 +285,8 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         f"duplicate parameter '{argument.arg}'",
                     )
                 seen_params.add(argument.arg)
-        if isinstance(node, ast.For) and not isinstance(node.target, ast.Name):
-            _reject(node, filename, "for target must be a name")
+        if isinstance(node, ast.For) and not _is_unpack_target(node.target):
+            _reject(node, filename, "for target must be a name or tuple of names")
         if isinstance(node, ast.Raise) and node.cause is not None:
             _reject(node, filename, "raise ... from ... is not supported")
         if isinstance(node, ast.Compare) and len(node.ops) != 1:
@@ -294,7 +297,9 @@ def _validate(tree: ast.Module, filename: str) -> None:
             _reject(node, filename, "unsupported augmented assignment target")
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if not isinstance(target, (ast.Name, ast.Subscript, ast.Attribute)):
+                if not isinstance(target, (ast.Subscript, ast.Attribute)) and not (
+                    _is_unpack_target(target)
+                ):
                     _reject(node, filename, "unsupported assignment target")
             if len(node.targets) > 1 and any(
                 isinstance(target, (ast.Subscript, ast.Attribute))

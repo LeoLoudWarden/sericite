@@ -444,7 +444,7 @@ class _EngineBuiltins:
         return result
 
     def _len(self, value: object) -> int:
-        if isinstance(value, (str, list, dict)):
+        if isinstance(value, (str, list, dict, tuple)):
             return len(value)
         raise SericiteError(
             f"object of type '{_type_name(value)}' has no len()",

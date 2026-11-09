@@ -53,7 +53,9 @@ def _analyze_stack(code: isa.CodeUnit, filename: str) -> None:
         else:
             if instr.op == isa.FORMAT_VALUE:
                 delta = -int(instr.arg[1])
-            elif instr.op in (isa.BUILD_LIST, isa.BUILD_STRING):
+            elif instr.op == isa.UNPACK:
+                delta = instr.arg - 1
+            elif instr.op in (isa.BUILD_LIST, isa.BUILD_TUPLE, isa.BUILD_STRING):
                 delta = 1 - instr.arg
             elif instr.op == isa.BUILD_DICT:
                 delta = 1 - 2 * instr.arg
