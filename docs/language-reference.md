@@ -526,9 +526,31 @@ finally:
 
 VMs can be garbage-collected automatically, but using `dispose()` for explicit cleanup is the better practice.
 
-## 9. Explicitly not writable (rejected at compile time)
+## 9. Modules and import
 
-- `import`, `del`, and dunder names
+Flat modules can currently be imported from the current VM's VFS:
+
+```python
+import util
+import util as u
+from util import answer
+from util import answer as value
+```
+
+The module name `util` maps to `/util.sericite`. Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope. Dotted modules, packages, relative imports, and `from util import *` are not supported yet.
+
+A module has its own global namespace but is not a child VM: it shares the importing VM's VFS, virtual IO, granted capabilities, and quotas. A module function reads globals from its defining module. `import util` binds only the module object, while `from util import answer` binds only the named attribute; other module names do not spill into the current scope.
+
+- After a canonical path executes successfully in a VM, it is cached; repeated imports return the same module object, and the cache persists across `exec()`.
+- Changing a source file does not automatically reload a cached module.
+- Failed imports are not cached, so the import can be retried after fixing the file; output and file side effects that already happened are not rolled back.
+- Direct and indirect circular imports fail with catchable `import_error`. Missing modules and missing requested exports use the same kind; syntax, runtime, and resource errors raised by the module itself retain their original kinds.
+- Module objects support attribute reads but not attribute writes, and cannot cross the host FFI boundary.
+- An import inside a granted function loads from the defining VM's VFS and module cache, not from same-named files in the caller.
+
+## 10. Explicitly not writable (rejected at compile time)
+
+- Dotted/relative imports, `from x import *`, `del`, and dunder names
 - `*args`/`**kwargs`, chained comparisons, and slice assignment
 - starred unpacking, list targets, and subscript/attribute unpacking leaves
 - set comprehensions and generator expressions
@@ -536,7 +558,7 @@ VMs can be garbage-collected automatically, but using `dispose()` for explicit c
 - annotated assignments without a value at statement level (`x: T`) — class-body field declarations like `y: int` are the exception
 - rebinding builtin names (`print`/`len`/`wrap` etc.) or contract names (`any`/`bool`/`list`/`dict`/`tuple`) — contract names may only appear in annotation positions
 
-## 10. A complete example
+## 11. A complete example
 
 ```python
 # A tiny inventory ledger: one program that walks through Sericite's main features.

@@ -4,6 +4,7 @@ import math
 
 from ..errors import SericiteError
 from ._model import (
+    SericiteModule,
     SericiteRecord,
     SericiteSchema,
     VMContext,
@@ -311,6 +312,14 @@ class _EngineOperators:
     def _load_attr(
         self, context: VMContext, value: object, attr: str, hint: str | None
     ) -> object:
+        if isinstance(value, SericiteModule):
+            self._require_live_home(value.home)
+            self._meter(context).work(len(attr))
+            if attr in value.locals:
+                return value.locals[attr]
+            raise SericiteError(
+                f"module has no attribute '{attr}'", kind="attribute_error"
+            )
         if isinstance(value, SericiteRecord):
             if attr in value.fields:
                 return value.fields[attr]

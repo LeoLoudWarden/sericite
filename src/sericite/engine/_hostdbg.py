@@ -5,6 +5,7 @@ from ..errors import SericiteError
 from ._model import (
     _UNBOUND,
     SericiteFunction,
+    SericiteModule,
     SericiteRecord,
     SericiteSchema,
     VMContext,
@@ -410,7 +411,9 @@ class _EngineHostDebug:
             return {"<record>": result} if isinstance(value, SericiteRecord) else result
         if isinstance(value, SericiteSchema):
             return _schema_repr(value, _seen, _budget, meter=meter)
-        if isinstance(value, (VMHandle, SericiteFunction, _NativeFunction)):
+        if isinstance(
+            value, (VMHandle, SericiteFunction, SericiteModule, _NativeFunction)
+        ):
             return repr(value)
         if isinstance(value, (_GrantedHostFunction, _GrantedSericiteFunction)):
             return repr(value)
