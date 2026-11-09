@@ -76,7 +76,7 @@ Script calls receive only the safe view and cannot see these host fields.
 The host side also has one privilege — host management is not script accounting:
 
 - Direct `feed_input()`, `write_file()`, file reads, stdout access, snapshots, and `dispose()` do not enter the script's memory ledger;
-- Resource-specific limits such as file count, file bytes, and output bytes still apply;
+- Resource-specific limits such as file count, per-file bytes, total file storage, and output bytes still apply;
 - Instructions and dynamic operations executed by `run()`, `exec()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
 
 This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.**
@@ -146,7 +146,7 @@ Each frame is a `SericiteFrame` — a top-level host API imported from `sericite
 
 A VM snapshot's `error.frames` instead describes the VM that owns that snapshot, but it has a different shape: a list of dicts (`{"function": str, "line": int | None}`), not `SericiteFrame` objects. Errors rejected before VM execution begins have no frames.
 
-The script-side catchability of `resource_exhausted` (catchable only from code isolated behind `VM()`) and the `kind` registry are in the [language reference](language-reference.md) §5; `internal_error` and `host_error` are always uncatchable by scripts. Hosts can and should handle `resource_exhausted`, `internal_error`, and `host_error`.
+The script-side catchability of `resource_exhausted` (catchable only from code isolated behind `VM()`) and the `kind` registry are in the [language reference](language-reference.md) §5. File-operation constraint rejection instead uses the ordinary catchable `file_limit_error`; `internal_error` and `host_error` are always uncatchable by scripts. Hosts can and should handle `resource_exhausted`, `internal_error`, and `host_error`.
 
 ## 7. Host checklist for untrusted code
 

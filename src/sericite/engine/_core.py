@@ -36,6 +36,7 @@ from ._values import (
     _contract_violation,
     _from_host,
     _make_iterator,
+    _min_limits,
     _normalize_contract,
     _record_text,
     _stamp_origin,
@@ -217,10 +218,7 @@ class _EngineCore:
             depth=depth,
             parent_id=parent_id,
             io=io,
-            fs=VirtualFileSystem(
-                max_files=limits.max_fs_files,
-                max_file_bytes=limits.max_fs_file_bytes,
-            ),
+            fs=VirtualFileSystem(),
             limits=limits,
             frames=[Frame(code=code, locals=dict(initial_locals or {}))],
             granted=dict(granted) if granted else {},
@@ -311,6 +309,12 @@ class _EngineCore:
 
     def _attached_vfs(self, context: VMContext) -> VirtualFileSystem:
         return context.fs
+
+    def _file_operation_limits(self, context: VMContext) -> SericiteLimits:
+        limits = context.limits
+        for account in self._meter(context).route.accounts:
+            limits = _min_limits(limits, account.limits)
+        return limits
 
     def _dispose(self, handle: VMHandle) -> None:
         if handle._engine is not self:

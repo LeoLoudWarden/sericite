@@ -76,7 +76,7 @@ engine.create_root(
 宿主侧还有一条特权规则——宿主管理不计入脚本账：
 
 - 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照、`dispose()`，不计入脚本的内存账；
-- 文件数、单文件字节、输出字节等资源自身限制仍然有效；
+- 文件数、单文件字节、文件总存储量、输出字节等资源自身限制仍然有效；
 - `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 
 不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**
@@ -146,7 +146,7 @@ except SericiteError as exc:
 
 各 VM 快照的 `error.frames` 对应该快照所属 VM，但形态不同：它是 dict 列表（`{"function": str, "line": int | None}`），不是 `SericiteFrame` 对象。编译期尚未进入 VM 执行的错误没有调用栈。
 
-`resource_exhausted` 的脚本侧可捕获规则（仅当来自 `VM()` 隔离的代码时可捕获）与 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节；`internal_error` 与 `host_error` 始终不能被脚本捕获。宿主可以且应该处理 `resource_exhausted`、`internal_error` 与 `host_error`。
+`resource_exhausted` 的脚本侧可捕获规则（仅当来自 `VM()` 隔离的代码时可捕获）与 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节。文件操作约束拒绝改用普通、可捕获的 `file_limit_error`；`internal_error` 与 `host_error` 始终不能被脚本捕获。宿主可以且应该处理 `resource_exhausted`、`internal_error` 与 `host_error`。
 
 ## 7. 不可信代码的宿主检查清单
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from sericite import SericiteError
+from sericite import SericiteError, SericiteLimits
 from sericite.engine import SericiteEngine
 
 
@@ -274,6 +274,81 @@ class VirtualFileStoreTests(unittest.TestCase):
             self.assertEqual(self.fs.read_file("/tree/file.txt"), "tree")
             self.assertFalse(self.fs.path_exists("/a/b"))
             self.assertEqual(self.fs.list_dir("/"), ["a", "source.txt", "tree"])
+        self.assert_aggregate_metadata()
+
+    def test_tighter_operation_limits_allow_non_growth_and_shrinkage(self) -> None:
+        self.fs.write_file_trusted("/a", "x")
+        self.fs.write_file_trusted("/b", "long")
+        limits = SericiteLimits(
+            max_fs_files=1, max_fs_file_bytes=1, max_fs_storage_bytes=1
+        )
+        self.fs.write_file_trusted("/a", "x", limits=limits)
+        self.fs.rename_file_trusted("/b", "/c", limits=limits)
+        self.fs.write_file_trusted("/c", "l", limits=limits)
+        for operation in (
+            lambda: self.fs.write_file_trusted("/d", "z", limits=limits),
+            lambda: self.fs.copy_file_trusted("/c", "/d", limits=limits),
+        ):
+            with (
+                self.subTest(operation=operation),
+                self.assertRaises(SericiteError) as ctx,
+            ):
+                operation()
+            self.assertEqual(ctx.exception.kind, "file_limit_error")
+            self.assertFalse(self.fs.path_exists("/d"))
+        self.assertEqual(self.fs.read_file("/a"), "x")
+        self.assertEqual(self.fs.read_file("/c"), "l")
+
+    def test_oversized_existing_file_can_move_or_shrink_but_not_copy_or_grow(
+        self,
+    ) -> None:
+        self.fs.write_file_trusted("/big", "xx")
+        limits = SericiteLimits(max_fs_file_bytes=1)
+        with self.assertRaises(SericiteError) as ctx:
+            self.fs.copy_file_trusted("/big", "/copy", limits=limits)
+        self.assertEqual(ctx.exception.kind, "file_limit_error")
+        self.fs.rename_file_trusted("/big", "/renamed", limits=limits)
+        self.fs.write_file_trusted("/renamed", "xx", limits=limits)
+        with self.assertRaises(SericiteError):
+            self.fs.write_file_trusted("/renamed", "xxx", limits=limits)
+        self.fs.write_file_trusted("/renamed", "x", limits=limits)
+        self.assertEqual(self.fs.read_file("/renamed"), "x")
+
+    def test_rename_at_storage_limit_accounts_for_source_tree_release(self) -> None:
+        self.fs.write_file_trusted("/old/nested/file.txt", "payload")
+        before = self.fs.storage_bytes
+        limits = SericiteLimits(max_fs_storage_bytes=before)
+        self.fs.rename_file_trusted(
+            "/old/nested/file.txt", "/new/nested/file.txt", limits=limits
+        )
+        self.assertEqual(self.fs.storage_bytes, before)
+        self.fs.rename_dir_trusted("/new", "/old", limits=limits)
+        self.assertEqual(self.fs.storage_bytes, before)
+        with self.assertRaises(SericiteError) as ctx:
+            self.fs.copy_dir_trusted("/old", "/copy", limits=limits)
+        self.assertEqual(ctx.exception.kind, "file_limit_error")
+        self.assertFalse(self.fs.path_exists("/copy"))
+        self.fs.rename_dir_trusted(
+            "/old", "/x", limits=SericiteLimits(max_fs_storage_bytes=1)
+        )
+        self.assertLess(self.fs.storage_bytes, before)
+        self.assertEqual(self.fs.read_file("/x/nested/file.txt"), "payload")
+        self.assert_aggregate_metadata()
+
+    def test_file_rename_does_not_release_surviving_sibling_tree(self) -> None:
+        self.fs.write_file_trusted("/a/b/deep.txt", "deep")
+        self.fs.write_file_trusted("/a/b/c/leaf.txt", "leaf")
+        before = self.fs.storage_bytes
+        delta = self.fs._rename_file_storage_delta(
+            "/a/b/deep.txt", "/a/moved.txt", "deep"
+        )
+        self.fs.rename_file_trusted(
+            "/a/b/deep.txt",
+            "/a/moved.txt",
+            limits=SericiteLimits(max_fs_storage_bytes=before),
+        )
+        self.assertEqual(self.fs.storage_bytes, before + delta)
+        self.assertEqual(self.fs.read_file("/a/b/c/leaf.txt"), "leaf")
         self.assert_aggregate_metadata()
 
 

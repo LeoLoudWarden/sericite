@@ -838,6 +838,7 @@ STRUCTURAL_OPTIONS = {
     "max_vm_depth",
     "max_fs_files",
     "max_fs_file_bytes",
+    "max_fs_storage_bytes",
 }
 
 

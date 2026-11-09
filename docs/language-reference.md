@@ -324,7 +324,8 @@ Note: bare `except:` and `except ...` only handle **catchable** errors. The catc
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`, `import_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and external functions: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
-- Resource failure from another workspace: `resource_exhausted`, catchable only when it comes from code isolated behind `VM()`.
+- File-operation constraint rejection: `file_limit_error`, an ordinary catchable error that does not terminate the VM.
+- Other execution-session resource failure: `resource_exhausted`, catchable only when it comes from another, terminated VM isolated behind `VM()`; exhaustion of the current VM's or an ancestor's execution account is uncatchable.
 
 ```python
 try:
@@ -394,6 +395,8 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
 - Mutating operations complete path and resource checks before changing the file tree. Failure leaves no partial change.
+- File count, per-file size, and total file storage constrain the current VM's operations; they are not accounts owned by the VFS. Constraint rejection raises the ordinary, catchable `file_limit_error` without terminating the VM. The program can delete, shrink, or take another path before retrying, and failed attempts and retries remain metered.
+- If an existing world already exceeds the current VM's limits, it can be read, deleted, renamed, or overwritten without increasing its size, but cannot be extended or enlarged.
 
 ### List, tuple, and dict methods
 

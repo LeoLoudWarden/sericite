@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from .accounting import AllocationPermit
 from .errors import SericiteError
+
+
+class FileOperationLimits(Protocol):
+    max_fs_files: int
+    max_fs_file_bytes: int
+    max_fs_storage_bytes: int
 
 
 def normalize_path(path: object) -> str:
@@ -47,11 +55,19 @@ class _Directory:
 class VirtualFileSystem:
     """A private text-only VFS whose directory tree stores each direct-child name once."""
 
-    def __init__(self, max_files: int = 1000, max_file_bytes: int = 1_048_576) -> None:
+    def __init__(self) -> None:
         self._files: dict[str, str] = {}
         self._root = _Directory()
-        self._max_files = max_files
-        self._max_file_bytes = max_file_bytes
+
+    @property
+    def storage_bytes(self) -> int:
+        return (
+            self._root.file_count * 64
+            + self._root.file_path_chars * 4
+            + self._root.file_text_chars * 4
+            + self._root.directory_count * 64
+            + self._root.directory_name_chars * 4
+        )
 
     @staticmethod
     def path_work(path: object) -> int:
@@ -244,13 +260,155 @@ class VirtualFileSystem:
                 return
             directory = child
 
-    def _validate_write(
+    @staticmethod
+    def _limit_error(message: str) -> SericiteError:
+        return SericiteError(message, kind="file_limit_error")
+
+    @staticmethod
+    def _check_growth(current: int, projected: int, maximum: int, message: str) -> None:
+        if projected > maximum and projected > current:
+            raise VirtualFileSystem._limit_error(message)
+
+    def _check_storage_delta(
+        self, delta: int, limits: FileOperationLimits | None
+    ) -> None:
+        if limits is not None:
+            current = self.storage_bytes
+            self._check_growth(
+                current,
+                current + delta,
+                limits.max_fs_storage_bytes,
+                "file storage limit exceeded",
+            )
+
+    def _write_storage_delta(self, normalized: str, text: str) -> int:
+        if normalized not in self._files:
+            return self._write_allocation(normalized, text)
+        return (len(text) - len(self._files[normalized])) * 4
+
+    def _pruned_directory_allocation(
+        self, source: str, destination: str, *, removes_file: bool
+    ) -> int:
+        source_parents = self._segments(source)[:-1]
+        destination_parents = self._segments(destination)[:-1]
+        common = 0
+        for left, right in zip(source_parents, destination_parents):
+            if left != right:
+                break
+            common += 1
+        released = 0
+        source_parent_depth = len(source_parents)
+        for depth in range(source_parent_depth, common, -1):
+            path = "/" + "/".join(source_parents[:depth])
+            directory = self._find_directory(path)
+            if directory is None:
+                raise SericiteError(
+                    "directory metadata is inconsistent", kind="internal_error"
+                )
+            direct_files = len(directory.files)
+            direct_directories = len(directory.directories)
+            if removes_file and depth == source_parent_depth:
+                direct_files -= 1
+                if direct_directories:
+                    break
+            if directory.explicit or direct_files or direct_directories > 1:
+                break
+            released += 64 + len(source_parents[depth - 1]) * 4
+        return released
+
+    def _rename_file_storage_delta(
+        self, old_normalized: str, new_normalized: str, text: str
+    ) -> int:
+        addition = self._write_allocation(new_normalized, text)
+        release = (
+            64
+            + (len(old_normalized) + len(text)) * 4
+            + self._pruned_directory_allocation(
+                old_normalized, new_normalized, removes_file=True
+            )
+        )
+        return addition - release
+
+    def _rename_dir_storage_delta(
+        self, old_normalized: str, new_normalized: str, directory: _Directory
+    ) -> int:
+        addition = (
+            self.rename_dir_allocation(old_normalized, new_normalized)
+            + directory.file_text_chars * 4
+        )
+        old_name = self._segments(old_normalized)[-1]
+        release = (
+            directory.file_count * 64
+            + directory.file_path_chars * 4
+            + directory.file_text_chars * 4
+            + (directory.directory_count + 1) * 64
+            + (directory.directory_name_chars + len(old_name)) * 4
+            + self._pruned_directory_allocation(
+                old_normalized, new_normalized, removes_file=False
+            )
+        )
+        return addition - release
+
+    def _check_write_limits(
         self,
-        path: object,
-        text: object,
+        normalized: str,
+        text: str,
+        limits: FileOperationLimits | None,
         *,
-        overwrite: bool = True,
         require_file_slot: bool = True,
+        preserve_file_size: bool = False,
+        storage_delta: int | None = None,
+    ) -> None:
+        if limits is None:
+            return
+        exists = normalized in self._files
+        previous_size = len(self._files[normalized].encode("utf-8")) if exists else 0
+        size = len(text.encode("utf-8"))
+        if not preserve_file_size:
+            self._check_growth(
+                previous_size,
+                size,
+                limits.max_fs_file_bytes,
+                "file size limit exceeded",
+            )
+        if require_file_slot and not exists:
+            count = len(self._files)
+            self._check_growth(
+                count, count + 1, limits.max_fs_files, "file count limit exceeded"
+            )
+        if storage_delta is None:
+            storage_delta = self._write_storage_delta(normalized, text)
+        self._check_storage_delta(storage_delta, limits)
+
+    def _check_copy_dir_limits(
+        self,
+        source_normalized: str,
+        destination_normalized: str,
+        files: list[tuple[str, str]],
+        limits: FileOperationLimits | None,
+    ) -> None:
+        if limits is None:
+            return
+        for _, text in files:
+            self._check_growth(
+                0,
+                len(text.encode("utf-8")),
+                limits.max_fs_file_bytes,
+                "file size limit exceeded",
+            )
+        count = len(self._files)
+        self._check_growth(
+            count,
+            count + len(files),
+            limits.max_fs_files,
+            "file count limit exceeded",
+        )
+        self._check_storage_delta(
+            self.copy_dir_allocation(source_normalized, destination_normalized), limits
+        )
+
+    def _validate_write(
+        self, path: object, text: object, *, overwrite: bool = True
     ) -> str:
         normalized = normalize_path(path)
         if not isinstance(text, str):
@@ -260,23 +418,10 @@ class VirtualFileSystem:
             raise SericiteError(f"is a directory: {path}", kind="is_directory")
         if not overwrite and normalized in self._files:
             raise SericiteError(f"file already exists: {path}", kind="file_exists")
-        size = len(text.encode("utf-8"))
-        if size > self._max_file_bytes:
-            raise SericiteError("file size limit exceeded", kind="resource_exhausted")
-        if (
-            require_file_slot
-            and normalized not in self._files
-            and len(self._files) >= self._max_files
-        ):
-            raise SericiteError("file count limit exceeded", kind="resource_exhausted")
         return normalized
 
-    def _validate_new_file(
-        self, path: object, text: str, *, require_file_slot: bool = True
-    ) -> str:
-        return self._validate_write(
-            path, text, overwrite=False, require_file_slot=require_file_slot
-        )
+    def _validate_new_file(self, path: object, text: str) -> str:
+        return self._validate_write(path, text, overwrite=False)
 
     def _require_file(self, path: object) -> tuple[str, str]:
         normalized = normalize_path(path)
@@ -451,15 +596,28 @@ class VirtualFileSystem:
             ancestor.directory_name_chars -= removed_chars
 
     def write_file(
-        self, path: object, text: object, *, permit: AllocationPermit
+        self,
+        path: object,
+        text: object,
+        *,
+        permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
     ) -> None:
         normalized = self._validate_write(path, text)
+        self._check_write_limits(normalized, text, limits)
         permit.consume(self, "write", self._write_allocation(normalized, text))
         self._commit_write(normalized, text)
 
-    def write_file_trusted(self, path: object, text: object) -> None:
+    def write_file_trusted(
+        self,
+        path: object,
+        text: object,
+        *,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
         """Preconfigure a file on behalf of the trusted host, outside script accounting."""
         normalized = self._validate_write(path, text)
+        self._check_write_limits(normalized, text, limits)
         self._commit_write(normalized, text)
 
     def delete_file(self, path: object) -> None:
@@ -467,20 +625,47 @@ class VirtualFileSystem:
         self._commit_delete(normalized)
 
     def rename_file(
-        self, old_path: object, new_path: object, *, permit: AllocationPermit
+        self,
+        old_path: object,
+        new_path: object,
+        *,
+        permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
     ) -> None:
         old_normalized, text = self._require_file(old_path)
-        new_normalized = self._validate_new_file(
-            new_path, text, require_file_slot=False
+        new_normalized = self._validate_new_file(new_path, text)
+        self._check_write_limits(
+            new_normalized,
+            text,
+            limits,
+            require_file_slot=False,
+            preserve_file_size=True,
+            storage_delta=self._rename_file_storage_delta(
+                old_normalized, new_normalized, text
+            ),
         )
         permit.consume(self, "write", self._write_allocation(new_normalized, ""))
         self._commit_write(new_normalized, text)
         self._commit_delete(old_normalized)
 
-    def rename_file_trusted(self, old_path: object, new_path: object) -> None:
+    def rename_file_trusted(
+        self,
+        old_path: object,
+        new_path: object,
+        *,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
         old_normalized, text = self._require_file(old_path)
-        new_normalized = self._validate_new_file(
-            new_path, text, require_file_slot=False
+        new_normalized = self._validate_new_file(new_path, text)
+        self._check_write_limits(
+            new_normalized,
+            text,
+            limits,
+            require_file_slot=False,
+            preserve_file_size=True,
+            storage_delta=self._rename_file_storage_delta(
+                old_normalized, new_normalized, text
+            ),
         )
         self._commit_write(new_normalized, text)
         self._commit_delete(old_normalized)
@@ -491,17 +676,26 @@ class VirtualFileSystem:
         destination_path: object,
         *,
         permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
     ) -> None:
         _, text = self._require_file(source_path)
         destination_normalized = self._validate_new_file(destination_path, text)
+        self._check_write_limits(destination_normalized, text, limits)
         permit.consume(
             self, "write", self._write_allocation(destination_normalized, text)
         )
         self._commit_write(destination_normalized, text)
 
-    def copy_file_trusted(self, source_path: object, destination_path: object) -> None:
+    def copy_file_trusted(
+        self,
+        source_path: object,
+        destination_path: object,
+        *,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
         _, text = self._require_file(source_path)
         destination_normalized = self._validate_new_file(destination_path, text)
+        self._check_write_limits(destination_normalized, text, limits)
         self._commit_write(destination_normalized, text)
 
     def _validate_make_dir(self, path: object) -> str:
@@ -511,13 +705,23 @@ class VirtualFileSystem:
             raise SericiteError(f"path already exists: {path}", kind="file_exists")
         return normalized
 
-    def make_dir(self, path: object, *, permit: AllocationPermit) -> None:
+    def make_dir(
+        self,
+        path: object,
+        *,
+        permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
         normalized = self._validate_make_dir(path)
+        self._check_storage_delta(self.make_dir_allocation(normalized), limits)
         permit.consume(self, "write", self.make_dir_allocation(normalized))
         self._commit_make_dir(normalized, explicit_ancestors=True)
 
-    def make_dir_trusted(self, path: object) -> None:
+    def make_dir_trusted(
+        self, path: object, *, limits: FileOperationLimits | None = None
+    ) -> None:
         normalized = self._validate_make_dir(path)
+        self._check_storage_delta(self.make_dir_allocation(normalized), limits)
         self._commit_make_dir(normalized, explicit_ancestors=True)
 
     def delete_dir(self, path: object) -> None:
@@ -530,17 +734,26 @@ class VirtualFileSystem:
 
     def _rename_dir_plan(
         self, old_path: object, new_path: object
-    ) -> tuple[str, str, list[tuple[str, str]], list[tuple[str, bool]]]:
+    ) -> tuple[str, str, _Directory, list[tuple[str, str]], list[tuple[str, bool]]]:
         old_normalized, directory = self._require_directory(old_path)
         new_normalized = self._validate_directory_destination(old_normalized, new_path)
         files, directories = self._directory_tree(old_normalized, directory)
-        return old_normalized, new_normalized, files, directories
+        return old_normalized, new_normalized, directory, files, directories
 
     def rename_dir(
-        self, old_path: object, new_path: object, *, permit: AllocationPermit
+        self,
+        old_path: object,
+        new_path: object,
+        *,
+        permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
     ) -> None:
-        old_normalized, new_normalized, files, directories = self._rename_dir_plan(
-            old_path, new_path
+        old_normalized, new_normalized, directory, files, directories = (
+            self._rename_dir_plan(old_path, new_path)
+        )
+        self._check_storage_delta(
+            self._rename_dir_storage_delta(old_normalized, new_normalized, directory),
+            limits,
         )
         permit.consume(
             self, "write", self.rename_dir_allocation(old_normalized, new_normalized)
@@ -556,9 +769,19 @@ class VirtualFileSystem:
         if self._find_directory(old_normalized) is not None:
             self._commit_detach_directory(old_normalized)
 
-    def rename_dir_trusted(self, old_path: object, new_path: object) -> None:
-        old_normalized, new_normalized, files, directories = self._rename_dir_plan(
-            old_path, new_path
+    def rename_dir_trusted(
+        self,
+        old_path: object,
+        new_path: object,
+        *,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
+        old_normalized, new_normalized, directory, files, directories = (
+            self._rename_dir_plan(old_path, new_path)
+        )
+        self._check_storage_delta(
+            self._rename_dir_storage_delta(old_normalized, new_normalized, directory),
+            limits,
         )
         for path, explicit in directories:
             suffix = path[len(old_normalized) :]
@@ -578,8 +801,6 @@ class VirtualFileSystem:
         destination_normalized = self._validate_directory_destination(
             source_normalized, destination_path
         )
-        if len(self._files) + directory.file_count > self._max_files:
-            raise SericiteError("file count limit exceeded", kind="resource_exhausted")
         files, directories = self._directory_tree(source_normalized, directory)
         return source_normalized, destination_normalized, files, directories
 
@@ -589,9 +810,13 @@ class VirtualFileSystem:
         destination_path: object,
         *,
         permit: AllocationPermit,
+        limits: FileOperationLimits | None = None,
     ) -> None:
         source_normalized, destination_normalized, files, directories = (
             self._copy_dir_plan(source_path, destination_path)
+        )
+        self._check_copy_dir_limits(
+            source_normalized, destination_normalized, files, limits
         )
         permit.consume(
             self,
@@ -605,9 +830,18 @@ class VirtualFileSystem:
             suffix = file_path[len(source_normalized) :]
             self._commit_write(destination_normalized + suffix, text)
 
-    def copy_dir_trusted(self, source_path: object, destination_path: object) -> None:
+    def copy_dir_trusted(
+        self,
+        source_path: object,
+        destination_path: object,
+        *,
+        limits: FileOperationLimits | None = None,
+    ) -> None:
         source_normalized, destination_normalized, files, directories = (
             self._copy_dir_plan(source_path, destination_path)
+        )
+        self._check_copy_dir_limits(
+            source_normalized, destination_normalized, files, limits
         )
         for path, explicit in directories:
             suffix = path[len(source_normalized) :]

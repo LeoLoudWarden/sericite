@@ -324,7 +324,8 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`、`import_error`。
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与外部函数：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
-- 其他工作空间的资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的代码时可捕获。
+- 文件操作约束拒绝：`file_limit_error`，普通且可捕获，不终止 VM。
+- 其他执行会话的资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的另一台已终止 VM 时可捕获；当前 VM 或祖先的执行账户耗尽不可捕获。
 
 ```python
 try:
@@ -394,6 +395,8 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - 所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`。
 - 变更操作会在修改文件树之前完成路径与资源检查，失败不会留下部分变更。
+- 文件数、单文件大小与文件总存储量是当前 VM 对操作的约束，不是 VFS 自己的账户。约束拒绝变更时抛出普通、可捕获的 `file_limit_error`，VM 不终止；可以删除、缩小或改走其他逻辑后再试，失败与重试仍会计量。
+- 已有世界超过当前 VM 的限制时，可以读取、删除、重命名或进行不扩大规模的覆盖，但不能新增或扩大内容。
 
 ### 列表、元组与字典方法
 

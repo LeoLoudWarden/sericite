@@ -155,7 +155,10 @@ class _EngineBuiltins:
                 "rename_file",
                 lambda old_path, new_path, *, _allocation_permit=None: (
                     self._attached_vfs(home).rename_file(
-                        old_path, new_path, permit=_allocation_permit
+                        old_path,
+                        new_path,
+                        permit=_allocation_permit,
+                        limits=self._file_operation_limits(home),
                     )
                 ),
                 home,
@@ -171,7 +174,10 @@ class _EngineBuiltins:
                 "copy_file",
                 lambda source_path, destination_path, *, _allocation_permit=None: (
                     self._attached_vfs(home).copy_file(
-                        source_path, destination_path, permit=_allocation_permit
+                        source_path,
+                        destination_path,
+                        permit=_allocation_permit,
+                        limits=self._file_operation_limits(home),
                     )
                 ),
                 home,
@@ -197,7 +203,10 @@ class _EngineBuiltins:
                 "rename_dir",
                 lambda old_path, new_path, *, _allocation_permit=None: (
                     self._attached_vfs(home).rename_dir(
-                        old_path, new_path, permit=_allocation_permit
+                        old_path,
+                        new_path,
+                        permit=_allocation_permit,
+                        limits=self._file_operation_limits(home),
                     )
                 ),
                 home,
@@ -213,7 +222,10 @@ class _EngineBuiltins:
                 "copy_dir",
                 lambda source_path, destination_path, *, _allocation_permit=None: (
                     self._attached_vfs(home).copy_dir(
-                        source_path, destination_path, permit=_allocation_permit
+                        source_path,
+                        destination_path,
+                        permit=_allocation_permit,
+                        limits=self._file_operation_limits(home),
                     )
                 ),
                 home,
@@ -231,7 +243,11 @@ class _EngineBuiltins:
                 "make_dir",
                 lambda path, *, _allocation_permit=None: self._attached_vfs(
                     home
-                ).make_dir(path, permit=_allocation_permit),
+                ).make_dir(
+                    path,
+                    permit=_allocation_permit,
+                    limits=self._file_operation_limits(home),
+                ),
                 home,
                 work=lambda path: self._attached_vfs(home).path_work(path),
                 allocation=lambda path: self._vfs_mutation_allocation(
@@ -448,7 +464,12 @@ class _EngineBuiltins:
         text: object,
         permit: AllocationPermit,
     ) -> None:
-        self._attached_vfs(context).write_file(path, text, permit=permit)
+        self._attached_vfs(context).write_file(
+            path,
+            text,
+            permit=permit,
+            limits=self._file_operation_limits(context),
+        )
 
     def _list_dir(self, context: VMContext, path: object) -> list[str]:
         result = self._attached_vfs(context).list_dir(path)
