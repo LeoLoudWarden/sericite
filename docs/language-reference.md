@@ -544,9 +544,21 @@ For example, suppose the current workspace contains:
         └── mod.sericite
 ```
 
-The module name `util` maps to `/util.sericite`, and `lib.math` maps to `/lib/math.sericite`. The target may also be a package: `lib.math` can map to `/lib/math/__init__.sericite`.
+Module names resolve from the workspace root by default: `util` maps to `/util.sericite`, and `lib.math` maps to `/lib/math.sericite`. The target may also be a package: `lib.math` can map to `/lib/math/__init__.sericite`.
 
 Every intermediate directory must be a package with an `__init__.sericite`; namespace packages without an initializer are not supported. If both a module file and a package exist for the same name, or a parent is not a package, the import fails with `import_error`.
+
+### Entry files and module resolution roots
+
+`VM(source=code, fs=fs)` executes string code that has no file identity, resolving modules from the workspace root. `VM(entry_file=path, fs=fs)` instead executes an entry file from the workspace and uses the entry file's directory as the module resolution root:
+
+```python
+sub = VM(entry_file="/project/main.sericite", fs=fs)
+```
+
+In that entry, `import util` uses `/project/util.sericite`, and `import lib.math` uses `/project/lib/math.sericite`. Relative imports also resolve within their current package before landing under this directory.
+
+Entry paths follow ordinary file-path normalization. The module resolution root changes only import resolution, not the root used by file operations such as `read_file()`. See the [VM reference](vm-reference.md) §§2–4 for entry-loading timing, session persistence, and how module roots relate to workspace transfers.
 
 ### Import forms and bindings
 

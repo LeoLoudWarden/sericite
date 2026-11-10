@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Added
+- VM 创建支持区分字符串源码与工作区入口文件：`VM(source=...)` 保持从工作区根解析模块，`VM(entry_file=..., fs=...)` 从入口文件所在目录解析模块；宿主 `create_root()` 提供同样的来源选择。文件操作仍以工作区根为基准。
 - 新增 VM 文件操作约束 `max_fs_storage_bytes`：按文本、路径与目录元数据的近似总量，限制当前 VM 可扩张到的 VFS 存储规模。
 - 新增可移交的 VFS 工作区：`VFS()` 创建分离句柄，`VM(..., fs=...)` 以移动语义排他挂载，终态 `take_fs()` 原子取回；宿主提供对应的 `create_vfs()` 与 `create_root(fs=...)`。
 

@@ -12,15 +12,20 @@ VM 不是一次性的：同一段会话可以喂输入、逐语句或逐指令�
 
 ## 2. 创建 VM 与移交 VFS
 
-脚本内用 `VM(code, **options)` 创建子 VM：
+脚本内用 `VM(source=code, **options)` 或 `VM(entry_file=path, **options)` 创建子 VM；位置形式 `VM(code, ...)` 是 `source=code` 的简写。两种来源必须恰好选择一种：
 
 ```python
-sub = VM(code, max_instructions=10000)   # 资源配额，只能比当前环境更严
+sub = VM(source=code, max_instructions=10000)  # 资源配额，只能比当前环境更严
 sub = VM(code, output_writer=forward, buffer_output=False)
-sub = VM(code, fs=workspace)              # 移入一个分离状态的 VFS
+sub = VM(code, fs=workspace)                   # 移入一个分离状态的 VFS
+sub = VM(entry_file="/project/main.sericite", fs=workspace)
 ```
 
-默认创建空白 VFS。`fs` 只接受 `VFS()` 或另一终态 VM 的 `take_fs()` 所返回的分离句柄；挂载成功后旧句柄永久失效，VFS 由新 VM 独占。`output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
+默认创建空白 VFS。`fs` 只接受 `VFS()` 或另一终态 VM 的 `take_fs()` 所返回的分离句柄；挂载成功后旧句柄永久失效，VFS 由新 VM 独占。
+
+`source` 执行字符串代码，模块从工作区根解析。`entry_file` 必须显式配合 `fs`，在创建时读取并编译该文件，以入口所在目录为模块解析根；入口缺失、读取或编译失败都不会消费 VFS。模块根属于会话，在后续 `exec()` 中保留，不随 VFS 移交，也不被子 VM 隐式继承。它只影响 import，`read_file()` 等文件操作仍以整个工作区根为基准；路径规则见[语言参考](language-reference.zh-CN.md)第 9 节。
+
+`output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
 
 ## 3. 状态与生命周期
 
@@ -110,7 +115,7 @@ writer：
 
 `exec(source)` 让 VM 换上新程序但保留它的世界：
 
-- **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；文件系统、输入队列、授予的函数和已导入模块的缓存不受影响。
+- **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；文件系统、模块解析根、输入队列、授予的函数和已导入模块的缓存不受影响。
 - **状态与丢弃规则**：除 `terminated`、已通过 `take_fs()` 分离 VFS，以及正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。
 - **编译原子性**：编译先于任何状态改变完成，编译失败的源码让 VM 保持原样。
 - **配额按生命周期累计**：指令、内存与输出消耗跨投递累计，而非按投递计算。

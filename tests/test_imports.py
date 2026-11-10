@@ -195,6 +195,98 @@ class ImportTests(unittest.TestCase):
         )
         self.assertEqual(output, "child\n")
 
+    def test_entry_file_scopes_imports_without_rerooting_file_paths(self):
+        output = self.run_source(
+            "fs = VFS()\n"
+            "fs.write_file('/util.sericite', \"value = 'workspace'\\n\")\n"
+            "fs.write_file('/project/util.sericite', \"value = 'project'\\n\")\n"
+            "fs.write_file('/project/pkg/__init__.sericite', '')\n"
+            "fs.write_file('/project/pkg/util.sericite', \"value = 'project'\\n\")\n"
+            "fs.write_file('/project/pkg/mod.sericite', 'from .util import value\\n')\n"
+            "fs.write_file('/project/main.sericite', \"import util\\n"
+            "from pkg.mod import value\\nwrite_file('/result.txt', util.value)\\n"
+            'print(util.value, value)")\n'
+            "sub = VM(entry_file='/project/main.sericite', fs=fs)\n"
+            "print(sub.run(), end='')\n"
+            "fs = sub.take_fs()\n"
+            "print(fs.read_file('/result.txt'))\n"
+        )
+        self.assertEqual(output, "project project\nproject\n")
+
+    def test_entry_file_is_normalized_and_module_root_stays_in_session(self):
+        output = self.run_source(
+            "fs = VFS()\n"
+            "fs.write_file('/util.sericite', \"value = 'workspace'\\n\")\n"
+            "fs.write_file('/project/util.sericite', \"value = 'project'\\n\")\n"
+            "fs.write_file('/project/main.sericite', "
+            "'import util\\nprint(util.value)\\n')\n"
+            "sub = VM(entry_file='/scratch/../project/./main.sericite', fs=fs)\n"
+            "print(sub.run(), end='')\n"
+            "print(sub.exec('print(util.value)'), end='')\n"
+            "fs = sub.take_fs()\n"
+            "sub = VM('import util\\nprint(util.value)', fs=fs)\n"
+            "print(sub.run(), end='')\n"
+        )
+        self.assertEqual(output, "project\nproject\nworkspace\n")
+
+    def test_entry_file_root_follows_granted_function_home(self):
+        engine = SericiteEngine()
+        fs = engine.create_vfs()
+        fs.write_file("/home/util.sericite", "value = 'home'\n")
+        fs.write_file(
+            "/home/main.sericite",
+            "def load():\n"
+            "    import util\n"
+            "    return util.value\n"
+            "fs = VFS()\n"
+            "fs.write_file('/caller/main.sericite', 'print(load())\\n')\n"
+            "sub = VM(entry_file='/caller/main.sericite', "
+            "functions={'load': load}, fs=fs)\n"
+            "print(sub.run(), end='')\n",
+        )
+        root = engine.create_root(entry_file="/home/main.sericite", fs=fs)
+        self.assertEqual(root.run(), "home\n")
+
+    def test_invalid_entry_file_does_not_consume_vfs(self):
+        output = self.run_source(
+            "fs = VFS()\n"
+            "fs.write_file('/broken.sericite', 'def broken(:')\n"
+            "try:\n"
+            "    VM(entry_file=1, fs=fs)\n"
+            "except type_error as e:\n"
+            "    print(e.message)\n"
+            "try:\n"
+            "    VM(entry_file='/missing.sericite', fs=fs)\n"
+            "except file_not_found as e:\n"
+            "    print(e.kind)\n"
+            "try:\n"
+            "    VM(entry_file='/broken.sericite', fs=fs)\n"
+            "except syntax_error as e:\n"
+            "    print(e.kind)\n"
+            "try:\n"
+            "    VM('', entry_file='/main.sericite', fs=fs)\n"
+            "except type_error as e:\n"
+            "    print(e.message)\n"
+            "fs.write_file('/ok.txt', 'ok')\n"
+            "print(fs.read_file('/ok.txt'))\n"
+        )
+        self.assertEqual(
+            output,
+            "entry_file must be a string\nfile_not_found\nsyntax_error\n"
+            "exactly one of source or entry_file is required\nok\n",
+        )
+
+    def test_source_keyword_and_entry_file_requires_fs(self):
+        output = self.run_source(
+            "sub = VM(source='print(42)')\n"
+            "print(sub.run(), end='')\n"
+            "try:\n"
+            "    VM(entry_file='/main.sericite')\n"
+            "except type_error as e:\n"
+            "    print(e.message)\n"
+        )
+        self.assertEqual(output, "42\nentry_file requires fs\n")
+
     def test_granted_function_imports_from_home_not_caller(self):
         output = self.run_source(
             "def load():\n"

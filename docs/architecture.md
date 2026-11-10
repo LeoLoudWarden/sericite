@@ -36,10 +36,10 @@ The `engine` package is split into cohesive parts:
 
 - `_model`: limits, frames, functions, schemas/records, module objects, native wrappers, VMContext, and VM/VFS handles
 - `_values`: value semantics, rendering, contract helpers, FFI deep-copy
-- `_core`: lifecycle, dispatch loop, exception unwinding, call machinery, and VFS attachment/removal
+- `_core`: lifecycle, entry-file loading, dispatch loop, exception unwinding, call machinery, and VFS attachment/removal
 - `_builtins`: built-in functions, child-VM and detached-VFS creation
 - `_operators`: operator/index/attribute semantics, container/record/handle natives
-- `_modules`: module-name/VFS-path resolution, packages and module frames, import resumption, loading/success caches, and home-route accounting
+- `_modules`: module-name, VM-module-root, and VFS-path resolution, packages and module frames, import resumption, loading/success caches, and home-route accounting
 - `_hostdbg`: VM-handle method charging, debug snapshots
 - `_vfs`: detached-VFS handle validation, caller charging, and file-operation dispatch
 - `__init__`: assembles `SericiteEngine` from these parts and re-exports the public API
@@ -97,7 +97,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 19.
   - a. A VFS is attached to at most one VM at a time; detached handles operate only while unattached and unconsumed. `fs=` consumes the handle and commits attachment only after VM creation fully succeeds, never losing the workspace on failure.
   - b. `take_fs()` requires a terminal state. Every file access through the old VM, old home functions, old bound natives, and old VFS handles must check the current attachment and must stop working after removal. The detached VM accepts no further `exec()`. Failure leaves ownership unchanged.
-  - c. A VFS enters neither the VM registry nor resource accounts. Module caches, IO, locals, and function homes do not transfer with it. Script VM handles expose no file proxies; trusted host file management is a separate channel.
+  - c. A VFS enters neither the VM registry nor resource accounts. Module roots, module caches, IO, locals, and function homes do not transfer with it. Script VM handles expose no file proxies; trusted host file management is a separate channel.
 
 ## 4. Script interface
 

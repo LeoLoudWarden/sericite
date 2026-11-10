@@ -203,6 +203,8 @@ class RootVMTests(unittest.TestCase):
             {"output_writer": 1},
             {"argv": 1},
             {"buffer_output": 1},
+            {"source": None, "entry_file": 1},
+            {"entry_file": "/main.sericite"},
         )
         for kwargs in cases:
             with self.subTest(kwargs=kwargs):

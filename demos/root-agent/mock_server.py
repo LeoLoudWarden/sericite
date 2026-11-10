@@ -89,8 +89,7 @@ while not done and rounds < 20:
             if name == "run":
                 run = None
                 try:
-                    source = workspace.read_file(args["path"])
-                    run = VM(source, fs=workspace)
+                    run = VM(entry_file=args["path"], fs=workspace)
                     result = run.run()
                 except ... as e:
                     result = f"({e.kind}: {e.message})"
@@ -199,16 +198,19 @@ class Handler(BaseHTTPRequestHandler):
                         5,
                         "file_write",
                         {
-                            "path": "/greeting.sericite",
+                            "path": "/project/greeting.sericite",
                             "content": "def message():\n    return 'module v1'\n",
                         },
                     ),
                     _tool_call(
                         50,
                         "file_write",
-                        {"path": "/module_main.sericite", "content": MODULE_MAIN},
+                        {
+                            "path": "/project/module_main.sericite",
+                            "content": MODULE_MAIN,
+                        },
                     ),
-                    _tool_call(51, "run", {"path": "/module_main.sericite"}),
+                    _tool_call(51, "run", {"path": "/project/module_main.sericite"}),
                 ]
             )
         if turn == 6:
@@ -218,11 +220,11 @@ class Handler(BaseHTTPRequestHandler):
                         6,
                         "file_write",
                         {
-                            "path": "/greeting.sericite",
+                            "path": "/project/greeting.sericite",
                             "content": "def message():\n    return 'module v2'\n",
                         },
                     ),
-                    _tool_call(60, "run", {"path": "/module_main.sericite"}),
+                    _tool_call(60, "run", {"path": "/project/module_main.sericite"}),
                 ]
             )
         if turn == 7:
@@ -259,7 +261,7 @@ class Handler(BaseHTTPRequestHandler):
                         102,
                         "file_write",
                         {
-                            "path": "/inner_module.sericite",
+                            "path": "/nested/inner_module.sericite",
                             "content": "def message():\n    return 'inner module'\n",
                         },
                     ),
@@ -267,11 +269,11 @@ class Handler(BaseHTTPRequestHandler):
                         103,
                         "file_write",
                         {
-                            "path": "/inner_main.sericite",
+                            "path": "/nested/inner_main.sericite",
                             "content": "import inner_module\nprint(inner_module.message())\n",
                         },
                     ),
-                    _tool_call(111, "run", {"path": "/inner_main.sericite"}),
+                    _tool_call(111, "run", {"path": "/nested/inner_main.sericite"}),
                 ]
             )
         return _reply(content="内层练习完成：写了文件、跑了入口、使用了模块。")

@@ -7,7 +7,7 @@ This demo is a multi-layer LLM application driven by a root Sericite program. **
 ## Runtime structure
 
 - **Outer session**: root imports `agentkit` and holds a detached VFS across tool calls. The model manages files with `file_read` / `file_write` / `file_list` and selects an entry to execute with `run(path)` instead of submitting source strings directly.
-- **Script runs**: every `run(path)` moves the workspace into a fresh VM and retrieves it at the terminal state. Variables, module caches, and execution ledgers do not survive, while files do, so editing an imported module and rerunning loads the new code. Scripts can use `llm_chat` and `http_get`, allowing them to complete ordinary exercises or implement another LLM session.
+- **Script runs**: every `run(path)` uses `VM(entry_file=path, fs=...)` to move the workspace into a fresh VM, then retrieves the workspace at the terminal state. Modules resolve from the entry file's directory, while file operations remain rooted at the workspace. Variables, module caches, and execution ledgers do not survive, while files do, so editing an imported module and rerunning loads the new code. Scripts can use `llm_chat` and `http_get`, allowing them to complete ordinary exercises or implement another LLM session.
 - **Child agents**: the outer model uses these two granted functions to write the child agent's session loop and tool dispatch, with an independent workspace. The child then runs the innermost code in a VM with no host functions, ending capability recursion there. AgentKit does not generate this layer for the model.
 
 ## Files and prompt boundary
