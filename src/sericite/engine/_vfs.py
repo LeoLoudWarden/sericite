@@ -10,6 +10,7 @@ from ._values import _estimate_size
 class _EngineVFS:
     def create_vfs(self) -> VFSHandle:
         self._reject_observation_reentry()
+        self._flush_pending_events()
         return VFSHandle(self, VFSAttachment())
 
     def _vfs_attachment(self, handle: VFSHandle) -> VFSAttachment:

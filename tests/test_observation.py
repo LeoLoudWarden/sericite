@@ -1,3 +1,4 @@
+import gc
 import unittest
 
 from sericite import (
@@ -312,6 +313,7 @@ class ObservationIsolationTests(unittest.TestCase):
                 lambda: engine.create_vfs(),
                 lambda: engine.create_root(""),
                 lambda: engine.observe(lambda event: None),
+                lambda: observation.poll(),
             )
             for operation in operations:
                 try:
@@ -323,7 +325,7 @@ class ObservationIsolationTests(unittest.TestCase):
         observation = engine.observe(sink)
         root = engine.create_root("print('x')")
         self.assertEqual(root.run(), "x\n")
-        self.assertEqual(errors, ["runtime_error"] * 7)
+        self.assertEqual(errors, ["runtime_error"] * 8)
         self.assertTrue(observation.closed)
         self.assertEqual(root.snapshot()["state"], "done")
 
@@ -346,6 +348,146 @@ class ObservationIsolationTests(unittest.TestCase):
             observed_engine._contexts[1].alloc_bytes,
             plain_engine._contexts[1].alloc_bytes,
         )
+
+
+class ObservationGarbageCollectionTests(unittest.TestCase):
+    def test_gc_notification_waits_for_poll(self):
+        engine = SericiteEngine()
+        events = []
+        observation = engine.observe(events.append)
+        root = engine.create_root("def make():\n    sub = VM('x = 1')\nmake()")
+        root.run()
+        gc.collect()
+
+        self.assertEqual(set(engine._contexts), {0})
+        self.assertFalse(any(event.kind == "vm.disposed" for event in events))
+        observation.poll()
+        disposed = [event for event in events if event.kind == "vm.disposed"]
+        self.assertEqual(len(disposed), 1)
+        self.assertEqual(disposed[0].vm_id, 1)
+        self.assertEqual(disposed[0].parent_id, 0)
+        self.assertEqual(disposed[0].data, {"reason": "gc", "state": "ready"})
+        observation.close()
+
+    def test_safe_engine_entry_flushes_gc_before_new_events(self):
+        engine = SericiteEngine()
+        events = []
+        observation = engine.observe(events.append)
+        root = engine.create_root("def make():\n    sub = VM('')\nmake()")
+        root.run()
+        gc.collect()
+        events.clear()
+
+        root.exec("print('next')")
+        self.assertEqual(
+            [event.kind for event in events],
+            ["vm.disposed", "vm.state_changed", "vm.output", "vm.state_changed"],
+        )
+        self.assertEqual(events[0].data["reason"], "gc")
+        self.assertEqual(
+            [event.sequence for event in events],
+            sorted(event.sequence for event in events),
+        )
+        observation.close()
+
+    def test_late_and_closed_observers_do_not_receive_old_tombstones(self):
+        engine = SericiteEngine()
+        first_events = []
+        first = engine.observe(first_events.append)
+        root = engine.create_root("def make():\n    sub = VM('')\nmake()")
+        root.run()
+        gc.collect()
+
+        second_events = []
+        second = engine.observe(second_events.append)
+        self.assertEqual(
+            [event.kind for event in first_events if event.kind == "vm.disposed"],
+            ["vm.disposed"],
+        )
+        self.assertEqual(second_events, [])
+        first.close()
+        second.close()
+
+        root.exec("make()")
+        gc.collect()
+        third_events = []
+        third = engine.observe(third_events.append)
+        self.assertEqual(third_events, [])
+        third.poll()
+        self.assertEqual(third_events, [])
+        third.close()
+
+    def test_self_and_cross_vm_cycles_are_reported_after_collection(self):
+        engine = SericiteEngine()
+        events = []
+        observation = engine.observe(events.append)
+        root = engine.create_root(
+            "def get_vm():\n    return vm_a\n"
+            "vm_a = VM('self = get_vm()', functions={'get_vm': get_vm})\n"
+            "vm_a.run()"
+        )
+        root.run()
+        del root
+        gc.collect()
+        observation.poll()
+        self.assertEqual(
+            {event.vm_id for event in events if event.kind == "vm.disposed"},
+            {0, 1},
+        )
+
+        root = engine.create_root(
+            "def get_a():\n    return a\n"
+            "def get_b():\n    return b\n"
+            "a = VM('b = get_b()', functions={'get_b': get_b})\n"
+            "b = VM('a = get_a()', functions={'get_a': get_a})\n"
+            "a.run()\nb.run()"
+        )
+        root.run()
+        del root
+        gc.collect()
+        observation.poll()
+        collected = [
+            event.vm_id
+            for event in events
+            if event.kind == "vm.disposed"
+            and event.data["reason"] == "gc"
+            and event.parent_id == 2
+        ]
+        self.assertEqual(set(collected), {3, 4})
+        observation.close()
+
+    def test_explicit_dispose_does_not_also_queue_gc_event(self):
+        engine = SericiteEngine()
+        events = []
+        observation = engine.observe(events.append)
+        root = engine.create_root('sub = VM("")\nsub.dispose()')
+        root.run()
+        gc.collect()
+        observation.poll()
+        disposed = [event for event in events if event.kind == "vm.disposed"]
+        self.assertEqual(len(disposed), 1)
+        self.assertEqual(disposed[0].data["reason"], "dispose")
+        observation.close()
+
+    def test_observed_gc_still_refunds_live_vm_quotas(self):
+        engine = SericiteEngine(SericiteLimits(max_total_vms=2))
+        events = []
+        observation = engine.observe(events.append)
+        root = engine.create_root("def make():\n    sub = VM('')")
+        root.run()
+        for _ in range(3):
+            root.exec("make()")
+            gc.collect()
+            self.assertEqual(set(engine._contexts), {0})
+            self.assertEqual(root.snapshot()["vm_id"], 0)
+        observation.poll()
+        self.assertEqual(root.snapshot()["child_count"], 3)
+        self.assertEqual(root._context.live_descendant_count, 0)
+        self.assertEqual(
+            len([event for event in events if event.data.get("reason") == "gc"]),
+            3,
+        )
+        observation.close()
 
 
 if __name__ == "__main__":
