@@ -56,6 +56,9 @@ class SericiteObservation:
     def poll(self) -> None:
         self._engine._flush_observation_events()
 
+    def snapshot(self, vm_id: int) -> dict[str, object]:
+        return self._engine._observation_snapshot(self, vm_id)
+
     def _fail(self, error: Exception) -> None:
         self._failure = f"{type(error).__name__}: {error}"
         self.close()
