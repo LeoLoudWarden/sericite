@@ -429,14 +429,25 @@ class _EngineCore:
                 if context.meter_stack.pop() is not meter:
                     raise SericiteError("meter stack corrupted", kind="internal_error")
 
+    @staticmethod
+    def _resume_breakpoint(context: VMContext) -> bool:
+        if context.state != "paused":
+            return False
+        context.state = "ready"
+        context.paused_breakpoint = None
+        return True
+
     def _run(self, handle: VMHandle) -> str:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
+        skip_breakpoint = self._resume_breakpoint(context)
         context.running = True
         try:
             while context.state == "ready":
-                if not self._execute_one(context):
+                executed = self._execute_one(context, skip_breakpoint=skip_breakpoint)
+                skip_breakpoint = False
+                if not executed:
                     break
         finally:
             context.running = False
@@ -447,8 +458,8 @@ class _EngineCore:
     def _exec_source(self, handle: VMHandle, source: object) -> str:
         # Deliver new source to an existing VM: the fresh module frame reuses the
         # previous module locals, so module-level names (and the world: VFS, IO,
-        # granted functions, quotas) persist across deliveries. Any program still
-        # pending (ready/waiting_input) and the old debugging frames are discarded.
+        # granted functions, quotas) persist across deliveries. Any pending program
+        # and the old debugging frames are discarded; breakpoint locations persist.
         context = self._context(handle)
         if not isinstance(source, str):
             raise SericiteError("VM.exec source must be a string", kind="type_error")
@@ -477,6 +488,7 @@ class _EngineCore:
         context.frames = [Frame(code=code, locals=module_locals)]
         context.error = None
         context.last_line = None
+        context.paused_breakpoint = None
         context.state = (
             "ready" if any(instr.stmt_start for instr in code.instrs) else "done"
         )
@@ -490,8 +502,9 @@ class _EngineCore:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
-        if context.state != "ready":
+        if context.state not in {"ready", "paused"}:
             return self._view(context, meter=meter, host=host)
+        skip_breakpoint = self._resume_breakpoint(context)
         context.running = True
         try:
             start_depth = len(context.frames)
@@ -501,7 +514,11 @@ class _EngineCore:
                 instr = self._current_instr(context)
                 if executed and len(context.frames) <= start_depth and instr.stmt_start:
                     break
-                if not self._execute_one(context):
+                executed_one = self._execute_one(
+                    context, skip_breakpoint=skip_breakpoint
+                )
+                skip_breakpoint = False
+                if not executed_one:
                     break
                 executed = True
             if executed and context.state in {"ready", "done"}:
@@ -516,12 +533,13 @@ class _EngineCore:
         context = self._context(handle)
         if context.running:
             raise SericiteError("VM is already running")
-        if context.state != "ready":
+        if context.state not in {"ready", "paused"}:
             return self._view(context, meter=meter, host=host)
+        skip_breakpoint = self._resume_breakpoint(context)
         context.running = True
         try:
             line = self._current_instr(context).line
-            if self._execute_one(context):
+            if self._execute_one(context, skip_breakpoint=skip_breakpoint):
                 context.last_line = line
         finally:
             context.running = False
@@ -564,13 +582,26 @@ class _EngineCore:
             del frame.stack[stack_depth:]
 
     def _execute_one(
-        self, context: VMContext, *, exception_floor: int | None = None
+        self,
+        context: VMContext,
+        *,
+        exception_floor: int | None = None,
+        skip_breakpoint: bool = False,
     ) -> bool:
         if context.state != "ready":
             return False
         frame = context.frames[-1]
-        self._sync_active_errors(frame)
         instr = frame.code.instrs[frame.pc]
+        breakpoint = (
+            self._breakpoint_at(context)
+            if instr.stmt_start and context.breakpoints and not skip_breakpoint
+            else None
+        )
+        if breakpoint is not None:
+            context.state = "paused"
+            context.paused_breakpoint = breakpoint
+            return False
+        self._sync_active_errors(frame)
         try:
             self._meter(context).work(1)
             self._dispatch(context, frame, instr)

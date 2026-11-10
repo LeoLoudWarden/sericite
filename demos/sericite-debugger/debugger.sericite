@@ -44,6 +44,30 @@ def read_command(prompt):
         return None
 
 
+def breakpoint_command(sub, command):
+    if command == "b":
+        points = sub.breakpoints()
+        if len(points) == 0:
+            print("no breakpoints")
+        for point in points:
+            print(f"breakpoint · line {point['line']}")
+        return
+    parts = command.split()
+    try:
+        if len(parts) == 2:
+            line = int(parts[1])
+            sub.add_breakpoint(line)
+            print(f"breakpoint armed · line {line}")
+        elif len(parts) == 3 and parts[1] == "off":
+            line = int(parts[2])
+            sub.remove_breakpoint(line)
+            print(f"breakpoint removed · line {line}")
+        else:
+            print("usage: b [LINE | off LINE]")
+    except (conversion_error, type_error):
+        print("usage: b [LINE | off LINE]")
+
+
 def run_debugger(sub, source, source_lines):
     state = control.new_state()
     print_banner()
@@ -51,7 +75,11 @@ def run_debugger(sub, source, source_lines):
     snapshot = sub.snapshot()
     display.render(snapshot, source_lines, source, state["watch"])
     try:
-        while snapshot["state"] == "ready" or snapshot["state"] == "waiting_input":
+        while (
+            snapshot["state"] == "ready"
+            or snapshot["state"] == "waiting_input"
+            or snapshot["state"] == "paused"
+        ):
             if snapshot["state"] == "waiting_input":
                 child_input = read_command("\n[child stdin] ")
                 if child_input == None:
@@ -59,7 +87,7 @@ def run_debugger(sub, source, source_lines):
                 sub.feed_input(child_input)
                 snapshot = sub.snapshot()
                 continue
-            command = read_command("\n[Enter/i/c/r/w/q/h] ")
+            command = read_command("\n[Enter/i/c/r/b/w/q/h] ")
             if command == None:
                 break
             command = command.strip()
@@ -71,6 +99,9 @@ def run_debugger(sub, source, source_lines):
                 snapshot = control.continue_to_watchpoint(sub, state)
             elif command == "r":
                 snapshot = control.run_without_watchpoints(sub, state)
+            elif command == "b" or command[:2] == "b ":
+                breakpoint_command(sub, command)
+                continue
             elif command == "q":
                 sub.terminate()
                 snapshot = sub.snapshot()

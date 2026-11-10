@@ -29,9 +29,9 @@ A new VM has a blank VFS by default. `fs` accepts only a detached handle returne
 
 ## 3. States and lifecycle
 
-VM states are `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, and `terminated`.
+VM states are `ready`, `waiting_input`, `paused`, `done`, `error`, `resource_exhausted`, and `terminated`. `paused` is a recoverable, nonterminal state entered before a statement hits a breakpoint.
 
-`terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op. Terminal VMs such as `done`/`error` can continue to accept `exec` deliveries while their VFS remains attached.
+`terminate()` marks a `ready`, `waiting_input`, or `paused` VM as `terminated`; in any other state it is a silent no-op. Terminal VMs such as `done`/`error` can continue to accept `exec` deliveries while their VFS remains attached.
 
 A VM holds resources that require release. It remains alive while it is reachable from a VM value or a granted function's environment, so terminal VMs remain available for debug snapshots and, while their VFS remains attached, further `exec` deliveries.
 
@@ -60,6 +60,9 @@ If resources are insufficient, `dispose()` fails before destroying anything. Dis
 | `step() -> dict` | Execute one statement and return a snapshot |
 | `step_instruction() -> dict` | Execute one internal instruction and return a snapshot |
 | `snapshot() -> dict` | Return a safe snapshot without advancing execution |
+| `add_breakpoint(line, path=None)` | Add a statement-entry line breakpoint; duplicate addition is a no-op |
+| `remove_breakpoint(line, path=None)` | Remove a location; absence is a no-op |
+| `breakpoints() -> list` | Return pure-data locations in insertion order |
 | `stdout() -> str` | Return current stdout |
 | `terminate()` | Terminate the VM; effective states and no-op semantics are in section 3 |
 | `dispose()` | Forcibly destroy a VM in any state and all live descendants; see section 3 |
@@ -116,9 +119,34 @@ The writer:
 `exec(source)` gives a VM a new program while keeping its world:
 
 - **The retained world**: the fresh module frame reuses the previous module scope, so module-level names (variables, functions, schemas) persist; the filesystem, module resolution root, input queue, granted functions, and imported-module cache are untouched.
-- **States and discarding**: delivery is accepted from any state except `terminated`, after VFS removal through `take_fs()`, or while the VM is being driven (`run()`/`exec()`/`step()` in progress). A program that has not finished — never started, or suspended on input — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them.
-- **Compilation atomicity**: compilation completes before any state changes; source that fails to compile leaves the VM exactly as it was.
+- **States and discarding**: delivery is accepted from any state except `terminated`, after VFS removal through `take_fs()`, or while the VM is being driven (`run()`/`exec()`/`step()` in progress). An unfinished program — never started, waiting for input, or paused at a breakpoint — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them. Breakpoint configuration persists, and main-source locations bind to the new delivery as described below.
+- **Compilation atomicity**: compilation completes before any state changes; source that fails to compile leaves the VM exactly as it was, including its paused scene and breakpoint binding.
 - **Lifetime quotas**: instruction, memory, and output consumption accumulate across deliveries, not per delivery.
+
+### Breakpoints
+
+The direct controller holding a VM handle can set statement-entry line breakpoints on its target:
+
+```python
+sub = VM("x = 1\nx += 1\nprint(x)")
+sub.add_breakpoint(2)                    # current main source
+sub.add_breakpoint(5, "/util.sericite")  # a logical file owned by the target
+sub.run()                                # returns before line 2 executes
+snapshot = sub.snapshot()                # state == "paused"
+sub.run()                                # executes line 2 and continues
+```
+
+`line` must be a positive integer; `path` is `None` or a logical path normalized under VFS rules. Addition and removal are idempotent. `breakpoints()` returns pure-data `{"line": int, "path": str | None}` entries in insertion order. Breakpoints can be managed in running, waiting, paused, and terminal states as long as the VM has not been disposed; `max_breakpoints` bounds their count.
+
+Breakpoint semantics are:
+
+- The VM enters `paused` before the statement's first instruction, preserving its PC, frames, locals, and stdout. `run()` returns current stdout normally; no exception or `except/finally` runs, and the unexecuted instruction is not charged.
+- Calling `run()`, `step()`, or `step_instruction()` from `paused` resumes with a one-time exemption for the current breakpoint. A later loop iteration hits it again. Statement stepping keeps its existing boundary, but another breakpoint inside a call can interrupt it.
+- `path=None` matches the current main source and its functions. After successful `exec()`, it binds by line to the new main source and does not hit functions left by older deliveries.
+- An explicit `path` matches the target VM's own entry file and imported modules. Granted code defined by another VM never hits the target's breakpoints, even at the same path and line.
+- Only actual statement entries are breakable: blank lines, comments, non-start lines of multiline statements, and `pass` (which emits no instruction) do not hit. Multiple instruction-producing statements on one line hit separately.
+- Pausing does not propagate through the creation chain. When the child's `run()` returns, its direct parent may inspect and resume it or continue its own program; ancestors and the host enter no global pause.
+- Adding a new location beyond `max_breakpoints` raises the ordinary catchable `breakpoint_limit_error` without modifying the table or terminating caller or target. The controller may remove an old location and retry; actual caller instruction or memory exhaustion remains `resource_exhausted`.
 
 ### Snapshots
 
@@ -131,6 +159,7 @@ A snapshot returned by `step()`, `step_instruction()`, or `snapshot()` contains 
 | `locals` | Safe copies of user-visible local values |
 | `stdout` | Current output |
 | `error` | `kind`, `message`, `line`, `column`, and `frames`, or `None` |
+| `breakpoint` | The actual `line`/`path` hit at a breakpoint pause, otherwise `None` |
 | `instruction_count` | Current instruction/work ledger |
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose operable child VM values.
@@ -154,6 +183,7 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_total_vms` | 1000 | Live, not-yet-disposed VMs across the runtime, including the entry VM; disposal releases a slot |
 | `max_descendant_vms` | 1000 | Live descendants throughout a VM's whole subtree, excluding itself; disposal releases a slot |
 | `max_vm_depth` | 8 | VM nesting depth |
+| `max_breakpoints` | 100 | Breakpoint locations retained by the current VM |
 | `max_fs_files` | 1000 | Maximum total VFS file count to which the current VM may grow the world |
 | `max_fs_file_bytes` | 1,048,576 | Maximum UTF-8 file size the current VM may write or copy |
 | `max_fs_storage_bytes` | 67,108,864 | Approximate total VFS storage to which the current VM may grow the world, including text, paths, and directory metadata |

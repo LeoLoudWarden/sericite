@@ -31,6 +31,7 @@ _VM_OPTIONS = {
     "max_total_vms",
     "max_descendant_vms",
     "max_vm_depth",
+    "max_breakpoints",
     "max_fs_files",
     "max_fs_file_bytes",
     "max_fs_storage_bytes",
@@ -55,6 +56,7 @@ class SericiteLimits:
     max_total_vms: int = 1000
     max_descendant_vms: int = 1000
     max_vm_depth: int = 8
+    max_breakpoints: int = 100
     max_fs_files: int = 1000
     max_fs_file_bytes: int = 1_048_576
     max_fs_storage_bytes: int = 67_108_864
@@ -361,6 +363,8 @@ class VMContext:
     state: str = "ready"
     last_line: int | None = None
     error: SericiteError | None = None
+    breakpoints: dict[tuple[int, str | None], None] = field(default_factory=dict)
+    paused_breakpoint: tuple[int, str | None] | None = None
     instruction_count: int = 0
     alloc_bytes: int = 0
     child_count: int = 0
@@ -421,13 +425,23 @@ class VMHandle:
     def snapshot(self) -> dict[str, object]:
         return self._engine._host_snapshot(self._engine._context(self))
 
+    def add_breakpoint(self, line: object, path: object = None) -> None:
+        self._engine._add_breakpoint(self._engine._context(self), line, path)
+
+    def remove_breakpoint(self, line: object, path: object = None) -> None:
+        self._engine._remove_breakpoint(self._engine._context(self), line, path)
+
+    def breakpoints(self) -> list[dict[str, object]]:
+        return self._engine._breakpoints(self._engine._context(self))
+
     def stdout(self) -> str:
         return self._engine._context(self).io.stdout()
 
     def terminate(self) -> None:
         context = self._engine._context(self)
-        if context.state in {"ready", "waiting_input"}:
+        if context.state in {"ready", "waiting_input", "paused"}:
             context.state = "terminated"
+            context.paused_breakpoint = None
 
     def dispose(self) -> None:
         self._engine._dispose(self)

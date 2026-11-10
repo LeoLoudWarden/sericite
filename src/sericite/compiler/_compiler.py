@@ -143,6 +143,9 @@ class _Compiler:
             self.compile_statement(statement, code)
             if len(code.instrs) > first:
                 code.instrs[first].stmt_start = True
+                # These statements may begin with a nested statement or finally cleanup.
+                if not isinstance(statement, (ast.Try, ast.Break, ast.Continue)):
+                    code.instrs[first].line = statement.lineno
 
     def _compile_import_chain(
         self, module: str | None, level: int, code: isa.CodeUnit, line: int

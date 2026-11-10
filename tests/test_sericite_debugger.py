@@ -96,13 +96,24 @@ class SericiteDebuggerDemoTests(unittest.TestCase):
         self.assertIn("after deposit record(balance=140)", output)
         self.assertIn("session ended · error", output)
 
+    def test_native_breakpoint_pauses_lists_and_resumes(self):
+        output = self.run_debugger("x = 1\nx = 2\nprint(x)", "b 3\nb\nc\nb off 3\nc\n")
+        self.assertIn("breakpoint armed · line 3", output)
+        self.assertIn("breakpoint · line 3", output)
+        self.assertIn("state paused", output)
+        self.assertIn("breakpoint hit · line 3", output)
+        self.assertIn("│ x = 1", output)
+        self.assertIn("breakpoint removed · line 3", output)
+        self.assertIn("│ 2", output)
+        self.assertIn("session ended · done", output)
+
     def test_statement_and_instruction_step_have_distinct_granularity(self):
         output = self.run_debugger(CONTRACT_PROGRAM, "\ni\nq\n")
         counts = [int(value) for value in re.findall(r"instructions (\d+)", output)]
         self.assertGreaterEqual(len(counts), 4)
         self.assertGreater(counts[1], counts[0])
         self.assertGreater(counts[2], counts[1])
-        self.assertIn("last 3 → next 2", output)
+        self.assertIn("last 2 → next 2", output)
         self.assertNotIn("Account =", output)
         self.assertIn("session ended · terminated", output)
 

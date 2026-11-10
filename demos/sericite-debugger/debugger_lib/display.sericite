@@ -19,9 +19,10 @@ def line_number(value):
 def print_help():
     print("  Enter  execute one source statement")
     print("  i      execute one internal instruction")
-    print("  c      continue by instruction until a watchpoint or terminal state")
+    print("  c      continue to a breakpoint, watchpoint, input wait, or terminal state")
+    print("  b LINE set a breakpoint; b off LINE removes it; b lists them")
     print("  w NAME watch a local in the current frame; w off disables it")
-    print("  r      run without watchpoints")
+    print("  r      run without watchpoints; breakpoints stay active")
     print("  q      terminate the child VM")
     print("  h      show this help")
 
@@ -70,6 +71,8 @@ def render(snapshot, source_lines, source, watch):
     if watch == "":
         watch = "off"
     print(f"│ target {len(source)} chars · watch {watch}")
+    if snapshot["breakpoint"] != None:
+        print(f"│ breakpoint hit · line {snapshot['breakpoint']['line']}")
     render_source(snapshot, source_lines)
     print(f"├─ {'LOCALS · current frame ':─<67}")
     locals_view = snapshot["locals"]

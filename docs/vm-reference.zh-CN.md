@@ -29,9 +29,9 @@ sub = VM(entry_file="/project/main.sericite", fs=workspace)
 
 ## 3. 状态与生命周期
 
-VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
+VM 状态包括：`ready`、`waiting_input`、`paused`、`done`、`error`、`resource_exhausted`、`terminated`。其中 `paused` 表示语句执行前命中断点，属于可恢复的非终态。
 
-`terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作。仍依附 VFS 的 `done`/`error` 等终态 VM 可以继续接受 `exec` 投递。
+`terminate()` 只把 `ready`、`waiting_input` 或 `paused` 的 VM 标记为 `terminated`；其他状态下是静默空操作。仍依附 VFS 的 `done`/`error` 等终态 VM 可以继续接受 `exec` 投递。
 
 VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环境访问它，它就会保留；因此终态 VM 仍能用于调试快照，并在仍依附 VFS 时接受后续 `exec` 投递。
 
@@ -60,6 +60,9 @@ VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环�
 | `step() -> dict` | 执行一条语句并返回快照 |
 | `step_instruction() -> dict` | 执行一条内部指令并返回快照 |
 | `snapshot() -> dict` | 返回当前安全快照，不推进执行 |
+| `add_breakpoint(line, path=None)` | 添加语句入口行断点；重复添加是空操作 |
+| `remove_breakpoint(line, path=None)` | 删除位置断点；不存在时是空操作 |
+| `breakpoints() -> list` | 按添加顺序返回断点的纯数据位置列表 |
 | `stdout() -> str` | 返回当前 stdout |
 | `terminate()` | 终止 VM；生效状态与空操作语义见第 3 节 |
 | `dispose()` | 强制销毁任意状态的 VM 及其存活后代；见第 3 节 |
@@ -116,9 +119,34 @@ writer：
 `exec(source)` 让 VM 换上新程序但保留它的世界：
 
 - **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；文件系统、模块解析根、输入队列、授予的函数和已导入模块的缓存不受影响。
-- **状态与丢弃规则**：除 `terminated`、已通过 `take_fs()` 分离 VFS，以及正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。
-- **编译原子性**：编译先于任何状态改变完成，编译失败的源码让 VM 保持原样。
+- **状态与丢弃规则**：除 `terminated`、已通过 `take_fs()` 分离 VFS，以及正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始、等待输入或断点暂停）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。断点配置保留，主源码断点按下文规则绑定新投递。
+- **编译原子性**：编译先于任何状态改变完成，编译失败的源码让 VM 保持原样，包括暂停现场与断点绑定。
 - **配额按生命周期累计**：指令、内存与输出消耗跨投递累计，而非按投递计算。
+
+### 断点
+
+持有 VM 句柄的直接控制方可以给目标设置语句入口行断点：
+
+```python
+sub = VM("x = 1\nx += 1\nprint(x)")
+sub.add_breakpoint(2)                 # 当前主源码
+sub.add_breakpoint(5, "/util.sericite")  # 目标 VM 的逻辑文件
+sub.run()                             # 在第 2 行执行前返回
+snapshot = sub.snapshot()             # state == "paused"
+sub.run()                             # 执行第 2 行并继续
+```
+
+`line` 必须是大于 0 的整数；`path` 为 `None` 或经 VFS 规则规范化的逻辑路径。添加和删除都幂等，`breakpoints()` 按添加顺序返回 `{"line": int, "path": str | None}` 纯数据列表。未销毁 VM 在运行、等待、暂停和终态下都可管理断点；数量受 `max_breakpoints` 限制。
+
+断点语义如下：
+
+- 在语句第一条指令执行前进入 `paused`，PC、帧、局部变量和 stdout 留在现场；`run()` 正常返回当前 stdout，不抛异常，不触发 `except/finally`，也不计尚未执行的指令。
+- 从 `paused` 调用 `run()`、`step()` 或 `step_instruction()` 会恢复执行，仅当前断点豁免一次；循环之后回到同一位置仍会命中。语句单步仍保持原有边界，但调用内部的另一个断点可以提前暂停。
+- `path=None` 匹配当前主源码及其函数。成功 `exec()` 后按相同行号绑定新主源码，不命中旧投递留下的函数。
+- 显式 `path` 匹配目标 VM 自己的入口文件和 import 模块。其他 VM 授予的函数即使路径和行号相同，也不会命中目标断点。
+- 只有实际语句入口可断：空行、注释、多行语句的非起始行和不产生指令的 `pass` 不命中；一行多条有指令的语句会分别命中。
+- 暂停不沿创建链传播。子 VM 的 `run()` 返回后，直接父 VM 可以检查和恢复它，也可以继续自己的程序；祖先和宿主不会进入全局暂停。
+- 添加新位置使断点数达到 `max_breakpoints` 上限时，抛出普通可捕获的 `breakpoint_limit_error`，不修改断点表，也不终止调用方或目标。调用方可删除旧位置后重试；真正的 caller 指令或内存耗尽仍为 `resource_exhausted`。
 
 ### 快照
 
@@ -131,6 +159,7 @@ writer：
 | `locals` | 用户可见局部值的安全副本 |
 | `stdout` | 当前输出 |
 | `error` | `kind`、`message`、`line`、`column`、`frames`，无错误时为 `None` |
+| `breakpoint` | 断点暂停时实际命中的 `line`/`path`，否则为 `None` |
 | `instruction_count` | 当前指令与工作量账 |
 
 复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 值。
@@ -154,6 +183,7 @@ writer：
 | `max_total_vms` | 1000 | 整个运行时同时存活且尚未销毁的 VM 数上限，包括入口 VM；销毁后释放槽位 |
 | `max_descendant_vms` | 1000 | 单台 VM 的整棵子树中同时存活的后代数上限，不含自身；销毁后释放槽位 |
 | `max_vm_depth` | 8 | VM 嵌套深度上限 |
+| `max_breakpoints` | 100 | 当前 VM 可同时保存的断点位置数上限 |
 | `max_fs_files` | 1000 | 当前 VM 可扩张到的 VFS 文件总数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 当前 VM 可写入或复制的单文件 UTF-8 字节上限 |
 | `max_fs_storage_bytes` | 67,108,864 | 当前 VM 可扩张到的 VFS 近似总存储量，包含文本、路径与目录元数据 |

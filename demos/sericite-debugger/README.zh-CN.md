@@ -42,6 +42,17 @@ session ended · done
 
 目标的输入通道和外层调试器的命令通道不会混在一起。
 
+## 断点
+
+调试器使用引擎原生断点，在语句执行前暂停目标。行号以面板显示的源码为准，包括第一行显式注入的 `argv`：
+
+```bash
+PROGRAM=$'x = 1\nx = 2\nprint(x)'
+uv run sericite demos/sericite-debugger/debugger.sericite "$PROGRAM"
+```
+
+依次输入 `b 3`、`c`，目标会在 `x = 2` 前进入 `paused`，此时局部变量仍是 `x = 1`。裸 `b` 列出断点，`b off 3` 删除它，再输入 `c` 即可继续到完成。`r` 会忽略 watchpoint，但不会忽略断点。
+
 ## watchpoint 与错误现场
 
 下面的程序在最后一次 record 字段写入时违反运行期契约：
@@ -142,10 +153,13 @@ session ended · done
 |---|---|
 | 回车 | `step()`，执行一条源码语句 |
 | `i` | `step_instruction()`，执行一条内部指令 |
-| `c` | 有 watchpoint：逐指令继续到命中、等待输入或终态；无 watchpoint：直接 `run()` |
+| `c` | 继续到断点、watchpoint、等待输入或终态；有 watchpoint 时逐指令比较，否则直接 `run()` |
+| `b LINE` | 在当前主源码的语句入口添加断点 |
+| `b off LINE` | 删除该主源码位置；不存在时是空操作 |
+| `b` | 按添加顺序列出断点 |
 | `w NAME` | 监视当前帧局部变量；出现、离开帧或值变化都会暂停 |
 | `w off` | 关闭 watchpoint |
-| `r` | 不检查 watchpoint，直接 `run()` |
+| `r` | 不检查 watchpoint，直接 `run()`；断点仍然生效 |
 | `q` | `terminate()` 目标 VM |
 | `h` | 显示帮助 |
 

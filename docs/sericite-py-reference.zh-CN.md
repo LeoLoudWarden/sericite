@@ -65,7 +65,18 @@ engine.create_root(
 
 ## 4. 驱动 VM 与管理 VFS
 
-`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主可以在两段会话之间持有并管理工作区：
+`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主也可以直接设置断点并恢复：
+
+```python
+vm = engine.create_root("x = 1\nx += 1\nprint(x)")
+vm.add_breakpoint(2)
+vm.run()
+assert vm.snapshot()["state"] == "paused"
+assert vm.snapshot()["locals"]["x"] == 1
+assert vm.run() == "2\n"
+```
+
+宿主可以在两段会话之间持有并管理工作区：
 
 ```python
 from sericite import SericiteEngine
@@ -98,8 +109,8 @@ vm.dispose()
 
 宿主侧还有一条特权规则——宿主管理不计入脚本账：
 
-- 直接 `feed_input()`、通过 `VMHandle`/`VFSHandle` 读写文件、查看 stdout 或快照、`dispose()`，不计入脚本的内存账；
-- 文件数、单文件字节、文件总存储量、输出字节等资源自身限制仍然有效；
+- 直接 `feed_input()`、断点管理、通过 `VMHandle`/`VFSHandle` 读写文件、查看 stdout 或快照、`dispose()`，不计入脚本账；
+- 文件数、单文件字节、文件总存储量、输出字节和 `max_breakpoints` 等资源自身限制仍然有效；
 - `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 
 不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**脚本计量模型见[架构说明](architecture.zh-CN.md)第 5 节。
