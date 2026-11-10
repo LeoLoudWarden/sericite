@@ -52,6 +52,98 @@ class TryExceptTests(unittest.TestCase):
                 )
                 self.assertEqual(run(source), expected + "\n")
 
+    def test_file_error_group_catches_each_member(self):
+        cases = (
+            ("", "read_file('/missing.txt')", "file_not_found", None),
+            ("make_dir('/exists')\n", "make_dir('/exists')", "file_exists", None),
+            ("make_dir('/dir')\n", "read_file('/dir')", "is_directory", None),
+            (
+                "write_file('/plain.txt', 'x')\n",
+                "list_dir('/plain.txt')",
+                "not_directory",
+                None,
+            ),
+            (
+                "",
+                "write_file('/limited.txt', 'x')",
+                "file_limit_error",
+                SericiteLimits(max_fs_files=0),
+            ),
+        )
+        for setup, operation, expected, limits in cases:
+            with self.subTest(expected=expected):
+                source = (
+                    setup
+                    + "try:\n"
+                    + f"    {operation}\n"
+                    + "except file_error as e:\n"
+                    + "    print(e.kind)\n"
+                    + "print('alive')"
+                )
+                self.assertEqual(run(source, limits=limits), expected + "\nalive\n")
+
+    def test_lookup_error_group_catches_each_member(self):
+        for operation, expected in (
+            ("[][0]", "index_error"),
+            ("{}['key']", "key_error"),
+        ):
+            with self.subTest(expected=expected):
+                source = (
+                    "try:\n"
+                    f"    value = {operation}\n"
+                    "except lookup_error as e:\n"
+                    "    print(e.kind)"
+                )
+                self.assertEqual(run(source), expected + "\n")
+
+    def test_fixed_groups_mix_with_kinds_and_preserve_handler_order(self):
+        source = (
+            "try:\n"
+            "    read_file('/missing.txt')\n"
+            "except file_not_found:\n"
+            "    print('specific')\n"
+            "except file_error:\n"
+            "    print('wrong')\n"
+            "try:\n"
+            "    value = {}['key']\n"
+            "except (lookup_error, file_error, key_error) as e:\n"
+            "    print(e.kind)\n"
+            "try:\n"
+            "    value = 1 / 0\n"
+            "except (lookup_error, zero_division) as e:\n"
+            "    print(e.kind)"
+        )
+        self.assertEqual(run(source), "specific\nkey_error\nzero_division\n")
+
+    def test_fixed_groups_do_not_catch_non_members(self):
+        for filter_name in ("file_error", "lookup_error"):
+            with self.subTest(filter_name=filter_name):
+                vm = SericiteEngine().create_root(
+                    "try:\n"
+                    "    value = 1 / 0\n"
+                    f"except {filter_name}:\n"
+                    "    print('wrong')"
+                )
+                with self.assertRaises(SericiteError) as caught:
+                    vm.run()
+                self.assertEqual(caught.exception.kind, "zero_division")
+
+    def test_fixed_groups_remain_static_filter_names(self):
+        with self.assertRaises(SericiteError) as caught:
+            SericiteEngine().create_root(
+                "kind = 'file_error'\n"
+                "try:\n"
+                "    pass\n"
+                "except (kind, type_error):\n"
+                "    pass"
+            )
+        self.assertEqual(caught.exception.kind, "syntax_error")
+
+        vm = SericiteEngine().create_root("value = (file_error, lookup_error)")
+        with self.assertRaises(SericiteError) as caught:
+            vm.run()
+        self.assertEqual(caught.exception.kind, "name_error")
+
     def test_wildcard_binds_fixed_error_record(self):
         source = (
             "try:\n"
@@ -191,7 +283,9 @@ class TryExceptTests(unittest.TestCase):
             "conversion_error",
             "ffi_error",
             "file_exists",
+            "file_limit_error",
             "file_not_found",
+            "import_error",
             "index_error",
             "input_error",
             "is_directory",
@@ -210,6 +304,11 @@ class TryExceptTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 SericiteEngine().create_root(
                     f"try:\n    pass\nexcept {kind}:\n    pass\n"
+                )
+        for group_name in ("file_error", "lookup_error"):
+            with self.subTest(group_name=group_name):
+                SericiteEngine().create_root(
+                    f"try:\n    pass\nexcept {group_name}:\n    pass\n"
                 )
 
     def test_uncatchable_except_kinds_rejected_at_compile_time(self):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 
 from .. import isa
-from ..errors import SericiteError
+from ..errors import ERROR_KIND_GROUPS, SericiteError
 from ._rules import _BINARY_OPS, _COMPARE_OPS, _UNARY_OPS
 from ._scopes import _Scope
 from ._stack import _analyze_stack
@@ -511,10 +511,19 @@ class _Compiler:
                 and handler.type.value is Ellipsis
             ):
                 kinds = None
-            elif isinstance(handler.type, ast.Name):
-                kinds = (handler.type.id,)
             else:
-                kinds = tuple(element.id for element in handler.type.elts)
+                filter_names = (
+                    (handler.type.id,)
+                    if isinstance(handler.type, ast.Name)
+                    else tuple(element.id for element in handler.type.elts)
+                )
+                kinds = tuple(
+                    dict.fromkeys(
+                        kind
+                        for name in filter_names
+                        for kind in ERROR_KIND_GROUPS.get(name, (name,))
+                    )
+                )
             handler_labels = self._without_labels(entry_labels, body_assigned)
             if handler.name is not None:
                 handler_labels.pop(handler.name, None)

@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Added
+- 新增固定编译期异常过滤器别名：`file_error` 涵盖 `file_not_found`、`file_exists`、`is_directory`、`not_directory`、`file_limit_error`，`lookup_error` 涵盖 `index_error`、`key_error`；别名可单独使用或与具体 kind 静态混用，不是运行期错误类型，`e.kind` 仍保留实际 kind，动态过滤规则不变。
+
 ### Removed
 - **破坏性变更**：移除目标 VM 的 `max_breakpoints` 断点数量配额及 `breakpoint_limit_error`；断点添加、删除、枚举与命中语义不变，脚本控制方的一般指令与内存配额仍然约束断点管理，不再存在目标专属数量上限。
 

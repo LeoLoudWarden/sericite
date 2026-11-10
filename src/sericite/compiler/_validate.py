@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import ast
 
-from ..errors import CATCHABLE_ERROR_KINDS, UNCATCHABLE_ERROR_KINDS, SericiteError
+from ..errors import (
+    CATCHABLE_ERROR_KINDS,
+    ERROR_KIND_GROUPS,
+    UNCATCHABLE_ERROR_KINDS,
+    SericiteError,
+)
 from ._rules import _ALLOWED_NODES, _CONTRACT_ONLY_NAMES, RESERVED_NAMES
 
 _UNSUPPORTED_MESSAGES = {
@@ -266,7 +271,10 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         f"error kind '{kind_node.id}' is not catchable; "
                         "it cannot be caught even by a bare 'except:'",
                     )
-                if kind_node.id not in CATCHABLE_ERROR_KINDS:
+                if (
+                    kind_node.id not in CATCHABLE_ERROR_KINDS
+                    and kind_node.id not in ERROR_KIND_GROUPS
+                ):
                     _reject(
                         kind_node,
                         filename,

@@ -45,6 +45,18 @@ CATCHABLE_ERROR_KINDS = frozenset(
 # compiler consume the finer-grained subsets above.
 ERROR_KINDS = CATCHABLE_ERROR_KINDS | UNCATCHABLE_ERROR_KINDS
 
+# Compile-time except-filter aliases; these names are never runtime error kinds.
+ERROR_KIND_GROUPS = {
+    "file_error": (
+        "file_not_found",
+        "file_exists",
+        "is_directory",
+        "not_directory",
+        "file_limit_error",
+    ),
+    "lookup_error": ("index_error", "key_error"),
+}
+
 
 class SericiteError(Exception):
     def __init__(
