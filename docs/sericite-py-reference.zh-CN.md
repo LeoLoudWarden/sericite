@@ -68,6 +68,9 @@ engine.create_root(
 `VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主也可以直接设置断点并恢复：
 
 ```python
+from sericite import SericiteEngine
+
+engine = SericiteEngine()
 vm = engine.create_root("x = 1\nx += 1\nprint(x)")
 vm.add_breakpoint(2)
 vm.run()

@@ -9,7 +9,7 @@
 
 ### Added
 - VM 句柄新增语句入口行断点：宿主与脚本直接控制方可按当前主源码或逻辑文件路径添加、幂等删除和枚举位置；目标在指令执行前进入可恢复的 `paused`，快照保留命中位置与局部现场。
-- 断点支持函数、import、循环与 `exec()` 重绑定，按 `origin_vm` 隔离外来代码；新增 `max_breakpoints` 结构配额，脚本侧管理按直接控制方计量，数量上限以普通可捕获的 `breakpoint_limit_error` 原子拒绝。
+- 断点支持函数、import、循环与 `exec()` 重绑定，不会误命中其他 VM 授予的外来代码；新增 `max_breakpoints` 结构配额，脚本侧管理按直接控制方计量，试图超过数量上限时以普通可捕获的 `breakpoint_limit_error` 原子拒绝。
 - `sericite-debugger` 新增原生断点命令，并与既有单步、watchpoint、输入等待和递归自调试共存。
 
 ## [0.16.1] - 2026-11-10

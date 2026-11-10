@@ -8,7 +8,7 @@ This document is for **readers who need to create and drive child VMs inside Ser
 
 A VM is a mutually isolated execution session: it cannot see its parent's variables, files, or handles, and cannot tell how deeply it is nested. Every session has its own module scope and cache, input queue, stdout, and cumulative execution ledger. Its attached VFS is an exclusively owned file world. The isolation promises are in the [security model](security.md) §2.
 
-A VM is not single-use: the same session can be fed input, single-stepped by statement or instruction, snapshotted, receive new source through `exec()`, or be terminated. `run()`, `step()`, and repeated `exec()` do not start another session; create another VM when fresh variables, module caches, and execution ledgers are required.
+A VM is not single-use: the same session can be fed input, given line breakpoints, single-stepped by statement or instruction, snapshotted, receive new source through `exec()`, or be terminated. `run()`, `step()`, and repeated `exec()` do not start another session; create another VM when fresh variables, module caches, and execution ledgers are required.
 
 ## 2. Creating VMs and transferring VFSs
 
@@ -29,7 +29,7 @@ A new VM has a blank VFS by default. `fs` accepts only a detached handle returne
 
 ## 3. States and lifecycle
 
-VM states are `ready`, `waiting_input`, `paused`, `done`, `error`, `resource_exhausted`, and `terminated`. `paused` is a recoverable, nonterminal state entered before a statement hits a breakpoint.
+VM states are `ready`, `waiting_input`, `paused`, `done`, `error`, `resource_exhausted`, and `terminated`. `paused` is a recoverable, nonterminal state entered when a breakpoint is hit, before the target statement executes.
 
 `terminate()` marks a `ready`, `waiting_input`, or `paused` VM as `terminated`; in any other state it is a silent no-op. Terminal VMs such as `done`/`error` can continue to accept `exec` deliveries while their VFS remains attached.
 
@@ -136,17 +136,17 @@ snapshot = sub.snapshot()                # state == "paused"
 sub.run()                                # executes line 2 and continues
 ```
 
-`line` must be a positive integer; `path` is `None` or a logical path normalized under VFS rules. Addition and removal are idempotent. `breakpoints()` returns pure-data `{"line": int, "path": str | None}` entries in insertion order. Breakpoints can be managed in running, waiting, paused, and terminal states as long as the VM has not been disposed; `max_breakpoints` bounds their count.
+`line` must be a positive integer; `path` is `None` or a logical path normalized under VFS rules. Addition and removal are idempotent. `breakpoints()` returns pure-data `{"line": int, "path": str | None}` entries in insertion order. Breakpoints can be managed as long as the VM has not been disposed; `max_breakpoints` bounds their count.
 
 Breakpoint semantics are:
 
+- Only actual statement entries are breakable: blank lines, comments, non-start lines of multiline statements, and `pass` (which emits no instruction) do not hit. Multiple instruction-producing statements on one line hit separately.
 - The VM enters `paused` before the statement's first instruction, preserving its PC, frames, locals, and stdout. `run()` returns current stdout normally; no exception or `except/finally` runs, and the unexecuted instruction is not charged.
 - Calling `run()`, `step()`, or `step_instruction()` from `paused` resumes with a one-time exemption for the current breakpoint. A later loop iteration hits it again. Statement stepping keeps its existing boundary, but another breakpoint inside a call can interrupt it.
 - `path=None` matches the current main source and its functions. After successful `exec()`, it binds by line to the new main source and does not hit functions left by older deliveries.
 - An explicit `path` matches the target VM's own entry file and imported modules. Granted code defined by another VM never hits the target's breakpoints, even at the same path and line.
-- Only actual statement entries are breakable: blank lines, comments, non-start lines of multiline statements, and `pass` (which emits no instruction) do not hit. Multiple instruction-producing statements on one line hit separately.
 - Pausing does not propagate through the creation chain. When the child's `run()` returns, its direct parent may inspect and resume it or continue its own program; ancestors and the host enter no global pause.
-- Adding a new location beyond `max_breakpoints` raises the ordinary catchable `breakpoint_limit_error` without modifying the table or terminating caller or target. The controller may remove an old location and retry; actual caller instruction or memory exhaustion remains `resource_exhausted`.
+- When the current count has reached `max_breakpoints`, adding another new location raises the ordinary catchable `breakpoint_limit_error` without modifying the table or terminating caller or target. The controller may remove an old location and retry.
 
 ### Snapshots
 
