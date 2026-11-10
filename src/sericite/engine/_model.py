@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import weakref
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -238,6 +239,19 @@ class _NativeFunction:
     work: Callable[..., int]
     allocation: Callable[..., int | AllocationPermit]
     needs_caller: bool = False
+    _signatures: tuple[inspect.Signature, ...] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "_signatures",
+            tuple(
+                inspect.signature(callback)
+                for callback in (self.work, self.allocation, self.execute)
+            ),
+        )
 
     def __repr__(self) -> str:
         return f"<function {self.name}>"

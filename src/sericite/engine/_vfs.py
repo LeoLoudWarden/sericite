@@ -180,8 +180,14 @@ class _EngineVFS:
                     "list size limit exceeded", kind="resource_exhausted"
                 )
             result = fs.list_dir(path)
+        elif (
+            attr in {"read_file", "delete_file", "delete_dir", "path_exists"}
+            and path_signature
+        ):
+            path = args[0] if args else kwargs["path"]
+            result = getattr(self._detached_vfs(handle), attr)(path)
         else:
-            result = getattr(handle, attr)(*args, **kwargs)
+            raise SericiteError(f"invalid arguments for VFS.{attr}", kind="type_error")
         if result is not None:
             _estimate_size(result, meter=result_meter)
         return result
