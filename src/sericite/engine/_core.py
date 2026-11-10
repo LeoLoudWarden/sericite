@@ -1142,11 +1142,20 @@ class _EngineCore:
             ):
                 home = None
             contexts = (context,) if home is None else (context, home)
-            if function.needs_caller:
-                kwargs["_caller_context"] = context
-                kwargs["_caller_meter"] = self._meter(context)
+            caller_meter = self._meter(context) if function.needs_caller else None
             try:
                 with self._causal_meter(*contexts) as meter:
+                    meter.work(len(function._signatures) + len(args) + len(kwargs))
+                    try:
+                        for signature in function._signatures:
+                            signature.bind(*args, **kwargs)
+                    except TypeError:
+                        raise SericiteError(
+                            f"invalid arguments for {function.name}", kind="type_error"
+                        ) from None
+                    if function.needs_caller:
+                        kwargs["_caller_context"] = context
+                        kwargs["_caller_meter"] = caller_meter
                     meter.work(function.work(*args, **kwargs))
                     allocation = function.allocation(*args, **kwargs)
                     if isinstance(allocation, AllocationPermit):
@@ -1173,10 +1182,6 @@ class _EngineCore:
                     )
                     self._fail(home, error, line)
                 raise
-            except TypeError:
-                raise SericiteError(
-                    f"invalid arguments for {function.name}", kind="type_error"
-                ) from None
             del stack[base - 1 :]
             frame.pc += 1
             stack.append(result)

@@ -146,8 +146,12 @@ class _EngineHostDebug:
             result = self._step(handle, meter=meter)
         elif not args and not kwargs and attr == "step_instruction":
             result = self._step_instruction(handle, meter=meter)
+        elif not args and not kwargs and attr == "stdout":
+            result = handle.stdout()
+        elif not args and not kwargs and attr == "terminate":
+            result = handle.terminate()
         else:
-            result = getattr(handle, attr)(*args, **kwargs)
+            raise SericiteError(f"invalid arguments for VM.{attr}", kind="type_error")
         if attr != "take_fs":
             _estimate_size(result, meter=result_meter)
         return result

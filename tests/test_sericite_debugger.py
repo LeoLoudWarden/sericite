@@ -100,7 +100,6 @@ class SericiteDebuggerDemoTests(unittest.TestCase):
         output = self.run_debugger(CONTRACT_PROGRAM, "\ni\nq\n")
         counts = [int(value) for value in re.findall(r"instructions (\d+)", output)]
         self.assertGreaterEqual(len(counts), 4)
-        self.assertEqual(counts[0], 0)
         self.assertGreater(counts[1], counts[0])
         self.assertGreater(counts[2], counts[1])
         self.assertIn("last 3 → next 2", output)

@@ -2,6 +2,7 @@ import gc
 import unittest
 import weakref
 from dataclasses import replace
+from unittest.mock import patch
 
 from sericite import (
     SericiteEngine,
@@ -506,6 +507,78 @@ class SnapshotViewTests(unittest.TestCase):
                     [(frame.function, frame.line) for frame in ctx.exception.frames],
                     [("<module>", 1)],
                 )
+
+    def test_native_argument_errors_remain_catchable(self):
+        cases = (
+            ("", "len()"),
+            ("", "len(1, 2)"),
+            ("", "len(value=1)"),
+            ("", "read_file()"),
+            ("", "write_file('/x')"),
+            ("sub = VM('')\n", "sub.stdout(1)"),
+            ("sub = VM('')\n", "sub.terminate(value=1)"),
+            ("sub = VM('')\n", "sub.snapshot(1)"),
+            ("fs = VFS()\n", "fs.read_file()"),
+            ("fs = VFS()\n", "fs.path_exists('/', ignored=1)"),
+        )
+        for setup, call in cases:
+            with self.subTest(call=call):
+                vm = SericiteEngine().create_root(
+                    setup
+                    + "try:\n"
+                    + f"    {call}\n"
+                    + "except type_error as e:\n"
+                    + "    print(e.kind)\n"
+                )
+                self.assertEqual(vm.run(), "type_error\n")
+
+    def test_native_argument_binding_is_charged_on_failure(self):
+        for arguments, expected in (("", 6), ("1, 2", 10)):
+            with self.subTest(arguments=arguments):
+                vm = SericiteEngine().create_root(f"len({arguments})")
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "type_error")
+                self.assertEqual(vm.snapshot()["instruction_count"], expected)
+
+    def test_native_argument_binding_requires_budget_before_validation(self):
+        cases = ((4, "resource_exhausted", 3), (6, "type_error", 6))
+        for limit, expected_kind, expected_count in cases:
+            with self.subTest(limit=limit):
+                vm = SericiteEngine(SericiteLimits(max_instructions=limit)).create_root(
+                    "len()"
+                )
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, expected_kind)
+                self.assertEqual(vm.snapshot()["instruction_count"], expected_count)
+
+    def test_native_internal_type_errors_are_uncatchable_internal_errors(self):
+        def fail():
+            raise TypeError("internal bug")
+
+        callbacks = {
+            "work": lambda *args, **kwargs: fail(),
+            "allocation": lambda *args, **kwargs: fail(),
+            "execute": lambda value: fail(),
+        }
+        for stage, callback in callbacks.items():
+            with self.subTest(stage=stage):
+                engine = SericiteEngine()
+                vm = engine.create_root(
+                    "try:\n    len(1)\nexcept ...:\n    print('caught')\n"
+                )
+                native = engine._builtin(engine._context(vm), "len")
+                faulty = replace(native, **{stage: callback})
+                with (
+                    patch.object(engine, "_builtin", return_value=faulty),
+                    self.assertRaises(SericiteError) as ctx,
+                ):
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "internal_error")
+                self.assertEqual(ctx.exception.message, "internal runtime error")
+                self.assertEqual(vm.snapshot()["state"], "error")
+                self.assertEqual(vm.stdout(), "")
 
     def test_trace_capture_preserves_internal_error_on_quota_failure(self):
         engine = SericiteEngine(limits=SericiteLimits(max_total_bytes=0))

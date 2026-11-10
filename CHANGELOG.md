@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-10
+
+### Fixed
+- native 调用现在先校验参数绑定，绑定及其失败路径按参数规模纳入因果计量；work、allocation 或具体实现内部意外抛出的 `TypeError` 不再被误报为可捕获的 `type_error`，而是按不可捕获的 `internal_error` 失败。普通内建及 VM/VFS 方法的参数错误契约不变。
+
 ## [0.16.0] - 2026-11-10
 
 ### Added
