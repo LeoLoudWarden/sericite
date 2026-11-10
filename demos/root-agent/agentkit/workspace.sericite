@@ -1,0 +1,100 @@
+from . import display
+
+RUN_INSTRUCTION_LIMIT = 2000000
+RUN_OUTPUT_LIMIT = 1048576
+
+
+def norm_path(path):
+    if not path or path == ".":
+        return "/"
+    if path[0] != "/":
+        path = f"/{path}"
+    return path
+
+
+def join_path(prefix, name):
+    return f"{prefix.rstrip('/')}/{name}"
+
+
+def seed_tree(fs, source="/workspace", target="/"):
+    if target != "/":
+        fs.make_dir(target)
+    for name in list_dir(source):
+        source_path = join_path(source, name)
+        target_path = join_path(target, name)
+        try:
+            text = read_file(source_path)
+        except is_directory:
+            seed_tree(fs, source_path, target_path)
+        else:
+            fs.write_file(target_path, text)
+
+
+def create():
+    fs = VFS()
+    seed_tree(fs)
+    return {"fs": fs}
+
+
+def read(state, path):
+    path = norm_path(path)
+    try:
+        return state["fs"].read_file(path)
+    except file_not_found:
+        return f"(no such file: {path})"
+    except is_directory:
+        return f"(not a file: {path})"
+
+
+def write(state, path, content):
+    path = norm_path(path)
+    try:
+        state["fs"].write_file(path, content)
+    except ... as e:
+        return f"({e.kind}: {e.message})"
+    return "(written)"
+
+
+def listing(state, path):
+    path = norm_path(path)
+    try:
+        return "\n".join(state["fs"].list_dir(path)) or "(empty)"
+    except file_not_found:
+        return f"(no such file: {path})"
+    except not_directory:
+        return f"(not a directory: {path})"
+
+
+def run_path(state, path):
+    path = norm_path(path)
+    display.begin_run(display.config["vm_label"])
+    run = None
+    try:
+        source = state["fs"].read_file(path)
+        run = VM(
+            source,
+            fs=state["fs"],
+            functions={"llm_chat": llm_chat, "http_get": http_get},
+            max_instructions=RUN_INSTRUCTION_LIMIT,
+            max_output_bytes=RUN_OUTPUT_LIMIT,
+            output_writer=display.write_live,
+        )
+        output = run.run()
+    except ... as e:
+        display.finish_run()
+        result = f"({e.kind}: {e.message})"
+    else:
+        display.finish_run()
+        if not output:
+            result = "(no output)"
+        elif len(output) > display.MAX_RESULT_CHARS:
+            result = display.truncate_output(output)
+        else:
+            result = output
+    finally:
+        if run != None:
+            if run.snapshot()["state"] == "waiting_input":
+                run.terminate()
+            state["fs"] = run.take_fs()
+            run.dispose()
+    return result

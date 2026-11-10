@@ -1,0 +1,126 @@
+from . import display
+from . import workspace
+
+MAX_ROUNDS = 30
+
+
+def tool(name, description, properties, required):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        },
+    }
+
+
+def tool_definitions():
+    return [
+        tool(
+            "file_read",
+            "读取当前工作区中的一个文本文件。",
+            {"path": {"type": "string", "description": "工作区文件路径"}},
+            ["path"],
+        ),
+        tool(
+            "file_write",
+            "向当前工作区写入一个文本文件（覆盖）。",
+            {
+                "path": {"type": "string", "description": "工作区文件路径"},
+                "content": {"type": "string", "description": "完整文本内容"},
+            },
+            ["path", "content"],
+        ),
+        tool(
+            "file_list",
+            "列出当前工作区中的一个目录。",
+            {"path": {"type": "string", "description": "工作区目录路径"}},
+            ["path"],
+        ),
+        tool(
+            "run",
+            "运行工作区中的 Sericite 入口文件；每次执行使用新环境，文件保留。",
+            {"path": {"type": "string", "description": "入口文件路径"}},
+            ["path"],
+        ),
+    ]
+
+
+def dispatch(name, args, fs):
+    if name == "file_read":
+        return workspace.read(fs, args.get("path", ""))
+    if name == "file_write":
+        return workspace.write(fs, args.get("path", ""), args.get("content", ""))
+    if name == "file_list":
+        return workspace.listing(fs, args.get("path", "/"))
+    if name == "run":
+        return workspace.run_path(fs, args.get("path", ""))
+    return f"(unknown tool: {name})"
+
+
+def tool_summary(name, args):
+    path = workspace.norm_path(args.get("path", ""))
+    if name == "file_write":
+        return f"{name} {path} · {len(args.get('content', ''))} chars"
+    return f"{name} {path}"
+
+
+def print_tool_result(controller, name, result):
+    if result[:1] == "(":
+        display.print_tagged(controller, "root", f"↳ {result}")
+    elif name == "file_read":
+        display.print_tagged(
+            controller, "root", f"↳ {len(result)} chars · full result sent to model"
+        )
+    elif name == "file_list":
+        display.print_tagged(
+            controller, "root", f"↳ {len(result.splitlines())} entries"
+        )
+
+
+def run_session(prompt, task, fs, controller, title):
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": task},
+    ]
+    tools = tool_definitions()
+    final = "(达到最大轮数)"
+    rounds = 0
+    while rounds < MAX_ROUNDS:
+        print()
+        display.print_tagged("ROUND", "round", f"{title} {rounds + 1}")
+        resp = llm_chat({"messages": messages, "tools": tools})
+        messages.append(resp["assistant_message"])
+        calls = resp["tool_calls"]
+        if len(calls) == 0:
+            final = resp["content"]
+            break
+        if resp["content"]:
+            display.print_tagged("MODEL", "model", resp["content"])
+        for call in calls:
+            call_args = call["args"]
+            if display.config["verbose"]:
+                display.print_tagged(controller, "root", call["name"])
+                for key in call_args.keys():
+                    display.print_tagged(
+                        controller, "root", f"arg {key} = {call_args[key]!r}"
+                    )
+            else:
+                display.print_tagged(
+                    controller, "root", tool_summary(call["name"], call_args)
+                )
+            result = dispatch(call["name"], call_args, fs)
+            if display.config["verbose"]:
+                display.print_tagged(controller, "root", f"result = {result!r}")
+            else:
+                print_tool_result(controller, call["name"], result)
+            messages.append(
+                {"role": "tool", "tool_call_id": call["id"], "content": result}
+            )
+        rounds = rounds + 1
+    return final

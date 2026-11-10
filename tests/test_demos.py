@@ -71,16 +71,22 @@ class RootAgentDemoTests(unittest.TestCase):
         self.assertIn("内层练习: 写读文件", result.stdout)
         self.assertIn("来自最内层 VM 的笔记", result.stdout)
         self.assertIn("内层最终回答: 内层练习完成", result.stdout)
+        self.assertIn("[内层工具] run", result.stdout)
         self.assertIn("FINAL   │ 外层收尾", result.stdout)
         self.assertNotIn("# Sericite 语言参考", result.stdout)
         self.assertNotIn("/control", result.stdout)
         self.assertEqual(result.stdout.count("外层练习: fib"), 1)
         self.assertEqual(result.stdout.count("(syntax_error:"), 1)
+        self.assertEqual(result.stdout.count("module v1"), 1)
+        self.assertEqual(result.stdout.count("module v2"), 1)
+        self.assertEqual(result.stdout.count("inner module"), 1)
+        self.assertIn("ROOT    │ file_read /failure_note.txt", result.stdout)
+        self.assertIn("ROOT    │ ↳ 8 chars · full result sent to model", result.stdout)
         self.assertEqual(
             result.stdout.count("外层收尾：练习完成，内层会话也跑完了。"), 1
         )
-        self.assertEqual(self.mock.Handler.outer_turn, 5)
-        self.assertEqual(self.mock.Handler.inner_turn, 2)
+        self.assertEqual(self.mock.Handler.outer_turn, 8)
+        self.assertEqual(self.mock.Handler.inner_turn, 3)
 
     def test_large_live_output_is_folded(self):
         payload = "\n".join(f"line {i}: " + "x" * 300 for i in range(40))
@@ -92,7 +98,7 @@ class RootAgentDemoTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn("ROOT    │ ↳ output truncated · ", result.stdout)
-        self.assertIn("suggested write_file + file_read", result.stdout)
+        self.assertIn("suggested file_write + file_read", result.stdout)
         self.assertIn("VM 1    │ line 0:", result.stdout)
         self.assertIn("VM 1    │ line 39:", result.stdout)
         self.assertNotIn("VM 1    │ line 25:", result.stdout)
@@ -115,14 +121,14 @@ class RootAgentDemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("display folded", result.stdout)
         self.assertIn("VM 1    │ line 25:", result.stdout)
-        self.assertIn("ROOT    │ arg code = ", result.stdout)
+        self.assertIn("ROOT    │ arg content = ", result.stdout)
         self.assertIn("[提示：本次输出共 ", result.stdout)
         self.assertIn("再使用 file_read 工具读取。", result.stdout)
 
     def test_repeated_truncation_returns_stronger_advice(self):
         payload = "\n".join(f"line {i}: " + "x" * 300 for i in range(40))
         self.mock.PRACTICE_CODE = f'print("""{payload}""")'
-        self.mock.INNER_PRACTICE_CODE = f'print("""{payload}""")'
+        self.mock.MODULE_MAIN = self.mock.PRACTICE_CODE
         result = self.run_agent("--verbose")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("[提示：本次输出共 ", result.stdout)

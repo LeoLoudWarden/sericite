@@ -1,0 +1,72 @@
+def new_state():
+    return {
+        "watch": "",
+        "watch_hit": False,
+        "before_present": False,
+        "after_present": False,
+        "before_value": None,
+        "after_value": None,
+    }
+
+
+def note_watch(state, before, after):
+    state["watch_hit"] = False
+    name = state["watch"]
+    if name == "":
+        return
+    before_present = name in before["locals"]
+    after_present = name in after["locals"]
+    before_value = before["locals"].get(name)
+    after_value = after["locals"].get(name)
+    changed = False
+    if before_present != after_present:
+        changed = True
+    elif before_present:
+        if before_value != after_value:
+            changed = True
+    if changed:
+        state["watch_hit"] = True
+        state["before_present"] = before_present
+        state["after_present"] = after_present
+        state["before_value"] = before_value
+        state["after_value"] = after_value
+
+
+def step_statement(sub, state):
+    before = sub.snapshot()
+    snapshot = sub.step()
+    note_watch(state, before, snapshot)
+    return snapshot
+
+
+def step_instruction(sub, state):
+    before = sub.snapshot()
+    snapshot = sub.step_instruction()
+    note_watch(state, before, snapshot)
+    return snapshot
+
+
+def continue_to_watchpoint(sub, state):
+    if state["watch"] == "":
+        return run_without_watchpoints(sub, state)
+    snapshot = sub.snapshot()
+    while snapshot["state"] == "ready":
+        before = snapshot
+        try:
+            snapshot = sub.step_instruction()
+        except ...:
+            snapshot = sub.snapshot()
+            break
+        note_watch(state, before, snapshot)
+        if state["watch_hit"]:
+            break
+    return snapshot
+
+
+def run_without_watchpoints(sub, state):
+    state["watch_hit"] = False
+    try:
+        sub.run()
+    except ...:
+        pass
+    return sub.snapshot()

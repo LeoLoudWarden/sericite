@@ -134,6 +134,8 @@ session ended · done
 
 The outer debugger can inspect the inner one's safe snapshot, but cannot reach through it to obtain the innermost VM handle. Control can recurse while visibility boundaries remain; see the [VM reference](../../docs/vm-reference.md) §4 for why snapshots do not carry child VM handles.
 
+Every target VM receives an isolated copy of the `debugger_lib` helper modules. The source-only inner entry can therefore resolve its imports and repeat D(D(P)) without a host-filesystem mapping.
+
 ## Commands
 
 | Input | Action |
@@ -155,9 +157,11 @@ The current snapshot API does not expose opcode names or operands, so `i` shows 
 
 ## Files and dependencies
 
-- `debugger.sericite`: the only program file, containing the input protocol, watchpoints, VM driving, and rendering.
+- `debugger.sericite`: input protocol, target VFS, command loop, and VM lifecycle.
+- `debugger_lib/display.sericite`: source window, snapshot panel, and watchpoint presentation.
+- `debugger_lib/session.sericite`: watchpoint state and statement/instruction driving.
 - `tests/test_sericite_debugger.py`: real CLI tests, including the complete D(D(P)) chain.
 
-The demo needs no Python capabilities, target-file directory, network, LLM, or third-party dependency.
+The demo needs no Python capabilities, host target-file directory, network, LLM, or third-party dependency.
 
 Shell variables in the commands only place source text into argv; they do not participate in executing Sericite code.

@@ -134,6 +134,8 @@ session ended · done
 
 外层能观察内层的安全快照，但不能越过内层取得最内层 VM 的句柄。控制可以递归，可见性仍有边界；快照为什么不携带子 VM 句柄，见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
 
+每台目标 VM 都获得一份隔离的 `debugger_lib` 辅助模块副本。因此即使内层调试器只以源码字符串进入目标，它的 import 仍能解析，D(D(P)) 不需要宿主文件映射。
+
 ## 命令
 
 | 输入 | 行为 |
@@ -155,9 +157,11 @@ session ended · done
 
 ## 文件与依赖
 
-- `debugger.sericite`：唯一程序文件，包含输入协议、watchpoint、VM 驱动和面板。
+- `debugger.sericite`：输入协议、目标 VFS、命令循环与 VM 生命周期。
+- `debugger_lib/display.sericite`：源码窗口、快照面板与 watchpoint 展示。
+- `debugger_lib/session.sericite`：watchpoint 状态和语句/指令驱动。
 - `tests/test_sericite_debugger.py`：真实 CLI 测试，包括完整的 D(D(P)) 链路。
 
-demo 不需要 Python capabilities、目标文件目录、网络、LLM 或第三方依赖。
+demo 不需要 Python capabilities、宿主目标文件目录、网络、LLM 或第三方依赖。
 
 命令行中的 shell 变量只负责把源码文本放进 argv，不参与 Sericite 程序的执行。

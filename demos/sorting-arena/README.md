@@ -59,7 +59,7 @@ Three normal sorting algorithms in `entries/` are ranked only if they pass every
 
 ## How Python randomness reaches the judge
 
-Sericite has no built-in random number generator. `capabilities.py` wraps Python's `random.randrange(below)` as `random_int(below)` and explicitly grants it to the root judge through `functions`. On every startup, `arena.sericite` builds four problem types, each with 24 integers:
+Sericite has no built-in random number generator. `capabilities.py` wraps Python's `random.randrange(below)` as `random_int(below)` and explicitly grants it to the root judge through `functions`. On every startup, `arena_lib/cases.sericite` builds four problem types, each with 24 integers:
 
 - `mixed`: random integers from 0 to 99;
 - `reversed`: random integers, sorted and then reversed;
@@ -70,7 +70,7 @@ Sericite has no built-in random number generator. `capabilities.py` wraps Python
 
 Only root receives `random_int`; entry VMs are created without `functions`, so contestants cannot call it. See the [VM reference](../../docs/vm-reference.md) §6 for why grants do not cross VM layers automatically.
 
-The main per-case limits are (see `run_case()` in `arena.sericite` for the full set, and the [VM reference](../../docs/vm-reference.md) §5 for field semantics):
+The main per-case limits are (see `run_case()` in `arena_lib/judge.sericite` for the full set, and the [VM reference](../../docs/vm-reference.md) §5 for field semantics):
 
 | Limit | Value | Role in this demo |
 |---|---:|---|
@@ -86,11 +86,13 @@ Drop another `.sericite` file into `entries/`, for example `10-my-sort.sericite`
 
 Startup seeds entries in filename order; the judge removes the first three characters and the extension for display. A three-digit prefix is therefore a convenient way to control running order.
 
-Neither `capabilities.py` nor `arena.sericite` needs to change. Try a faster algorithm or a new troublemaker and watch the judge finish the tournament.
+Neither `capabilities.py` nor the judge modules need to change. Try a faster algorithm or a new troublemaker and watch the judge finish the tournament.
 
 ## Files and trust boundaries
 
-- `arena.sericite`: all application logic—test data, reference answers, VM lifecycle, correctness checks, scoring, and the scoreboard.
+- `arena.sericite`: short application entry for tournament flow, correctness checks, scoring, and the scoreboard.
+- `arena_lib/cases.sericite`: test data, reference sorting, and expected answers.
+- `arena_lib/judge.sericite`: per-entry VM quotas, lifecycle, and failure classification.
 - `capabilities.py`: a thin trusted startup layer. It reads `entries/*.sericite` from this directory, places them in the root VFS as **text**, grants `random_int` to root, and raises the trusted root's total instruction budget. It never executes an entry.
 - `entries/`: simulated submissions from an untrusted source, including valid algorithms and deliberately disruptive programs.
 
