@@ -4,6 +4,7 @@ import weakref
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 
 from .. import isa
 from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
@@ -112,11 +113,20 @@ class _EngineCore:
 
     def _dispatch_event(self, event: SericiteEvent) -> None:
         for observation in tuple(self._observations):
-            if event.sequence < observation._start_sequence:
+            if observation._closed or event.sequence < observation._start_sequence:
                 continue
             self._observation_depth += 1
             try:
-                observation._sink(event)
+                observation._sink(
+                    SericiteEvent(
+                        event.sequence,
+                        event.kind,
+                        event.vm_id,
+                        event.parent_id,
+                        event.depth,
+                        deepcopy(event.data),
+                    )
+                )
             except Exception as exc:  # noqa: BLE001 — observer failure is isolated from the VM
                 observation._fail(exc)
             finally:
@@ -770,13 +780,13 @@ class _EngineCore:
         )
         if breakpoint is not None:
             line, path = breakpoint
+            context.paused_breakpoint = breakpoint
             self._set_state(
                 context,
                 "paused",
                 reason="breakpoint",
                 breakpoint={"line": line, "path": path},
             )
-            context.paused_breakpoint = breakpoint
             return False
         self._sync_active_errors(frame)
         try:

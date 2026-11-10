@@ -281,6 +281,99 @@ class ObservationIsolationTests(unittest.TestCase):
         )
         good.close()
 
+    def test_unprintable_sink_failure_is_contained_on_all_delivery_paths(self):
+        class UnprintableError(RuntimeError):
+            def __str__(self):
+                raise ValueError("cannot format")
+
+        created_engine = SericiteEngine()
+
+        def fail_created(event):
+            if event.kind == "vm.created":
+                raise UnprintableError
+
+        created = created_engine.observe(fail_created)
+        root = created_engine.create_root("print('after')")
+        self.assertEqual(root.run(), "after\n")
+        self.assertEqual(root.snapshot()["state"], "done")
+        self.assertTrue(created.closed)
+        self.assertTrue(created.failed)
+        self.assertEqual(created.failure, "UnprintableError")
+
+        output_engine = SericiteEngine()
+
+        def fail_output(event):
+            if event.kind == "vm.output":
+                raise UnprintableError
+
+        output = output_engine.observe(fail_output)
+        root = output_engine.create_root("print('first')\nprint('second')")
+        self.assertEqual(root.run(), "first\nsecond\n")
+        self.assertEqual(root.snapshot()["state"], "done")
+        self.assertTrue(output.closed)
+        self.assertEqual(output.failure, "UnprintableError")
+
+        gc_engine = SericiteEngine()
+
+        def fail_gc(event):
+            if event.kind == "vm.disposed":
+                raise UnprintableError
+
+        collected = gc_engine.observe(fail_gc)
+        root = gc_engine.create_root("def make():\n    sub = VM('')\nmake()")
+        root.run()
+        gc.collect()
+        collected.poll()
+        self.assertEqual(root.snapshot()["state"], "done")
+        self.assertTrue(collected.closed)
+        self.assertTrue(collected.failed)
+        self.assertEqual(collected.failure, "UnprintableError")
+
+    def test_closing_another_observer_stops_current_delivery(self):
+        engine = SericiteEngine()
+        first_events = []
+        second_events = []
+        second = None
+
+        def close_second(event):
+            first_events.append(event)
+            second.close()
+
+        first = engine.observe(close_second)
+        second = engine.observe(second_events.append)
+        engine.create_root("print('x')")
+        self.assertTrue(second.closed)
+        self.assertEqual(second_events, [])
+        self.assertEqual([event.kind for event in first_events], ["vm.created"])
+        first.close()
+
+    def test_event_data_is_independent_between_observers(self):
+        engine = SericiteEngine()
+        second_events = []
+
+        def forge(event):
+            if event.kind == "vm.output":
+                event.data["text"] = "forged"
+            elif event.data.get("new_state") == "paused":
+                event.data["breakpoint"]["line"] = 99
+
+        first = engine.observe(forge)
+        second = engine.observe(second_events.append)
+        root = engine.create_root("x = 1\nprint('real')")
+        root.add_breakpoint(2)
+        root.run()
+        self.assertEqual(root.stdout(), "")
+        paused = [
+            event for event in second_events if event.data.get("new_state") == "paused"
+        ]
+        self.assertEqual(paused[0].data["breakpoint"]["line"], 2)
+        root.run()
+        self.assertEqual(root.stdout(), "real\n")
+        output = [event for event in second_events if event.kind == "vm.output"]
+        self.assertEqual(output[0].data["text"], "real\n")
+        first.close()
+        second.close()
+
     def test_base_exception_from_sink_propagates_to_host(self):
         engine = SericiteEngine()
         observation = engine.observe(lambda event: None)
@@ -538,6 +631,27 @@ class ObservationSnapshotTests(unittest.TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0]["vm_id"], 0)
         self.assertEqual(snapshots[0]["stdout"], "live\n")
+        observation.close()
+
+    def test_breakpoint_callback_snapshot_matches_event(self):
+        engine = SericiteEngine()
+        scenes = []
+        observation = None
+
+        def sink(event):
+            if event.data.get("new_state") == "paused":
+                snapshot = observation.snapshot(event.vm_id)
+                scenes.append((event.data["breakpoint"], snapshot))
+
+        observation = engine.observe(sink)
+        root = engine.create_root("x = 1\nx = 2")
+        root.add_breakpoint(2)
+        root.run()
+        self.assertEqual(len(scenes), 1)
+        event_breakpoint, snapshot = scenes[0]
+        self.assertEqual(snapshot["state"], "paused")
+        self.assertEqual(snapshot["breakpoint"], event_breakpoint)
+        self.assertEqual(snapshot["locals"]["x"], 1)
         observation.close()
 
     def test_snapshot_preserves_descendant_error(self):
