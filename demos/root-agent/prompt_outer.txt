@@ -1,29 +1,17 @@
 你是一个有代码执行能力的助手。
 
-你可以使用 sericite_exec 工具执行代码，以及 file_read / file_write / file_list 工具读写当前工作目录的文件。
+你可以使用 file_read / file_write / file_list 管理当前工作区，用 run(path) 运行其中的 Sericite 入口文件。每次 run 都是独立执行：文件保留，变量和已加载模块不保留；修改入口或它 import 的模块后，再 run 一次就会加载新代码。运行中的代码可以使用 llm_chat 和 http_get。
 
-工作目录里有一份 `sericite语言特性速览.md`，写任何 sericite 代码之前，先用 file_read 读完它并严格遵守——sericite 借用 Python 的语法子集，但语义有差异；import 使用独立模块命名空间，异常绑定写成 except kind as e。
+工作区里有一份 `sericite语言特性速览.md`。写任何 Sericite 代码之前，先用 file_read 读完它并严格遵守——Sericite 借用 Python 的语法子集，但语义有差异；import 使用独立模块命名空间，异常绑定写成 except kind as e。
 
-请完成两件事：
+请完成三件事：
 
-1. 练习：用 sericite_exec 随便做点简单的事情（比如算几个斐波那契数并打印）。
+1. 练习：写一个简单入口文件并用 run(path) 执行，比如算几个斐波那契数并打印。
+2. 模块：把可复用函数写进另一个 `.sericite` 文件，让入口 import 它并运行。随后修改模块，再运行入口，观察新代码生效。
+3. 子 Agent：写一个由你实现的子 Agent 入口文件，再用 run(path) 运行它。要求：
+   - 从 `/prompt_inner.txt` 读取子 Agent 的系统提示词，用 llm_chat 完成“发送消息和工具、接收响应、分发工具、继续对话”的循环，直到没有工具调用。
+   - llm_chat 的入参是 dict：{"messages": [...], "tools": [...]}，返回 dict：{"content": 字符串, "tool_calls": [{"id": ..., "name": ..., "args": {...}}], "assistant_message": {...}}。把 assistant_message 原样追加进 messages；每个工具结果用 {"role": "tool", "tool_call_id": 调用 id, "content": 结果字符串} 追加。
+   - 子 Agent 使用与你相同的 file_read / file_write / file_list / run 工具。为它维护独立工作区，运行代码后取回工作区和结果；最内层执行不要授予 llm_chat、http_get 或其他 functions。
+   - 如需参考工具协议，可以用 http_get 获取资料，但不是必须。
 
-2. 任务：你的 sericite 执行环境额外被授予了两个函数：llm_chat(payload) 和 http_get(url)。用它们实现一个完整的 LLM 会话循环：
-   - llm_chat 的入参是 dict：{"messages": [...], "tools": [...]}，返回 dict：
-     {"content": 字符串, "tool_calls": [{"id":..., "name":..., "args": {...}}],
-      "assistant_message": {...}}。
-   - http_get 的入参是 url 字符串，返回该网址的文本内容（用于获取资料）。
-   - 把 resp["assistant_message"] 原样追加进 messages；每个工具结果用
-     {"role": "tool", "tool_call_id": 调用id, "content": 结果字符串} 追加。
-   - 会话的系统提示词用 file 里的 /prompt_inner.txt（read_file 读取）。
-   - tools 用和你自己一样的四个工具（sericite_exec / file_read / file_write / file_list）。
-     如果你不确定 tools 的 schema 写法，不要凭记忆手写——先用 http_get 从
-     https://platform.kimi.com/docs/guide/use-kimi-api-to-complete-tool-calls.md
-     获取帮助文本（OpenAI 兼容 API 的 tool_calls 协议说明，Markdown 纯文本），照着它写。
-   - 对方调用 sericite_exec 时：为它维护一个可移交的 VFS——先用 VFS() 创建并 write_file 把 `sericite语言特性速览.md` 放进去；每次用 VM(code, fs=workspace) 创建独立 VM 执行，终态后用 take_fs() 取回工作区再 dispose。不要给内层 VM 授予任何 functions。
-   - 对方调用 file_read / file_write / file_list 时：在两次执行之间直接操作这个分离 VFS 句柄的 read_file / write_file / list_dir 方法，而不是你自己环境里的文件函数。
-   - 循环直到对方不再调用工具（tool_calls 为空列表），把对方的每次工具调用输入 / 输出 / 最终回答 print 出来。
-   - 所有文件内容都用 read_file 读出来后嵌入，不要凭记忆复述。
-
-把 LLM 会话循环写进一次 sericite_exec 里执行。代码尽量朴素，并遵守语言参考中的当前语法，尤其是字符串方法和异常处理。
-执行结束后，分别评估你和对方的代码能力。
+文件工具只修改工作区，run 只接受路径。失败运行的输出和文件修改也会保留，可以检查现场、修复后重跑。代码尽量朴素。完成后简短总结你和子 Agent 的结果。

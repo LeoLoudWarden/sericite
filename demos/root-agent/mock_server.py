@@ -1,10 +1,8 @@
-"""Local OpenAI-compatible stub server: verify the whole demo chain end-to-end without a real API.
+"""Local OpenAI-compatible stub for the complete root-agent harness.
 
-Replies follow a fixed script: the outer session (system prompt without "内部会话") issues
-read doc → practice → run the intermediate session's code in order; the inner session runs a
-practice snippet and wraps up.
-The sericite code for the intermediate session loop is supplied by the stub server "playing
-the AI" and is known to run correctly.
+The fixed conversation covers workspace files, run(path), imports, fresh module
+loading, preserved failure artifacts, and a model-written child agent with an
+independent workspace.
 
 Run: uv run --extra demo demos/root-agent/mock_server.py (listens on 127.0.0.1:8399)
 """
@@ -13,19 +11,48 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
-MIDDLE_CODE = """prompt_inner = read_file("/prompt_inner.txt")
+BASE_DIR = Path(__file__).resolve().parent
+OUTER_PROMPT = (BASE_DIR / "prompt_outer.txt").read_text(encoding="utf-8")
+
+PRACTICE_CODE = """print("外层练习: fib")
+a = 0
+b = 1
+for i in range(6):
+    t = a + b
+    a = b
+    b = t
+    print(a)
+"""
+
+INNER_PRACTICE_CODE = """print("内层练习: 写读文件")
+write_file("/inner_note.txt", "来自最内层 VM 的笔记")
+print(read_file("/inner_note.txt"))
+for k in {"c": 3, "a": 1}:
+    print("key:", k)
+"""
+
+MODULE_MAIN = """import greeting
+print(greeting.message())
+"""
+
+FAILURE_CODE = """write_file("/failure_note.txt", "失败前写入的产物")
+print("准备触发失败")
+missing()
+"""
+
+CHILD_AGENT_CODE = """prompt_inner = read_file("/prompt_inner.txt")
 doc = read_file("/sericite语言特性速览.md")
 
 tools = [
-    {"type": "function", "function": {"name": "sericite_exec", "description": "执行 sericite 代码", "parameters": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]}}},
     {"type": "function", "function": {"name": "file_read", "description": "读文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "file_write", "description": "写文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "file_list", "description": "列目录", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "run", "description": "运行入口文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
 ]
 
 messages = [{"role": "system", "content": prompt_inner}, {"role": "user", "content": "开始"}]
-
 workspace = VFS()
 workspace.write_file("/sericite语言特性速览.md", doc)
 
@@ -45,17 +72,6 @@ while not done and rounds < 20:
             name = call["name"]
             args = call["args"]
             result = "(未知工具)"
-            if name == "sericite_exec":
-                run = VM(args["code"], fs=workspace)
-                try:
-                    result = run.run()
-                except:
-                    result = "(内层 sericite_exec 执行出错)"
-                finally:
-                    if run.snapshot()["state"] == "waiting_input":
-                        run.terminate()
-                    workspace = run.take_fs()
-                    run.dispose()
             if name == "file_read":
                 try:
                     result = workspace.read_file(args["path"])
@@ -66,31 +82,28 @@ while not done and rounds < 20:
                 result = "(已写入)"
             if name == "file_list":
                 result = ""
-                for n in workspace.list_dir(args["path"]):
-                    result = result + n + "\\n"
+                for item in workspace.list_dir(args["path"]):
+                    result = result + item + "\\n"
                 if result == "":
                     result = "(空)"
+            if name == "run":
+                run = None
+                try:
+                    source = workspace.read_file(args["path"])
+                    run = VM(source, fs=workspace)
+                    result = run.run()
+                except ... as e:
+                    result = f"({e.kind}: {e.message})"
+                finally:
+                    if run != None:
+                        if run.snapshot()["state"] == "waiting_input":
+                            run.terminate()
+                        workspace = run.take_fs()
+                        run.dispose()
             print("[内层工具]", name, "->", result)
             messages = messages + [{"role": "tool", "tool_call_id": call["id"], "content": result}]
 
 print("内层最终回答:", final)
-"""
-
-PRACTICE_CODE = """print("外层练习: fib")
-a = 0
-b = 1
-for i in range(6):
-    t = a + b
-    a = b
-    b = t
-    print(a)
-"""
-
-INNER_PRACTICE_CODE = """print("内层练习: 写读文件")
-write_file("/inner_note.txt", "来自最内层 VM 的笔记")
-print(read_file("/inner_note.txt"))
-for k in {"c": 3, "a": 1}:
-    print("key:", k)
 """
 
 OUTER_FINAL = "外层收尾：练习完成，内层会话也跑完了。"
@@ -121,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
         system = ""
         if body.get("messages"):
             system = body["messages"][0].get("content") or ""
-        if "会话循环" in system:
+        if system == OUTER_PROMPT:
             payload = self._outer_reply()
         else:
             payload = self._inner_reply()
@@ -144,21 +157,84 @@ class Handler(BaseHTTPRequestHandler):
             )
         if turn == 2:
             return _reply(
-                tool_calls=[_tool_call(2, "sericite_exec", {"code": PRACTICE_CODE})]
+                tool_calls=[
+                    _tool_call(
+                        2,
+                        "file_write",
+                        {"path": "/practice.sericite", "content": PRACTICE_CODE},
+                    ),
+                    _tool_call(20, "run", {"path": "/practice.sericite"}),
+                ]
             )
         if turn == 3:
             return _reply(
                 tool_calls=[
                     _tool_call(
                         3,
-                        "sericite_exec",
-                        {"code": "try:\n    pass\nexcept host_error:\n    pass"},
-                    )
+                        "file_write",
+                        {
+                            "path": "/broken.sericite",
+                            "content": "try:\n    pass\nexcept host_error:\n    pass",
+                        },
+                    ),
+                    _tool_call(30, "run", {"path": "/broken.sericite"}),
                 ]
             )
         if turn == 4:
             return _reply(
-                tool_calls=[_tool_call(4, "sericite_exec", {"code": MIDDLE_CODE})]
+                tool_calls=[
+                    _tool_call(
+                        4,
+                        "file_write",
+                        {"path": "/failure.sericite", "content": FAILURE_CODE},
+                    ),
+                    _tool_call(40, "run", {"path": "/failure.sericite"}),
+                    _tool_call(41, "file_read", {"path": "/failure_note.txt"}),
+                ]
+            )
+        if turn == 5:
+            return _reply(
+                tool_calls=[
+                    _tool_call(
+                        5,
+                        "file_write",
+                        {
+                            "path": "/greeting.sericite",
+                            "content": "def message():\n    return 'module v1'\n",
+                        },
+                    ),
+                    _tool_call(
+                        50,
+                        "file_write",
+                        {"path": "/module_main.sericite", "content": MODULE_MAIN},
+                    ),
+                    _tool_call(51, "run", {"path": "/module_main.sericite"}),
+                ]
+            )
+        if turn == 6:
+            return _reply(
+                tool_calls=[
+                    _tool_call(
+                        6,
+                        "file_write",
+                        {
+                            "path": "/greeting.sericite",
+                            "content": "def message():\n    return 'module v2'\n",
+                        },
+                    ),
+                    _tool_call(60, "run", {"path": "/module_main.sericite"}),
+                ]
+            )
+        if turn == 7:
+            return _reply(
+                tool_calls=[
+                    _tool_call(
+                        7,
+                        "file_write",
+                        {"path": "/child_agent.sericite", "content": CHILD_AGENT_CODE},
+                    ),
+                    _tool_call(70, "run", {"path": "/child_agent.sericite"}),
+                ]
             )
         return _reply(content=OUTER_FINAL)
 
@@ -168,10 +244,37 @@ class Handler(BaseHTTPRequestHandler):
         if turn == 1:
             return _reply(
                 tool_calls=[
-                    _tool_call(101, "sericite_exec", {"code": INNER_PRACTICE_CODE})
+                    _tool_call(
+                        101,
+                        "file_write",
+                        {"path": "/inner.sericite", "content": INNER_PRACTICE_CODE},
+                    ),
+                    _tool_call(110, "run", {"path": "/inner.sericite"}),
                 ]
             )
-        return _reply(content="内层练习完成：写了文件、读了回来、遍历了字典。")
+        if turn == 2:
+            return _reply(
+                tool_calls=[
+                    _tool_call(
+                        102,
+                        "file_write",
+                        {
+                            "path": "/inner_module.sericite",
+                            "content": "def message():\n    return 'inner module'\n",
+                        },
+                    ),
+                    _tool_call(
+                        103,
+                        "file_write",
+                        {
+                            "path": "/inner_main.sericite",
+                            "content": "import inner_module\nprint(inner_module.message())\n",
+                        },
+                    ),
+                    _tool_call(111, "run", {"path": "/inner_main.sericite"}),
+                ]
+            )
+        return _reply(content="内层练习完成：写了文件、跑了入口、使用了模块。")
 
     def log_message(self, *args) -> None:
         pass

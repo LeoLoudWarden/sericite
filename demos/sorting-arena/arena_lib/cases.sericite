@@ -1,0 +1,78 @@
+CASE_SIZE = 24
+
+
+def parse_numbers(text):
+    values = []
+    for token in text.split():
+        values.append(int(token))
+    return values
+
+
+def reference_sort(values):
+    if len(values) < 2:
+        return values
+    pivot = values[len(values) // 2]
+    before = []
+    equal = []
+    after = []
+    for value in values:
+        if value < pivot:
+            before.append(value)
+        elif value > pivot:
+            after.append(value)
+        else:
+            equal.append(value)
+    return reference_sort(before) + equal + reference_sort(after)
+
+
+def join_numbers(values):
+    tokens = []
+    for value in values:
+        tokens.append(str(value))
+    return " ".join(tokens)
+
+
+def random_values(upper):
+    values = []
+    for index in range(CASE_SIZE):
+        values.append(random_int(upper))
+    return values
+
+
+def reverse_values(values):
+    result = []
+    index = len(values) - 1
+    while index >= 0:
+        result.append(values[index])
+        index = index - 1
+    return result
+
+
+def nearly_sorted_values():
+    values = reference_sort(random_values(100))
+    for index in range(4):
+        left = random_int(CASE_SIZE)
+        right = random_int(CASE_SIZE)
+        temporary = values[left]
+        values[left] = values[right]
+        values[right] = temporary
+    return values
+
+
+def make_cases():
+    return [
+        {"name": "mixed", "input": join_numbers(random_values(100))},
+        {
+            "name": "reversed",
+            "input": join_numbers(reverse_values(reference_sort(random_values(100)))),
+        },
+        {"name": "nearly sorted", "input": join_numbers(nearly_sorted_values())},
+        {"name": "duplicates", "input": join_numbers(random_values(10))},
+    ]
+
+
+def expected_tokens(text):
+    expected = []
+    for value in reference_sort(parse_numbers(text)):
+        expected.append(str(value))
+    return expected

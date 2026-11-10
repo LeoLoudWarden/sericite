@@ -1,0 +1,10 @@
+from . import display
+from . import session
+from . import workspace
+
+
+def run_agent(prompt_path, task):
+    display.config["controller"] = "ROOT"
+    display.config["vm_label"] = "VM 1"
+    fs = workspace.create()
+    return session.run_session(read_file(prompt_path), task, fs, "ROOT", "outer session")

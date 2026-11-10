@@ -1,0 +1,93 @@
+MAX_RESULT_CHARS = 4000
+MAX_LIVE_LINES = 8
+MAX_LIVE_LINE_CHARS = 240
+LIVE_TAIL_LINES = 3
+config = {"controller": "ROOT", "vm_label": "VM 1", "verbose": False}
+live = {"chars": 0, "lines": 0, "shown": 0, "folded": False, "tail": []}
+feedback = {"truncations": 0}
+
+
+def print_tagged(source, color, text):
+    lines = text.splitlines()
+    if len(lines) == 0:
+        lines = [""]
+    for line in lines:
+        prefix = terminal_style(f"{source:<8}│ ", color)
+        print(f"{prefix}{line}")
+
+
+def print_live_line(line):
+    if len(line) > MAX_LIVE_LINE_CHARS:
+        line = f"{line[:MAX_LIVE_LINE_CHARS]} …"
+    print_tagged(config["vm_label"], "vm", line)
+
+
+def begin_run(vm_label):
+    config["vm_label"] = vm_label
+    live["chars"] = 0
+    live["lines"] = 0
+    live["shown"] = 0
+    live["folded"] = False
+    live["tail"] = []
+
+
+def write_live(text):
+    lines = text.splitlines()
+    live["chars"] += len(text)
+    live["lines"] += len(lines)
+    for line in lines:
+        live["tail"].append(line)
+        if len(live["tail"]) > LIVE_TAIL_LINES:
+            live["tail"].pop(0)
+        if config["verbose"]:
+            print_tagged(config["vm_label"], "vm", line)
+        elif live["shown"] < MAX_LIVE_LINES:
+            print_live_line(line)
+            live["shown"] += 1
+        elif not live["folded"]:
+            live["folded"] = True
+            print_tagged(
+                config["vm_label"], "vm", "… folding live output; tail follows"
+            )
+
+
+def finish_run():
+    if not config["verbose"] and live["folded"]:
+        print_tagged(
+            config["vm_label"],
+            "vm",
+            f"… display folded · {live['chars']} chars / "
+            f"{live['lines']} lines total",
+        )
+        for line in live["tail"]:
+            print_live_line(line)
+
+
+def truncate_output(output):
+    feedback["truncations"] += 1
+    total = len(output)
+    if feedback["truncations"] == 1:
+        print_tagged(
+            config["controller"],
+            "root",
+            f"↳ output truncated · {total} chars · "
+            "suggested file_write + file_read",
+        )
+        advice = (
+            f"提示：本次输出共 {total} 字符，仅返回前 {MAX_RESULT_CHARS} 字符。"
+            "处理大文本时，请用 file_write 将完整内容写入当前工作区，"
+            "再使用 file_read 工具读取。"
+        )
+    else:
+        print_tagged(
+            config["controller"],
+            "root",
+            f"↳ output truncated again · {total} chars · "
+            "use file_write + file_read",
+        )
+        advice = (
+            f"再次截断：本次输出共 {total} 字符，仍只返回前 {MAX_RESULT_CHARS} 字符。"
+            "请不要重复打印或重跑大段输出；请用 file_write 写入当前工作区，"
+            "再改用 file_read 工具。"
+        )
+    return f"{output[:MAX_RESULT_CHARS]}\n\n[{advice}]"

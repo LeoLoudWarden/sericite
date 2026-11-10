@@ -59,7 +59,7 @@ uv run sericite \
 
 ## Python 随机性如何进入裁判
 
-Sericite 本身不内置随机数。`capabilities.py` 把 Python 的 `random.randrange(below)` 包装成 `random_int(below)`，通过 `functions` 显式授予 root 裁判。`arena.sericite` 每次启动构造四类题目，每类 24 个整数：
+Sericite 本身不内置随机数。`capabilities.py` 把 Python 的 `random.randrange(below)` 包装成 `random_int(below)`，通过 `functions` 显式授予 root 裁判。`arena_lib/cases.sericite` 每次启动构造四类题目，每类 24 个整数：
 
 - `mixed`：0～99 的随机整数；
 - `reversed`：生成随机整数，排序后反转；
@@ -70,7 +70,7 @@ Sericite 本身不内置随机数。`capabilities.py` 把 Python 的 `random.ran
 
 `random_int` 只授予 root；创建选手 VM 时没有传 `functions`，所以选手不能调用它。授予不会自动跨层继承的完整规则见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 6 节。
 
-每组测试的主要配额（完整字段见 `arena.sericite` 中的 `run_case()`，字段语义见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 5 节）：
+每组测试的主要配额（完整字段见 `arena_lib/judge.sericite` 中的 `run_case()`，字段语义见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 5 节）：
 
 | 配额 | 值 | 本 demo 中的作用 |
 |---|---:|---|
@@ -86,11 +86,13 @@ Sericite 本身不内置随机数。`capabilities.py` 把 Python 的 `random.ran
 
 启动配置按文件名排序播种；裁判显示时会去掉前三位字符和扩展名。因此三位数字前缀适合控制出场顺序。
 
-无需修改 `capabilities.py` 或 `arena.sericite`。可以尝试更快的算法，也可以提交新的捣乱程序，观察裁判是否仍能完成比赛。
+无需修改 `capabilities.py` 或裁判模块。可以尝试更快的算法，也可以提交新的捣乱程序，观察裁判是否仍能完成比赛。
 
 ## 文件与信任边界
 
-- `arena.sericite`：全部应用逻辑，包括测试数据、参考答案、VM 生命周期、验题、计分和排行榜。
+- `arena.sericite`：短应用入口，负责比赛流程、验题、计分和排行榜。
+- `arena_lib/cases.sericite`：测试数据、参考排序与预期答案。
+- `arena_lib/judge.sericite`：单个选手 VM 的配额、生命周期与失败分类。
 - `capabilities.py`：可信的薄启动配置。它读取本目录的 `entries/*.sericite`，作为**文本**放进 root VFS，向 root 授予 `random_int`，并提高可信 root 的总指令预算。它不会执行选手源码。
 - `entries/`：模拟来自不可信数据源的提交，既有正常算法，也有故意失败的选手。
 
