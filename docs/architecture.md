@@ -16,11 +16,12 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 |---|---|
 | `isa` | Instruction, code-unit, and exception-handler-table definitions (stack machine) |
 | `compiler` | AST whitelist and except-kind validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
-| `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots |
+| `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots, and observation-event dispatch |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
 | `vfs` | Transferable-workspace virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree, name metadata, and subtree aggregates for prepaid recursive directory costs). The VFS holds no quotas or accounts; the engine manages exclusive attachment |
-| `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Output can be forwarded through an explicitly configured writer: script side in the [VM reference](vm-reference.md) §4, host-side root callback in the [Sericite-PY reference](sericite-py-reference.md) §2 |
+| `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Stdout commit is separate from forwarding: observation events follow the former and precede the latter. Output can be forwarded through an explicitly configured writer: script side in the [VM reference](vm-reference.md) §4, host-side root callback in the [Sericite-PY reference](sericite-py-reference.md) §2 |
 | `errors` | `SericiteError` and the central error-kind registry |
+| `events` | Public `SericiteEvent` data and `SericiteObservation` session lifecycle, closure, failure state, polling, and read-only snapshot entry |
 | `cli` / `__main__` | Command-line entry points: source loading, VFS snapshots of statically reachable project modules and source-line mapping, trusted capability-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
 
 The `compiler` package is split into cohesive parts:
@@ -36,7 +37,7 @@ The `engine` package is split into cohesive parts:
 
 - `_model`: limits, frames, functions, schemas/records, module objects, native wrappers, VMContext, and VM/VFS handles
 - `_values`: value semantics, rendering, contract helpers, FFI deep-copy
-- `_core`: lifecycle, entry-file loading, dispatch loop, exception unwinding, call machinery, and VFS attachment/removal
+- `_core`: lifecycle, entry-file loading, dispatch loop, exception unwinding, call machinery, VFS attachment/removal, state commits, and observation dispatch
 - `_builtins`: built-in functions, child-VM and detached-VFS creation
 - `_operators`: operator/index/attribute semantics, container/record/handle natives
 - `_modules`: module-name, VM-module-root, and VFS-path resolution, packages and module frames, import resumption, loading/success caches, and home-route accounting
@@ -74,7 +75,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 11. The VM/VFS handle-method whitelists each have exactly one source (defined on the compiler side); the engine references them, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict/tuple, recursive): handles, functions, records/schemas, and host-native objects must never cross.
-  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 5.3.
+  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 6.3.
   - c. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
 13.
   - a. A granted sericite function executes on the **calling VM's frame stack**, with instructions charged to the caller and its ancestors.
@@ -102,6 +103,12 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. Breakpoint checks live in the unified `_execute_one()` before instruction charging and dispatch, and hit only at `stmt_start`. A hit neither advances the PC nor executes script `except/finally`, and the unexecuted instruction is not charged.
   - b. Breakpoint locations are constrained by both the target `origin_vm` and source identity. Main-source locations rebind across successful `exec()` using the installed module frame's `source_id`; file locations use the target VM's normalized logical paths. Foreign granted code must never hit accidentally.
   - c. `paused` is a recoverable nonterminal state. Resume exempts only the current breakpoint once and never propagates to ancestors. Breakpoint tables hold only pure location data, are bounded by `max_breakpoints`, and must not alter VM GC or live-count quotas.
+21.
+  - a. Host observation reports committed facts, never speculative execution: VM creation is emitted only after registration, hierarchy counts, and VFS attachment commit; state changes follow the state and debugging-scene commit; output events follow stdout commit and precede forwarding. Observation must not change script semantics or execution accounts.
+  - b. Ordinary events are synchronous and monotonically sequenced per engine. Each observation receives independent event and nested-data copies; closing one stops its subsequent delivery. An ordinary sink `Exception` closes only that observation and never becomes an FFI-style `host_error`; `BaseException` remains a host process-level event.
+  - c. Observation callbacks may close observations and take read-only snapshots, but must not reenter other operations on the same engine, including creation, driving, disposal, VFS operations, new subscriptions, or `poll()`.
+  - d. GC finalizers unregister contexts and queue pure-data tombstones only; they must never invoke observation sinks. Delivery is deferred to `poll()` or a safe engine entry, while preserving sequence order. Explicit disposal must not also queue a GC tombstone.
+  - e. `SericiteObservation.snapshot()` exposes the host-safe snapshot of a live VM by engine-local ID, including during callbacks. It must not return or cache VM handles or contexts, grant driving or mutation authority, or retain a VM against collection. Disposed VMs are no longer snapshot-able.
 
 ## 4. Script interface
 
@@ -185,6 +192,7 @@ Caveats:
 - Control flow: `if/elif/else`, `while`, `for`, `break/continue`, `try/except/else/finally`, `raise`, ternary expressions, and list/dict comprehensions with independent scopes.
 - Functions: definitions, recursion, positional and keyword arguments, default arguments, decorators, independent call frames, lexical closures with by-reference capture.
 - VMs within VMs: any layer can create child VMs; a child cannot tell its depth; the parent can preset files, feed input, set breakpoints, single-step (statement- and instruction-level), snapshot, and terminate.
+- Host observation: `engine.observe()` reports committed creation, state, output, and disposal events across the whole VM tree; the observation session can also take read-only snapshots by VM ID without obtaining driving authority.
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
 - Resource governance: see the previous section. The prototype went through one round of adversarial security review (including an independent third-party perspective); all discovered denial-of-service and information-leak paths were fixed and locked in with regression tests.
 - Every VM has a blank VFS by default; a detached workspace can be configured, exclusively moved into a VM, and retrieved after a terminal state without transferring module caches or IO.
@@ -199,7 +207,7 @@ Deliberate trade-offs: additional container methods, variadic arguments, and cha
 - `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules (invariant 10).
 - Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `(...)`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
-- Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in the [VM reference](vm-reference.md) §3).
+- Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in the [VM reference](vm-reference.md) §3). Observation adds a second delay: GC tombstones are queued by finalizers and delivered only by `poll()` or a later safe engine entry, so notification timing is not collection timing.
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
 - Cross-VM calls charge shared ancestors once; the full charging rules are in section 5.4.
 

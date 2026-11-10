@@ -79,6 +79,8 @@ print(vm.run(), end="")    # 42
 - 父级可以预置文件、喂输入、设置行断点、逐语句或逐指令单步、查看快照、随时终止；
 - 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
 
+Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的事件，并按 VM ID 读取只读快照，无需脚本配合；见 [Sericite-PY 参考第 5 节](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md#5-观察-vm-活动)。
+
 廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.105 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
 
 ## record：类型名只是编译期的报错标签

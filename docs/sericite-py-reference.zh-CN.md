@@ -44,7 +44,7 @@ engine.create_root(
 - `limits`：root 使用的 `SericiteLimits`，见第 3 节。
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
 - `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`；要报告输入源永久关闭，抛出 `SericiteError(kind="input_error")`，脚本可以捕获。
-- `functions`：授予脚本的宿主函数表，见第 5 节。
+- `functions`：授予脚本的宿主函数表，见第 6 节。
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
@@ -118,9 +118,79 @@ vm.dispose()
 
 不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**脚本计量模型见[架构说明](architecture.zh-CN.md)第 5 节。
 
-## 5. FFI：向 VM 授予宿主能力
+## 5. 观察 VM 活动
 
-### 5.1 授予函数
+Python 宿主可以观察同一引擎内的每台 VM，包括脚本内部创建的后代，而不必因此授予脚本任何新能力。观察接口只属于宿主：Sericite 内建和 VM 句柄方法都不会把事件暴露给脚本。
+
+### 5.1 订阅与事件结构
+
+```python
+from sericite import SericiteEngine
+
+engine = SericiteEngine()
+events = []
+with engine.observe(events.append) as observation:
+    root = engine.create_root("print('hello')")
+    root.run()
+    snapshot = observation.snapshot(events[0].vm_id)
+
+assert [event.kind for event in events] == [
+    "vm.created",
+    "vm.output",
+    "vm.state_changed",
+]
+assert snapshot["stdout"] == "hello\n"
+```
+
+`engine.observe(sink)` 注册一个可调用对象并返回 `SericiteObservation`；sink 不可调用时抛出 `type_error`。观察会话是上下文管理器，离开 `with` 块即关闭。它只接收注册后产生的事件，不会回放既有 VM 或历史事件。
+
+每次 sink 调用收到一个 `SericiteEvent`，该类同样从顶层 `sericite` 包导出：
+
+| 字段 | 含义 |
+|---|---|
+| `sequence` | 引擎内单调递增的事件序号 |
+| `kind` | 下表所列的事件种类 |
+| `vm_id` | 产生事件的 VM 的引擎内 ID |
+| `parent_id` | 父 VM 的引擎内 ID；root 为 `None` |
+| `depth` | VM 嵌套深度；root 为 0 |
+| `data` | 下文所述的事件专属宿主侧值 |
+
+### 5.2 事件种类与提交状态
+
+| 种类 | `data` 与产生时机 |
+|---|---|
+| `vm.created` | `state`、`filename`、`limits`、`functions`。`limits` 是该 VM 的 `SericiteLimits`，`functions` 是排序后的授予名元组。只有创建、注册、父级与祖先计数、VFS 依附全部提交后才产生；创建失败不产生事件。 |
+| `vm.state_changed` | `old_state`、`new_state`、`reason`。断点暂停另含 `breakpoint={"line": int, "path": str | None}`，终态错误另含 `error_kind`。新状态及调试现场提交后才产生，且只有状态真实变化时才产生。 |
+| `vm.output` | `text`，一段已提交的虚拟 stdout 文本。输出计量和 stdout 缓冲之后、输出转发与脚本 output writer 之前产生。被输出上限拒绝的文本不产生事件。 |
+| `vm.disposed` | `reason` 与 `state`。显式销毁使用 `reason="dispose"`、`state="terminated"`；自动回收使用 `reason="gc"`，并保留回收前状态。 |
+
+可观察的状态变化原因包括 `exec`、`resume`、`breakpoint`、`input`、`output_writer`、`return`、`error`、`terminate`、`dispose`。脚本捕获异常本身不产生终态变化。重复销毁已销毁的 VM 不会产生额外事件。
+
+输出事件归属于实际把文本提交到自身虚拟 stdout 的 VM。子 VM 向父级转发输出时，每台真实写入的 VM 都会产生各自的事件。`buffer_output=False` 时，`data["text"]` 仍报告已提交输出，尽管快照 `stdout` 等缓冲视图仍为空。output writer 之后失败也不会撤回已经产生的输出事件。
+
+### 5.3 投递、故障与重入
+
+普通事件随执行提交同步投递。观察不执行脚本代码，也不改变 VM 的指令或内存账户。事件产生前已注册且仍打开的每个观察会话都会收到同一事实，但各自得到独立的事件对象和嵌套 `data` 深拷贝；修改其中一份投递不会影响其他观察器或引擎。
+
+`close()` 幂等，并立即停止后续投递，包括当前分发过程中尚未交付的事件。`closed` 属性报告是否关闭。关闭一个观察会话不会关闭其他会话。
+
+sink 抛出普通 `Exception` 时，引擎只关闭该观察会话，VM 和其他观察器继续运行。此时 `failed` 为 `True`，`failure` 保存宿主侧字符串 `"ExceptionType: message"`；若异常自身无法渲染，则只保存异常类名。这类故障不遵循 FFI 的 `host_error` 契约。`KeyboardInterrupt`、`SystemExit` 等其他 `BaseException` 仍是进程级事件，会向宿主传播。
+
+观察回调不得重入同一引擎的操作。在回调中创建 VM 或 VFS、驱动或销毁 VM、操作 VFS、注册另一个观察会话以及调用 `poll()`，都会以 `runtime_error` 拒绝。允许的操作只有关闭观察会话和只读的 `observation.snapshot(vm_id)`。对不同引擎的操作不受这条限制。
+
+### 5.4 垃圾回收与只读快照
+
+自动回收需要特殊的投递处理：Python finalizer 注销 VM 并排队纯数据 tombstone，但绝不调用观察 sink。排队的 `vm.disposed(reason="gc")` 事件由 `observation.poll()` 或后续会冲刷观察事件的安全引擎入口投递，与后续事件的相对序号保持不变。宿主希望显式控制投递时点时应调用 `poll()`，而不是依赖另一次引擎操作。
+
+已关闭的观察会话不再接收 tombstone；tombstone 排队后才注册的观察会话也不会收到这条旧事件。显式销毁不会再额外排队 GC 事件。待投递 tombstone 和观察回调工作都是宿主侧成本，不计入脚本执行账。
+
+`observation.snapshot(vm_id)` 对同一引擎内任意存活 VM 返回与第 4 节 `VMHandle.snapshot()` 相同的宿主快照结构。宿主无需直接持有后代句柄，也可以在观察回调中读取与事件对应的提交后现场。结果只含安全值：没有可操作的 VM 句柄或内部上下文，也不会缓存延长 VM 存活的引用。修改返回的字典不会修改 VM。
+
+`vm_id` 必须是非负 `int`（`bool` 也会被拒绝），类型非法时抛出 `type_error`。ID 未知或已销毁，以及对已关闭的观察会话调用 `snapshot()`，都抛出 `runtime_error`。尤其要注意，`vm.disposed` 通知在注销之后到达，此时目标已不能再快照。
+
+## 6. FFI：向 VM 授予宿主能力
+
+### 6.1 授予函数
 
 ```python
 def double(value):
@@ -136,7 +206,7 @@ assert vm.run() == "42\n"
 
 授予名必须是合法标识符，不能以 `__` 开头，也不能与内建名冲突。值必须可调用。创建 root 时会统一验证整张函数表。
 
-### 5.2 数据边界
+### 6.2 数据边界
 
 参数和返回值在宿主与 VM 之间双向深拷贝，只允许递归纯数据：
 
@@ -146,7 +216,7 @@ assert vm.run() == "42\n"
 
 record/schema、模块对象、VM/VFS 句柄、函数及其他宿主对象不能越界；尝试这样做会报 `ffi_error`。需要传递 record 时，先在脚本内 `unwrap()` 成 dict。容器大小、字符串、整数位宽、总节点数和嵌套深度都有限制，复制工作本身按节点计入引擎配额。
 
-### 5.3 异常与重入
+### 6.3 异常与重入
 
 - FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原 kind 传播，是否可捕获遵守语言规则；普通可捕获 kind 可由脚本按 kind 处理，因此其消息由宿主自行保证不含秘密。
 - `resource_exhausted` 是特殊情况：宿主回调直接抛出它时，引擎视为该 VM 自身的配额耗尽——VM 进入 `resource_exhausted` 终态，脚本不可捕获。若这类失败应当允许脚本恢复，请在回调内改抛 `runtime_error`、`ffi_error` 等普通契约 kind。
@@ -155,13 +225,13 @@ record/schema、模块对象、VM/VFS 句柄、函数及其他宿主对象不能
 - `SystemExit`、`KeyboardInterrupt` 等其他 `BaseException` 是发给宿主的进程级事件：原样穿透 `run()` 上抛。不要授予其依赖库会在对抗输入路径上调用 `sys.exit()` 的函数——这与"不要授予能被驱动着删文件的函数"是同一条纪律。
 - 不要在回调中对同一 VM 再调用 `run()`、`step()` 或其他重入驱动；引擎会拒绝嵌套调度。
 
-### 5.4 成本责任
+### 6.4 成本责任
 
 **宿主 callback 内部的 CPU、内存、阻塞和外部副作用不由引擎计量。** 引擎只负责调用派发及边界复制的成本。
 
 因此 FFI 是显式信任承诺：请自行验证参数、限制输入规模、调用频率和外部资源。不要授予不必要的网络、文件或秘密访问能力。
 
-## 6. 宿主错误处理
+## 7. 宿主错误处理
 
 ```python
 from sericite import SericiteError
@@ -185,10 +255,11 @@ except SericiteError as exc:
 
 `resource_exhausted` 的脚本侧可捕获规则（仅当来自 `VM()` 隔离的代码时可捕获）与 `kind` 注册表见[语言参考](language-reference.zh-CN.md)第 5 节。文件操作约束拒绝改用普通、可捕获的 `file_limit_error`；`internal_error` 与 `host_error` 始终不能被脚本捕获。宿主可以且应该处理 `resource_exhausted`、`internal_error` 与 `host_error`。
 
-## 7. 不可信代码的宿主检查清单
+## 8. 不可信代码的宿主检查清单
 
 - 为每层 VM 显式收紧配额，不依赖默认值。
 - 生产环境增加独立进程、容器等 OS 级隔离，不把同进程 Python 引擎当作唯一边界。
 - 只授予必要的 FFI，并在能力内部做参数、频率和外部资源限制。
 - 宿主预置和管理走公开 `VMHandle`/`VFSHandle` API；不要把内部上下文或私有实现对象暴露给不可信 Python。
+- 观察 sink 保持有界、非阻塞，用完后关闭；需要延迟 GC 通知时主动 `poll()`。
 - 调试快照和异常可以交给上层使用，但仍应避免把宿主自己的秘密写进 `SericiteError`。

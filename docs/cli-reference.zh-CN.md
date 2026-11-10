@@ -156,7 +156,7 @@ FFI 的完整规则见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)，�
 > **能力配置文件拥有完整宿主权限。像运行任何 Python 文件一样信任它。**
 
 - 它可以 import 第三方库、读取环境变量和真实磁盘、访问网络。
-- 其中的 Python **不在 Sericite 沙箱内执行**，其 CPU、内存和外部副作用也不由引擎计量（成本责任见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 5.4 节）。
+- 其中的 Python **不在 Sericite 沙箱内执行**，其 CPU、内存和外部副作用也不由引擎计量（成本责任见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 6.4 节）。
 - 只允许操作者选择配置文件；不要让模型或 Sericite 源码决定加载哪一个。
 
 主源码与导入模块仍在同一 Sericite 工作环境中执行，不因配置文件存在而得到宿主权限。它们只能调用显式授予的函数；`files` 也只预置程序的内存 VFS，不映射真实磁盘。

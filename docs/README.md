@@ -16,7 +16,7 @@ Sericite's documentation is organized by reader task and rate of change: usage r
 | [CLI reference](cli-reference.md) | Program operators: commands, multi-file projects, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
 | [Language reference](language-reference.md) | Script authors: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
 | [VM reference](vm-reference.md) | Script authors: execution sessions, VFS transfer, VM states, driving, quotas, and grants | [vm-reference.zh-CN.md](vm-reference.zh-CN.md) |
-| [Sericite-PY reference](sericite-py-reference.md) | Python embedders: engine API, FFI, host diagnostics, and error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |
+| [Sericite-PY reference](sericite-py-reference.md) | Python embedders: engine API, observation events, read-only descendant snapshots, FFI, host diagnostics, and error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |
 
 Read the language reference to write scripts without needing engine or host details, the CLI reference to run programs, and the VM reference to drive child VMs inside scripts. Python-host differences are concentrated in the Sericite-PY reference.
 
