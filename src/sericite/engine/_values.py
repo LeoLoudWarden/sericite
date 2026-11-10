@@ -16,6 +16,7 @@ from ._model import (
     SericiteModule,
     SericiteRecord,
     SericiteSchema,
+    VFSHandle,
     VMHandle,
     _GrantedHostFunction,
     _GrantedSericiteFunction,
@@ -499,6 +500,8 @@ def _type_name(value: object) -> str:
         return "function"
     if isinstance(value, VMHandle):
         return "VM"
+    if isinstance(value, VFSHandle):
+        return "VFS"
     if isinstance(value, SericiteModule):
         return "module"
     if isinstance(value, SericiteRecord):

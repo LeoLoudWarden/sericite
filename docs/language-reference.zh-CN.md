@@ -350,7 +350,7 @@ except resource_exhausted as e:
 
 ### 文件与目录
 
-当前工作空间提供纯文本文件系统，路径形如 `/notes/a.txt`。脚本通过以下内建读写它：
+当前执行会话独占的 VFS 提供纯文本文件系统，路径形如 `/notes/a.txt`。脚本通过以下内建读写它：
 
 | 操作 | 用途 |
 |---|---|
@@ -365,6 +365,8 @@ except resource_exhausted as e:
 | `copy_dir(source_path, destination_path)` | 递归复制目录树 |
 | `list_dir(path)` | 列出目录的直接子项并排序 |
 | `path_exists(path)` | 检查文件或目录是否存在 |
+
+`VFS()` 创建分离状态的工作区，句柄支持上表同名方法。`VM(code, fs=fs)` 把分离工作区移入新会话并消费旧句柄；终态后用 `take_fs()` 取回。VFS 在任意时刻最多属于一台 VM，旧句柄、旧会话及其 home 函数在移交后都不能继续访问。详见[虚拟机参考](vm-reference.zh-CN.md)第 2～4 节。
 
 **隐式目录与显式目录。** 写入文件时会隐式创建缺失的父目录。删除或重命名使隐式目录不再含任何文件或子目录时，该目录会自动移除。`make_dir` 会显式创建目标及缺失的父目录；它们即使为空也会保留。根目录始终保留。
 
@@ -782,13 +784,15 @@ print(times_ten(n))
 print("worker says: " + worker.run(["6"]))   # 60
 
 # 子 VM 有独立的文件系统：预置文件给它、运行后取回它写的文件
+fs = VFS()
+fs.write_file("/input.txt", "hello")         # 先预置分离工作区
 proc = VM("""
 text = read_file("/input.txt")
 write_file("/output.txt", text + "!")
-""")
-proc.write_file("/input.txt", "hello")      # 运行前预置文件
+""", fs=fs)
 proc.run()
-print(proc.read_file("/output.txt"))         # hello!
+fs = proc.take_fs()
+print(fs.read_file("/output.txt"))           # hello!
 
 # 单步执行（逐语句/逐指令）并查看快照
 dbg = VM("x = 1\ny = x + 1\nprint(y)")

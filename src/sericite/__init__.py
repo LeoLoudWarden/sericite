@@ -3,6 +3,7 @@ from .engine import (
     SericiteError,
     SericiteFrame,
     SericiteLimits,
+    VFSHandle,
     VMHandle,
 )
 
@@ -11,6 +12,7 @@ __all__ = [
     "SericiteError",
     "SericiteFrame",
     "SericiteLimits",
+    "VFSHandle",
     "VMHandle",
 ]
 __version__ = "0.15.0"

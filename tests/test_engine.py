@@ -803,13 +803,15 @@ class ExecSourceTests(unittest.TestCase):
         )
         self.assertEqual(vm.run(), "\n15\n\nrecovered\n16\n\n")
 
-    def test_script_level_exec_shares_vfs_with_handle_methods(self):
+    def test_script_level_exec_keeps_vfs_with_execution_session(self):
         engine = SericiteEngine()
         vm = engine.create_root(
-            'sub = VM("")\n'
-            'sub.write_file("/seed.txt", "seed")\n'
+            "fs = VFS()\n"
+            'fs.write_file("/seed.txt", "seed")\n'
+            'sub = VM("", fs=fs)\n'
             "print(sub.exec(\"write_file('/made.txt', read_file('/seed.txt'))\"))\n"
-            'print(sub.read_file("/made.txt"))\n'
+            "fs = sub.take_fs()\n"
+            'print(fs.read_file("/made.txt"))\n'
         )
         self.assertEqual(vm.run(), "\nseed\n")
 

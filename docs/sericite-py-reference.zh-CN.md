@@ -34,6 +34,7 @@ engine.create_root(
     output_writer=None,
     buffer_output=True,
     argv=None,
+    fs=None,
 )
 ```
 
@@ -45,8 +46,9 @@ engine.create_root(
 - `output_writer`：可选的宿主回调，root 每次写虚拟 stdout 后以文本块调用，便于实时转发。输出计量和上限仍先生效，子 VM 不继承该回调。
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
+- `fs`：可选的分离状态 `VFSHandle`。`engine.create_vfs()` 创建独立工作区；`create_root(..., fs=fs)` 成功后才移动所有权，失败时句柄仍可使用。终态 VM 的 `take_fs()` 返回新的分离句柄。
 
-参数类型错误在 API 边界报 `type_error`。root 参数校验先于 VM 创建，失败不会注册 VM；`limits` 可以是 `None` 或 `SericiteLimits`。
+参数类型错误在 API 边界报 `type_error`。root 参数校验先于 VM 创建，失败不会注册 VM；`limits` 可以是 `None` 或 `SericiteLimits`，`fs` 必须属于同一引擎且未被消费。
 
 ## 3. 配额：SericiteLimits
 
@@ -60,7 +62,7 @@ engine.create_root(
 
 ## 4. 驱动 VM
 
-`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/文件操作/`dispose` 等）与脚本内 VM 值的方法一一对应，共享状态与契约见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。
+`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主还可通过 `VMHandle` 的文件方法预置或检查当前依附的 VFS，但这些是可信宿主管理通道，不存在对应的脚本侧 VM 文件代理；脚本只能操作当前会话的 VFS 或分离状态的 `VFSHandle`。
 
 宿主侧快照是脚本安全视图的严格超集，额外包含：
 
@@ -107,7 +109,7 @@ assert vm.run() == "42\n"
 - `list`、`dict`、`tuple`；两个方向都保留 list/tuple 类型；
 - dict 键同样受类型白名单约束。
 
-record/schema、模块对象、VM 句柄、函数及其他宿主对象不能越界；尝试这样做会报 `ffi_error`。需要传递 record 时，先在脚本内 `unwrap()` 成 dict。容器大小、字符串、整数位宽、总节点数和嵌套深度都有限制，复制工作本身按节点计入引擎配额。
+record/schema、模块对象、VM/VFS 句柄、函数及其他宿主对象不能越界；尝试这样做会报 `ffi_error`。需要传递 record 时，先在脚本内 `unwrap()` 成 dict。容器大小、字符串、整数位宽、总节点数和嵌套深度都有限制，复制工作本身按节点计入引擎配额。
 
 ### 5.3 异常与重入
 

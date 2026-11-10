@@ -6,14 +6,14 @@
 
 ## 运行结构
 
-- **外层会话**：root 为整个会话维护一台持久的第一层 VM，向它授予这两个宿主函数，并在启动时预置模型工作区。
-- **第一层 VM**：外层模型调用 `sericite_exec` 时，root 用 `exec` 把代码投递给这台 VM。模块变量、定义和文件在多次调用之间保留；模型生成的代码可以用 `llm_chat` 自己再开一个内部会话。
-- **第二层 VM**：内部会话继续调用 `sericite_exec` 时，由模型生成的代码维护一台第二层 VM。它不获得任何宿主函数，因此没有网络能力，递归在这里终止。内层会话及其 VM 管理代码全部由模型编写，demo 不预写另一层 agent。
+- **外层会话**：root 持有一个跨调用保留的分离 VFS，并在每次 `sericite_exec` 时把它移入新的第一层 VM，同时授予两个宿主函数。
+- **第一层 VM**：每次投递都是独立执行会话，变量、模块缓存和执行账不跨调用保留；终态后 root 用 `take_fs()` 取回文件工作区。模型生成的代码可以用 `llm_chat` 自己再开一个内部会话。
+- **第二层 VM**：内部会话继续调用 `sericite_exec` 时，由模型生成的代码以同样的排他移交方式维护第二层工作区。它不获得任何宿主函数，因此没有网络能力，递归在这里终止。内层会话及其 VM 管理代码全部由模型编写，demo 不预写另一层 agent。
 
 ## 文件与提示词边界
 
-- root VFS 分为 `/control` 与 `/workspace`：外层提示词只在控制区，工作区在启动时一次性预置进执行 VM。
-- 模型的文件工具直接对接这台持久 VM 的文件系统，`sericite_exec` 代码写的文件和 `file_write` 写的文件落在同一个地方，无需重复预置或回收。
+- root VFS 分为 `/control` 与 `/workspace`：外层提示词只在控制区，启动时把材料预置进独立的模型工作区。
+- 模型的文件工具操作两次执行之间处于分离状态的 VFS；执行时工作区排他移入 VM，终态后取回，因此 `sericite_exec` 与 `file_write` 写入始终落在同一处。
 - 提示词只告诉模型它能创建 VM，不告诉它当前代码和文件也已经处于 VM 中。
 
 ## 运行
@@ -74,7 +74,7 @@ API_URL=http://127.0.0.1:8399/v1/chat/completions API_KEY=mock API_MODEL=mock \
 - `MODEL` 正文、`FINAL` 最终回答和 root 结果文本始终完整显示。折叠只作用于 VM 实时输出；默认展示中只有这类实时输出的单行超过 `MAX_LIVE_LINE_CHARS`（240）字符才会缩短。
 - 在 `agent.sericite` 后追加 `--verbose` 可显示完整工具参数/结果并关闭实时输出折叠；工具参数和结果使用 `repr`。
 - 两种展示都不改变传回模型的原始工具结果。
-- 第一层 stdout 仍保留缓冲，因为 `sub.exec()` 还要把同一段文本作为 `sericite_exec` 的工具结果返回；缓冲语义见 [虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
+- 第一层 stdout 仍保留缓冲，因为 `run()` 还要把同一段文本作为 `sericite_exec` 的工具结果返回；缓冲语义见 [虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
 
 ```bash
 uv run --extra demo sericite \

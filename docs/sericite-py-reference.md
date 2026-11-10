@@ -34,6 +34,7 @@ engine.create_root(
     output_writer=None,
     buffer_output=True,
     argv=None,
+    fs=None,
 )
 ```
 
@@ -45,8 +46,9 @@ engine.create_root(
 - `output_writer`: an optional host callable invoked with each text chunk written to root's virtual stdout, for live forwarding. Output accounting and limits apply first, and child VMs never inherit the callback.
 - `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
 - `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
+- `fs`: an optional detached `VFSHandle`. `engine.create_vfs()` creates an independent workspace; `create_root(..., fs=fs)` moves ownership only on success, leaving the handle usable on failure. A terminal VM's `take_fs()` returns a new detached handle.
 
-Invalid argument types raise `type_error` at the API boundary. Root arguments are validated before VM creation, so a failure registers no VM; `limits` may be `None` or a `SericiteLimits`.
+Invalid argument types raise `type_error` at the API boundary. Root arguments are validated before VM creation, so a failure registers no VM; `limits` may be `None` or a `SericiteLimits`, and `fs` must be an unconsumed handle belonging to the same engine.
 
 ## 3. Quotas: SericiteLimits
 
@@ -60,7 +62,7 @@ For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the 
 
 ## 4. Driving VMs
 
-The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/file operations/`dispose`, …) correspond one-to-one with the methods of VM values inside scripts. Shared states and contracts are in the [VM reference](vm-reference.md) §§3–4.
+The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. The host may also use `VMHandle` file methods to configure or inspect the currently attached VFS. These are trusted host-management channels, not script-side VM file proxies: scripts operate only on the current session's VFS or a detached `VFSHandle`.
 
 A host-side snapshot is a strict superset of the script-safe view, adding:
 
@@ -107,7 +109,7 @@ Arguments and results are deep-copied in both directions and restricted to recur
 - `list`, `dict`, and `tuple`; list/tuple types are preserved in both directions;
 - Dict keys obey the same type whitelist.
 
-Records/schemas, module objects, VM handles, functions, and other host objects cannot cross; attempting to do so raises `ffi_error`. Call `unwrap()` in the script to turn a record into a dict first. Container sizes, strings, integer width, total nodes, and nesting depth are bounded, and the copying work itself is charged per node against engine quotas.
+Records/schemas, module objects, VM/VFS handles, functions, and other host objects cannot cross; attempting to do so raises `ffi_error`. Call `unwrap()` in the script to turn a record into a dict first. Container sizes, strings, integer width, total nodes, and nesting depth are bounded, and the copying work itself is charged per node against engine quotas.
 
 ### 5.3 Exceptions and reentrancy
 

@@ -544,7 +544,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         checkpoints = []
         text = "x" * 1000
         source = (
-            'sub = VM("")\n'
+            "sub = VFS()\n"
             "text = get_text()\n"
             'sub.write_file("/a.txt", text)\n'
             "checkpoint()\n"
@@ -564,8 +564,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
 
     def test_input_methods_charge_string_arguments(self):
         calls = (
-            'sub.write_file("/a.txt", text)',
-            'sub.write_file(path="/a.txt", text=text)',
+            'fs.write_file("/a.txt", text)',
+            'fs.write_file(path="/a.txt", text=text)',
             "sub.feed_input(text)",
             "sub.feed_input(value=text)",
             "sub.run([text])",
@@ -577,6 +577,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
                 text = "x" * 1000
                 source = (
                     'sub = VM("")\n'
+                    "fs = VFS()\n"
                     "text = get_text()\n"
                     "checkpoint()\n"
                     f"{call}\n"
@@ -655,7 +656,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         engine = SericiteEngine()
         text = "x" * 10_000
         source = (
-            'sub = VM("")\n'
+            "sub = VFS()\n"
             "text = get_text()\n"
             'sub.write_file("/a.txt", text)\n'
             "bound = sub.read_file\n"
@@ -665,7 +666,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             "grand.run()\n"
         )
         engine.create_root(source, functions={"get_text": lambda: text}).run()
-        self.assertGreaterEqual(engine._contexts[2].alloc_bytes, len(text) * 4)
+        self.assertGreaterEqual(engine._contexts[1].alloc_bytes, len(text) * 4)
 
     def test_cross_vm_step_charges_target_work_to_caller(self):
         engine = SericiteEngine()
@@ -701,9 +702,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[2].state, "resource_exhausted")
 
-    def test_exhausted_target_write_and_drive_errors_are_catchable(self):
+    def test_exhausted_target_drive_errors_are_catchable(self):
         operations = (
-            'sub.write_file("/x", "y")',
             'sub.exec("print(1)")',
             'sub.run(["x"])',
         )
@@ -752,52 +752,27 @@ class VMHandleMethodChargeTests(unittest.TestCase):
                 self.assertEqual(vm.run(), expected)
                 self.assertEqual(vm.snapshot()["state"], "done")
 
-    def test_target_quota_failure_terminal_state_depends_on_error_kind(self):
+    def test_file_limit_failure_does_not_terminate_vm(self):
         cases = (
-            (
-                "instruction",
-                "max_instructions=1",
-                'sub.write_file("/x", "y")',
-                "resource_exhausted",
-            ),
-            (
-                "memory",
-                "max_total_bytes=256",
-                f'sub.write_file("/x", {"x" * 1000!r})',
-                "resource_exhausted",
-            ),
-            (
-                "file_size",
-                "max_fs_file_bytes=1",
-                'sub.write_file("/x", "yy")',
-                "file_limit_error",
-            ),
-            (
-                "file_count",
-                "max_fs_files=0",
-                'sub.write_file("/x", "y")',
-                "file_limit_error",
-            ),
+            ("max_fs_file_bytes=1", 'write_file("/x", "yy")'),
+            ("max_fs_files=0", 'write_file("/x", "y")'),
         )
-        for name, options, operation, error_kind in cases:
-            with self.subTest(case=name):
+        for options, operation in cases:
+            with self.subTest(options=options):
                 engine = SericiteEngine()
-                vm = engine.create_root(
-                    f'sub = VM("x = 1", {options})\n'
+                child_source = (
                     "try:\n"
                     f"    {operation}\n"
-                    f"except {error_kind}:\n"
-                    '    print("caught")\n'
-                    'print("alive")\n'
+                    "except file_limit_error:\n"
+                    "    print('caught')\n"
+                    "print('alive')\n"
                 )
-                self.assertEqual(vm.run(), "caught\nalive\n")
-                self.assertEqual(vm.snapshot()["state"], "done")
-                expected = (
-                    "ready"
-                    if error_kind == "file_limit_error"
-                    else "resource_exhausted"
+                vm = engine.create_root(
+                    f"sub = VM({child_source!r}, {options})\n"
+                    "print(sub.run(), end='')\n"
+                    "print(sub.snapshot()['state'])\n"
                 )
-                self.assertEqual(engine._contexts[1].state, expected)
+                self.assertEqual(vm.run(), "caught\nalive\ndone\n")
 
     def test_file_limit_failure_is_metered_when_caught(self):
         engine = SericiteEngine(SericiteLimits(max_fs_files=0))
@@ -837,13 +812,13 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(vm.run(), "caught\nFalse done\n")
         self.assertEqual(vm.snapshot()["state"], "done")
 
-    def test_target_write_does_not_hide_caller_quota_failure(self):
+    def test_vfs_write_does_not_hide_caller_quota_failure(self):
         engine = SericiteEngine(SericiteLimits(max_instructions=200))
         long_path = "/" + "x" * 1000
         vm = engine.create_root(
-            'sub = VM("x = 1")\n'
+            "fs = VFS()\n"
             "try:\n"
-            f'    sub.write_file({long_path!r}, "y")\n'
+            f'    fs.write_file({long_path!r}, "y")\n'
             "except resource_exhausted:\n"
             '    print("must not happen")\n'
         )
@@ -852,17 +827,16 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(ctx.exception._resource_vm_id, 0)
         self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
-        self.assertEqual(engine._contexts[1].state, "ready")
         self.assertNotIn("must not happen", vm.stdout())
 
     def test_common_ancestor_quota_failure_cannot_be_caught_by_middle_vm(self):
         engine = SericiteEngine(SericiteLimits(max_instructions=1050))
         long_path = "/" + "x" * 1000
         child_source = (
-            'sub = VM("x = 1")\n'
+            "fs = VFS()\n"
             "path = long_path()\n"
             "try:\n"
-            '    sub.write_file(path, "y")\n'
+            '    fs.write_file(path, "y")\n'
             "except resource_exhausted:\n"
             '    print("must not happen")\n'
         )
@@ -877,15 +851,11 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         self.assertEqual(ctx.exception._resource_vm_id, 0)
         self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
         self.assertEqual(engine._contexts[1].state, "resource_exhausted")
-        self.assertEqual(engine._contexts[2].state, "ready")
         self.assertNotIn("must not happen", engine._contexts[1].io.stdout())
 
     def test_terminal_target_read_methods_charge_only_caller(self):
         operations = (
             "sub.snapshot()",
-            'sub.read_file("/f.txt")',
-            'sub.list_dir("/")',
-            'sub.path_exists("/f.txt")',
             "sub.step()",
             "sub.step_instruction()",
             "sub.stdout()",
@@ -895,7 +865,6 @@ class VMHandleMethodChargeTests(unittest.TestCase):
                 engine = SericiteEngine()
                 vm = engine.create_root(
                     'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
-                    'sub.write_file("/f.txt", "ok")\n'
                     "try:\n"
                     "    sub.run()\n"
                     "except resource_exhausted:\n"
@@ -910,35 +879,33 @@ class VMHandleMethodChargeTests(unittest.TestCase):
     def test_terminal_target_prebound_read_method_charges_only_caller(self):
         engine = SericiteEngine()
         vm = engine.create_root(
-            'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
-            'sub.write_file("/f.txt", "ok")\n'
-            "bound = sub.read_file\n"
+            "sub = VM(\"print('ok')\\nwhile True:\\n    x = 1\", "
+            "max_instructions=50)\n"
+            "bound = sub.stdout\n"
             "try:\n"
             "    sub.run()\n"
             "except resource_exhausted:\n"
             "    pass\n"
-            'result = bound("/f.txt")\n'
-            "print(result)\n"
+            "result = bound()\n"
+            "print(result, end='')\n"
         )
         self.assertEqual(vm.run(), "ok\n")
         self.assertEqual(vm.snapshot()["state"], "done")
 
-    def test_terminal_target_read_still_enforces_caller_quota(self):
-        engine = SericiteEngine(limits=SericiteLimits(max_instructions=200))
-        long_path = "/" + "x" * 1000
+    def test_terminal_take_fs_recovers_files_from_exhausted_vm(self):
+        engine = SericiteEngine()
         vm = engine.create_root(
-            'sub = VM("while True:\\n    x = 1", max_instructions=50)\n'
+            "sub = VM(\"write_file('/f.txt', 'ok')\\n"
+            'while True:\\n    x = 1", max_instructions=50)\n'
             "try:\n"
             "    sub.run()\n"
             "except resource_exhausted:\n"
             "    pass\n"
-            f"result = sub.read_file({long_path!r})\n"
+            "fs = sub.take_fs()\n"
+            "print(fs.read_file('/f.txt'))\n"
         )
-        with self.assertRaises(SericiteError) as ctx:
-            vm.run()
-        self.assertEqual(ctx.exception.kind, "resource_exhausted")
-        self.assertEqual(vm.snapshot()["state"], "resource_exhausted")
-        self.assertEqual(engine._contexts[1].state, "resource_exhausted")
+        self.assertEqual(vm.run(), "ok\n")
+        self.assertEqual(vm.snapshot()["state"], "done")
 
 
 class VfsChargeTests(unittest.TestCase):
@@ -1016,7 +983,7 @@ class VfsChargeTests(unittest.TestCase):
 
     def test_cross_vm_list_dir_charges_work_to_caller(self):
         source = (
-            'target = VM("")\n'
+            "target = VFS()\n"
             "i = 0\n"
             "while i < 1000:\n"
             '    target.write_file("/f" + str(i), "")\n'
@@ -1057,9 +1024,9 @@ class VfsChargeTests(unittest.TestCase):
         self.assertGreaterEqual(allocation, len(text) * 4)
 
     def test_copy_file_count_failure_is_atomic_and_catchable(self):
-        engine = SericiteEngine()
+        engine = SericiteEngine(SericiteLimits(max_fs_files=1))
         vm = engine.create_root(
-            'sub = VM("", max_fs_files=1)\n'
+            "sub = VFS()\n"
             "sub.write_file('/source.txt', 'source')\n"
             "try:\n"
             "    sub.copy_file('/source.txt', '/copy.txt')\n"
@@ -1069,7 +1036,7 @@ class VfsChargeTests(unittest.TestCase):
             "print(sub.path_exists('/copy.txt'))\n"
         )
         self.assertEqual(vm.run(), "caught\nsource\nFalse\n")
-        self.assertEqual(engine._contexts[1].state, "done")
+        self.assertEqual(vm.snapshot()["state"], "done")
 
     def test_rename_does_not_increase_file_count(self):
         source = (
@@ -1107,9 +1074,9 @@ class VfsChargeTests(unittest.TestCase):
         self.assertGreaterEqual(allocation, len(text) * 8)
 
     def test_copy_dir_file_count_failure_leaves_tree_unchanged(self):
-        engine = SericiteEngine()
+        engine = SericiteEngine(SericiteLimits(max_fs_files=2))
         vm = engine.create_root(
-            'sub = VM("", max_fs_files=2)\n'
+            "sub = VFS()\n"
             "sub.write_file('/tree/a.txt', 'a')\n"
             "sub.write_file('/tree/b.txt', 'b')\n"
             "try:\n"
@@ -1120,7 +1087,7 @@ class VfsChargeTests(unittest.TestCase):
             "print(sub.path_exists('/copy'))\n"
         )
         self.assertEqual(vm.run(), "caught\na b\nFalse\n")
-        self.assertEqual(engine._contexts[1].state, "done")
+        self.assertEqual(vm.snapshot()["state"], "done")
 
     def test_rename_dir_does_not_increase_file_count(self):
         source = (
@@ -1149,15 +1116,17 @@ class VfsChargeTests(unittest.TestCase):
 
     def test_make_dir_quota_failure_leaves_no_partial_directories(self):
         engine = SericiteEngine()
+        sub = None
         vm = engine.create_root(
-            'sub = VM("", max_total_bytes=64)\n'
-            "try:\n"
-            "    sub.make_dir('/a/empty')\n"
-            "except resource_exhausted:\n"
-            "    print('caught')\n"
-            "print(sub.path_exists('/a'))\n"
+            "sub = VM(\"make_dir('/a/empty')\", max_total_bytes=64)\n"
         )
-        self.assertEqual(vm.run(), "caught\nFalse\n")
+        vm.run()
+        sub = engine._context(vm).frames[0].locals["sub"]
+        with self.assertRaises(SericiteError) as ctx:
+            sub.run()
+        self.assertEqual(ctx.exception.kind, "resource_exhausted")
+        fs = sub.take_fs()
+        self.assertFalse(fs.path_exists("/a"))
 
     def test_empty_directory_copy_needs_no_file_slots(self):
         source = (
@@ -1247,8 +1216,9 @@ class CrossVmResultEstimationTests(unittest.TestCase):
 
     @staticmethod
     def populate(engine: SericiteEngine, vm: VMHandle, count: int) -> None:
-        vm.step()  # create the child VM
-        fs = engine._contexts[1].fs
+        vm.step()
+        target = engine._contexts[0].frames[0].locals["target"]
+        fs = target._attachment.fs
         for index in range(count):
             fs.write_file_trusted(f"/{index:06d}", "")
 
@@ -1256,7 +1226,7 @@ class CrossVmResultEstimationTests(unittest.TestCase):
         engine = self.make_engine()
         checkpoints = []
         vm = engine.create_root(
-            "target = VM('')\n"
+            "target = VFS()\n"
             "checkpoint()\n"
             "result = target.list_dir('/')\n"
             "checkpoint()\n",
@@ -1282,7 +1252,7 @@ class CrossVmResultEstimationTests(unittest.TestCase):
         engine = self.make_engine(max_total_bytes=400_000)
         delivered = []
         vm = engine.create_root(
-            "target = VM('')\nresult = target.list_dir('/')\ndelivered()\n",
+            "target = VFS()\nresult = target.list_dir('/')\ndelivered()\n",
             functions={"delivered": lambda: delivered.append(True)},
         )
         self.populate(engine, vm, 20_000)
@@ -1360,10 +1330,12 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
                     f"except {error_kind}:\n"
                     "    pass\n"
                 )
+                bound_target = "fs" if method == "write_file" else "target"
                 source = (
                     "target = VM('')\n"
+                    "fs = VFS()\n"
                     "text = get_text()\n"
-                    f"bound = target.{method}\n"
+                    f"bound = {bound_target}.{method}\n"
                     "def leak():\n"
                     "    return bound\n"
                     "def text_fn():\n"

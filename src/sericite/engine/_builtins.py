@@ -270,6 +270,14 @@ class _EngineBuiltins:
                 work=lambda path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
+        if name == "VFS":
+            return _NativeFunction(
+                "VFS",
+                self.create_vfs,
+                home,
+                work=_no_work,
+                allocation=lambda: 8,
+            )
         if name == "VM":
             return _NativeFunction(
                 "VM",
@@ -293,15 +301,13 @@ class _EngineBuiltins:
         config: dict[str, object],
         cap: VMContext | None = None,
     ) -> VMHandle:
-        # The world belongs to parent (home: source of grant validation and quota
-        # ceilings); the causal owner is the caller `cap`: the new VM is an empty
-        # world whose tree position only affects accounting/depth/child count —
-        # it hangs under the triggering caller, with consumption pushed up the
-        # caller's ancestor chain (invariant 14). Quotas are the elementwise
-        # minimum of parent's and the caller's.
+        # Grant validation and quota ceilings come from parent (home); the causal
+        # owner is caller `cap`. A supplied VFS moves into the new VM, while the
+        # default remains a fresh empty world.
         causal = cap if cap is not None else parent
         if not isinstance(source, str):
             raise SericiteError("VM source must be a string", kind="type_error")
+        fs = config.pop("fs", None)
         granted = self._validate_child_functions(parent, config.pop("functions", None))
         output_writer = config.pop("output_writer", None)
         if output_writer is not None:
@@ -352,6 +358,7 @@ class _EngineBuiltins:
             limits=limits,
             granted=granted,
             output_writer=output_writer,
+            fs=fs,
         )
         causal.child_count += 1
         return handle
