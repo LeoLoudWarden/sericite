@@ -71,10 +71,10 @@ print(vm.run(), end="")    # 42
 
 ## What a Sericite VM is
 
-A VM is a cheap, self-contained workspace:
+A VM is a cheap, self-contained environment for running code:
 
 - it cannot see its parent's variables, files, or handles, and cannot tell how deep it is nested;
-- it has its own empty in-memory filesystem (text only — structurally unable to touch the real disk);
+- by default it has an empty in-memory filesystem (text only — structurally unable to touch the real disk); this file workspace can be transferred explicitly between VMs;
 - resource quotas (instructions, memory, output, live VM count, live descendant count, nesting depth, …) can only be tightened, never loosened, and a child's consumption is charged to all its ancestors;
 - its parent can preset files, feed input, single-step it statement by statement or instruction by instruction, snapshot its state, or terminate it;
 - it can create its own child VMs — isolation is recursive, because untrusted code is.

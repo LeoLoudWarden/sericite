@@ -25,6 +25,7 @@ assert output == "hello world\n"
 
 ```python
 SericiteEngine(limits=None)
+engine.create_vfs() -> VFSHandle
 engine.create_root(
     source,
     inputs=None,
@@ -60,9 +61,27 @@ For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the 
 
 `-1` is an explicit trust decision: use it only for code you control. For what unlimited quotas do and do not mean for resource safety, see the [security model](security.md) §3.
 
-## 4. Driving VMs
+## 4. Driving VMs and managing VFSs
 
-The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. The host may also use `VMHandle` file methods to configure or inspect the currently attached VFS. These are trusted host-management channels, not script-side VM file proxies: scripts operate only on the current session's VFS or a detached `VFSHandle`.
+The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. A host can hold and manage a workspace between execution sessions:
+
+```python
+from sericite import SericiteEngine
+
+engine = SericiteEngine()
+fs = engine.create_vfs()
+fs.write_file("/input.txt", "hello")
+vm = engine.create_root(
+    "write_file('/output.txt', read_file('/input.txt') + '!')",
+    fs=fs,
+)
+vm.run()
+fs = vm.take_fs()
+assert fs.read_file("/output.txt") == "hello!"
+vm.dispose()
+```
+
+Host `VMHandle` file methods operate on the currently attached VFS, while the same `VFSHandle` methods operate on a detached workspace. Both are trusted host-management channels, not script-side VM file proxies; scripts operate only on the current session's VFS or a detached handle. See the [language reference](language-reference.md) §6 for path, directory, and public error semantics.
 
 A host-side snapshot is a strict superset of the script-safe view, adding:
 
@@ -77,11 +96,11 @@ Script calls receive only the safe view and cannot see these host fields.
 
 The host side also has one privilege — host management is not script accounting:
 
-- Direct `feed_input()`, `write_file()`, file reads, stdout access, snapshots, and `dispose()` do not enter the script's memory ledger;
+- Direct `feed_input()`, file operations through `VMHandle`/`VFSHandle`, stdout access, snapshots, and `dispose()` do not enter the script's memory ledger;
 - Resource-specific limits such as file count, per-file bytes, total file storage, and output bytes still apply;
 - Instructions and dynamic operations executed by `run()`, `exec()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
 
-This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.**
+This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.** See the [architecture notes](architecture.md) §5 for the script accounting model.
 
 ## 5. FFI: granting host capabilities
 
@@ -155,5 +174,5 @@ The script-side catchability of `resource_exhausted` (catchable only from code i
 - Tighten quotas explicitly at every VM layer instead of relying on defaults.
 - Add process, container, or another OS-level boundary in production; do not treat the in-process Python engine as the only isolation boundary.
 - Grant only necessary FFI and enforce argument, rate, and external-resource limits inside each capability.
-- Use the public `VMHandle` API for host management; never expose internal contexts or private implementation objects to untrusted Python.
+- Use the public `VMHandle`/`VFSHandle` APIs for host management; never expose internal contexts or private implementation objects to untrusted Python.
 - Snapshots and errors may be forwarded to higher layers, but do not put host secrets into `SericiteError` messages.

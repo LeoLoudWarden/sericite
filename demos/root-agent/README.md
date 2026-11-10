@@ -7,7 +7,7 @@ This demo is a multi-layer LLM application driven by a root Sericite program. **
 ## Runtime structure
 
 - **Outer session**: root holds a detached VFS across calls and moves it into a fresh first-level VM for each `sericite_exec`, granting the two host functions.
-- **First-level VM**: each delivery is an independent execution session; variables, module caches, and execution ledgers do not survive. Root retrieves the file workspace with `take_fs()` after the terminal state. Model-generated code can use `llm_chat` to start its own inner session.
+- **First-level VM**: each execution is an independent session; variables, module caches, and execution ledgers do not survive. Root retrieves the file workspace with `take_fs()` after the terminal state. Model-generated code can use `llm_chat` to start its own inner session.
 - **Second-level VM**: when that session calls `sericite_exec`, model-written code maintains a second-level workspace through the same exclusive-transfer protocol. It receives no host functions, so it has no network access, and the recursion ends there. The inner session and its VM management are written by the model, not supplied as another prewritten agent.
 
 ## Files and prompt boundary

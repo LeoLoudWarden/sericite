@@ -25,6 +25,7 @@ assert output == "hello world\n"
 
 ```python
 SericiteEngine(limits=None)
+engine.create_vfs() -> VFSHandle
 engine.create_root(
     source,
     inputs=None,
@@ -60,9 +61,27 @@ engine.create_root(
 
 `-1` 是显式的信任决定，只用于你掌控的代码。无限配额对资源安全的含义与边界见[安全模型](security.zh-CN.md)第 3 节。
 
-## 4. 驱动 VM
+## 4. 驱动 VM 与管理 VFS
 
-`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主还可通过 `VMHandle` 的文件方法预置或检查当前依附的 VFS，但这些是可信宿主管理通道，不存在对应的脚本侧 VM 文件代理；脚本只能操作当前会话的 VFS 或分离状态的 `VFSHandle`。
+`VMHandle` 的驱动方法（`run`/`exec`/`step`/快照/`take_fs`/`dispose` 等）与脚本内 VM 值共享状态与契约，见[虚拟机参考](vm-reference.zh-CN.md)第 3、4 节。宿主可以在两段会话之间持有并管理工作区：
+
+```python
+from sericite import SericiteEngine
+
+engine = SericiteEngine()
+fs = engine.create_vfs()
+fs.write_file("/input.txt", "hello")
+vm = engine.create_root(
+    "write_file('/output.txt', read_file('/input.txt') + '!')",
+    fs=fs,
+)
+vm.run()
+fs = vm.take_fs()
+assert fs.read_file("/output.txt") == "hello!"
+vm.dispose()
+```
+
+宿主 `VMHandle` 的文件方法操作当前依附的 VFS，`VFSHandle` 的同名方法操作分离工作区。两者都是可信宿主管理通道，不是脚本侧 VM 文件代理；脚本只能操作当前会话的 VFS 或分离句柄。路径、目录与公开错误语义见[语言参考](language-reference.zh-CN.md)第 6 节。
 
 宿主侧快照是脚本安全视图的严格超集，额外包含：
 
@@ -77,11 +96,11 @@ engine.create_root(
 
 宿主侧还有一条特权规则——宿主管理不计入脚本账：
 
-- 直接 `feed_input()`、`write_file()`、读取文件、查看 stdout 或快照、`dispose()`，不计入脚本的内存账；
+- 直接 `feed_input()`、通过 `VMHandle`/`VFSHandle` 读写文件、查看 stdout 或快照、`dispose()`，不计入脚本的内存账；
 - 文件数、单文件字节、文件总存储量、输出字节等资源自身限制仍然有效；
 - `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 
-不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**
+不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**脚本计量模型见[架构说明](architecture.zh-CN.md)第 5 节。
 
 ## 5. FFI：向 VM 授予宿主能力
 
@@ -155,5 +174,5 @@ except SericiteError as exc:
 - 为每层 VM 显式收紧配额，不依赖默认值。
 - 生产环境增加独立进程、容器等 OS 级隔离，不把同进程 Python 引擎当作唯一边界。
 - 只授予必要的 FFI，并在能力内部做参数、频率和外部资源限制。
-- 宿主预置和管理走公开 `VMHandle` API；不要把内部上下文或私有实现对象暴露给不可信 Python。
+- 宿主预置和管理走公开 `VMHandle`/`VFSHandle` API；不要把内部上下文或私有实现对象暴露给不可信 Python。
 - 调试快照和异常可以交给上层使用，但仍应避免把宿主自己的秘密写进 `SericiteError`。

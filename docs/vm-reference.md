@@ -2,7 +2,7 @@
 
 [中文](vm-reference.zh-CN.md)
 
-This document is for **readers who understand isolated workspaces and need to create and drive child VMs inside Sericite scripts**. It covers the script-visible contracts for VM states, driving methods, exec delivery, quotas, and function granting. For the Python host API, see the [Sericite-PY reference](sericite-py-reference.md).
+This document is for **readers who need to create and drive child VMs inside Sericite scripts**. It covers the script-visible contracts for execution sessions, VFS transfer, VM states, driving methods, exec delivery, quotas, and function granting. For the Python host API, see the [Sericite-PY reference](sericite-py-reference.md).
 
 ## 1. What a VM is
 
@@ -26,9 +26,9 @@ A new VM has a blank VFS by default. `fs` accepts only a detached handle returne
 
 VM states are `ready`, `waiting_input`, `done`, `error`, `resource_exhausted`, and `terminated`.
 
-`terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op — terminal VMs such as `done`/`error` still accept `exec` deliveries.
+`terminate()` marks a `ready` or `waiting_input` VM as `terminated`; in any other state it is a silent no-op. Terminal VMs such as `done`/`error` can continue to accept `exec` deliveries while their VFS remains attached.
 
-A VM holds resources that require release. It remains alive while it is reachable from a VM value or a granted function's environment, so terminal VMs remain available for debug snapshots and further `exec` deliveries.
+A VM holds resources that require release. It remains alive while it is reachable from a VM value or a granted function's environment, so terminal VMs remain available for debug snapshots and, while their VFS remains attached, further `exec` deliveries.
 
 Once a VM becomes wholly unreachable, garbage collection eventually destroys it, including when self-references or cross-VM cycles are present. Automatic collection is not guaranteed at a particular statement or scope boundary; call `dispose()` when deterministic release is required.
 
@@ -76,7 +76,7 @@ The recommended workflow is: configure a detached VFS, move it into the VM, then
 
 Running out of queued input with no further source is ordinary suspension (`waiting_input`), not an exception; an input source explicitly reporting closure (`input_error`) follows the normal catchable-error path. On failure, `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
-After a child exhausts an execution budget and enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's execution-budget errors remain uncatchable. File-count, per-file, and file-storage constraints instead use the ordinary, catchable `file_limit_error`, which is unrelated to execution-account exhaustion and does not terminate the execution session. For the full script-visible rules see the [language reference](language-reference.md) §5.
+After a child exhausts an execution budget and enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's execution-budget errors remain uncatchable. File-operation constraints use a separate, recoverable error contract described in section 5 below.
 
 A terminal VM can still be operated on, but two kinds of methods behave differently:
 
@@ -155,7 +155,11 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 
 Despite its historical name, `max_string_bytes` limits characters per string; per-file and output quotas are measured in UTF-8 bytes. Total file storage uses the memory model's approximate-byte convention.
 
-The three file fields are **VM constraints on file operations**, not accounts held by the VFS. Rejection uses the ordinary, catchable `file_limit_error` and does not terminate the VM. An existing world that already exceeds the current VM's limits can be read, deleted, renamed, or overwritten without increasing its size, but cannot be grown further. A failed operation leaves no partial mutation, and failed attempts and retries remain normally metered.
+The three file fields are **VM constraints on file operations**, not accounts held by the VFS:
+
+- Limits from the current VM and the actual call chain tighten together. Rejection uses the ordinary, catchable `file_limit_error` and does not terminate the execution session.
+- Each constraint compares the corresponding current usage before and after an operation. An already over-limit world can still be read, shrunk, or operated on without further increasing that usage; adding files, enlarging files, and renames that increase path or directory metadata must still pass the relevant checks.
+- Mutations complete path and resource checks before commit, so failure leaves no partial change. Failed attempts and retries remain normally metered.
 
 Only the cumulative fields `max_instructions`, `max_output_bytes`, and `max_total_bytes` accept `-1` for no local cap. Every other field, including the live-count quotas `max_total_vms` and `max_descendant_vms`, is structural and must be a non-negative finite integer; every field rejects other negative values and non-integer values.
 
