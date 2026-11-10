@@ -7,6 +7,7 @@ from ._model import (
     SericiteModule,
     SericiteRecord,
     SericiteSchema,
+    VFSHandle,
     VMContext,
     VMHandle,
     _NativeFunction,
@@ -341,6 +342,19 @@ class _EngineOperators:
             )
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
+        if isinstance(value, VFSHandle) and attr in VFSHandle._METHODS:
+            return _NativeFunction(
+                f"VFS.{attr}",
+                lambda *a, **k: self._charged_vfs_method(value, attr, a, k),
+                None,
+                work=lambda *a, **k: self._vfs_method_work(value, attr, a, k),
+                allocation=lambda *a, **k: self._vfs_method_allocation(
+                    value, attr, a, k
+                ),
+                needs_caller=True,
+            )
+        if isinstance(value, VFSHandle):
+            raise SericiteError(f"VFS has no method '{attr}'", kind="attribute_error")
         if type(value) in (list, tuple):
             if type(value) is list and attr == "append":
                 return _NativeFunction(

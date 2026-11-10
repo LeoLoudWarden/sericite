@@ -350,7 +350,7 @@ except resource_exhausted as e:
 
 ### Files and directories
 
-The current workspace provides a text-only filesystem, with paths such as `/notes/a.txt`. Scripts access it through these built-ins:
+The VFS exclusively owned by the current execution session provides a text-only filesystem, with paths such as `/notes/a.txt`. Scripts access it through these built-ins:
 
 | Operation | Purpose |
 |---|---|
@@ -365,6 +365,8 @@ The current workspace provides a text-only filesystem, with paths such as `/note
 | `copy_dir(source_path, destination_path)` | Recursively copy a directory tree |
 | `list_dir(path)` | Return sorted direct children of a directory |
 | `path_exists(path)` | Check whether a file or directory exists |
+
+`VFS()` creates a detached workspace whose handle supports the same methods shown above. `VM(code, fs=fs)` moves a detached workspace into a new session and consumes the old handle; `take_fs()` retrieves it after a terminal state. A VFS belongs to at most one VM at a time, and old handles, old sessions, and their home functions lose access after transfer. See the [VM reference](vm-reference.md) §§2–4.
 
 **Implicit and explicit directories.** Writing a file creates missing parent directories implicitly. When deletion or rename leaves an implicit directory with no files or subdirectories, that directory is removed automatically. `make_dir` creates its target and any missing parents explicitly; they remain even when empty. The root directory always remains.
 
@@ -782,13 +784,15 @@ print(times_ten(n))
 print("worker says: " + worker.run(["6"]))   # 60
 
 # A sub-VM has its own filesystem: preset a file, then retrieve the file it wrote
+fs = VFS()
+fs.write_file("/input.txt", "hello")         # configure a detached workspace first
 proc = VM("""
 text = read_file("/input.txt")
 write_file("/output.txt", text + "!")
-""")
-proc.write_file("/input.txt", "hello")      # preset a file before running
+""", fs=fs)
 proc.run()
-print(proc.read_file("/output.txt"))         # hello!
+fs = proc.take_fs()
+print(fs.read_file("/output.txt"))           # hello!
 
 # Single-step (by statement or instruction) and inspect snapshots
 dbg = VM("x = 1\ny = x + 1\nprint(y)")

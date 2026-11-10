@@ -52,6 +52,14 @@ class _Directory:
         self.explicit = False
 
 
+class VFSAttachment:
+    __slots__ = ("fs", "owner_vm_id")
+
+    def __init__(self) -> None:
+        self.fs = VirtualFileSystem()
+        self.owner_vm_id: int | None = None
+
+
 class VirtualFileSystem:
     """A private text-only VFS whose directory tree stores each direct-child name once."""
 
@@ -857,6 +865,15 @@ class VirtualFileSystem:
         if self._find_directory(normalized) is not None:
             raise SericiteError(f"is a directory: {path}", kind="is_directory")
         raise SericiteError(f"no such file: {path}", kind="file_not_found")
+
+    def list_dir_count(self, path: object) -> int:
+        normalized = normalize_path(path)
+        if normalized in self._files:
+            raise SericiteError(f"not a directory: {path}", kind="not_directory")
+        directory = self._find_directory(normalized)
+        if directory is None:
+            raise SericiteError(f"no such directory: {path}", kind="file_not_found")
+        return len(directory.directories) + len(directory.files)
 
     def list_dir(self, path: object) -> list[str]:
         normalized = normalize_path(path)

@@ -6,20 +6,21 @@
 
 ## 1. VM 是什么
 
-VM 是相互隔离的工作空间：看不到父级的变量、文件和句柄，也不知道自己嵌套在第几层。每台 VM 有独立的模块作用域、虚拟文件系统、输入队列与 stdout；隔离承诺见[安全模型](security.zh-CN.md)第 2 节。
+VM 是相互隔离的执行会话：看不到父级的变量、文件和句柄，也不知道自己嵌套在第几层。每段会话有独立的模块作用域与缓存、输入队列、stdout 和累计执行账；它依附的 VFS 是独占的文件世界。隔离承诺见[安全模型](security.zh-CN.md)第 2 节。
 
-VM 不是一次性的：同一台 VM 可以喂输入、预置和读取文件、逐语句或逐指令单步、查看快照、投递新源码继续执行，或随时终止。
+VM 不是一次性的：同一段会话可以喂输入、逐语句或逐指令单步、查看快照、通过 `exec()` 接收新源码继续执行，或随时终止。`run()`、`step()` 和多次 `exec()` 不会开始新会话；需要全新变量、模块缓存和执行账时应创建另一台 VM。
 
-## 2. 创建 VM
+## 2. 创建 VM 与移交 VFS
 
 脚本内用 `VM(code, **options)` 创建子 VM：
 
 ```python
 sub = VM(code, max_instructions=10000)   # 资源配额，只能比当前环境更严
 sub = VM(code, output_writer=forward, buffer_output=False)
+sub = VM(code, fs=workspace)              # 移入一个分离状态的 VFS
 ```
 
-`output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
+默认创建空白 VFS。`fs` 只接受 `VFS()` 或另一终态 VM 的 `take_fs()` 所返回的分离句柄；挂载成功后旧句柄永久失效，VFS 由新 VM 独占。`output_writer` 与 `buffer_output` 配置该 VM 的输出，`functions` 用于授予函数（第 6 节），其余选项为配额字段。输出转发见第 4 节，配额见第 5 节。
 
 ## 3. 状态与生命周期
 
@@ -38,6 +39,8 @@ VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环�
 - 幂等——重复释放是空操作；
 - 使 VM 值失效——已释放 VM 上的其他方法以 `runtime_error` 失败。
 
+`take_fs()` 只允许在 `done`、`error`、`resource_exhausted` 或 `terminated` 终态调用；它会原子地取出 VFS 并返回新的分离句柄。运行中或 `waiting_input` 不能直接取出，放弃等待中的会话时先 `terminate()`。取出后，原 VM 仍可快照、读取 stdout 和销毁，但失去文件访问且不再接受 `exec()`；旧 home 函数与旧 VFS 句柄也不能访问已移交的世界。若取出失败，VFS 仍属于原 VM。销毁原 VM 不影响已经分离的 VFS。
+
 定义函数所属的 VM 被销毁后，从该 VM 传到其他 VM 的函数也会失效；调用时以可捕获的 `runtime_error` 失败。授予语义见第 6 节。
 
 资源不足时，`dispose()` 会在销毁前失败。销毁不会退还父级已经消耗的累计指令或内存额度；内部生命周期与计费规则见[架构说明](architecture.zh-CN.md)第 5.4 节。
@@ -55,29 +58,21 @@ VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环�
 | `stdout() -> str` | 返回当前 stdout |
 | `terminate()` | 终止 VM；生效状态与空操作语义见第 3 节 |
 | `dispose()` | 强制销毁任意状态的 VM 及其存活后代；见第 3 节 |
-| `read_file(path) -> str` | 读取该 VM 的文本文件 |
-| `write_file(path, text)` | 写入该 VM 的文本文件 |
-| `delete_file(path)` | 删除文件 |
-| `rename_file(old_path, new_path)` | 重命名或移动文件；拒绝覆盖已有文件 |
-| `copy_file(source_path, destination_path)` | 复制文件；拒绝覆盖已有文件 |
-| `make_dir(path)` | 创建目录及缺失父目录；空目录会持续存在 |
-| `delete_dir(path)` | 递归删除整个目录树 |
-| `rename_dir(old_path, new_path)` | 递归移动目录树；拒绝覆盖或移入自身 |
-| `copy_dir(source_path, destination_path)` | 递归复制目录树；拒绝覆盖或复制到自身内部 |
-| `list_dir(path) -> list[str]` | 列出目录的直接子项并排序 |
-| `path_exists(path) -> bool` | 检查文件或目录是否存在 |
+| `take_fs() -> VFS` | 从终态 VM 原子取出 VFS，返回新的分离句柄；见第 3 节 |
 
-文件与目录方法的路径、错误和空目录行为与对应脚本内建相同，见[语言参考](language-reference.zh-CN.md)第 6 节。
+VM 值不再提供脚本侧文件代理。文件内置函数始终操作当前会话独占的 VFS；分离句柄上的同名方法操作分离工作区，路径、错误和目录语义见[语言参考](language-reference.zh-CN.md)第 6 节。
 
 ```python
-sub = VM(code, max_instructions=10000)
-sub.write_file("/input.txt", "数据")      # 预置文件给它
+fs = VFS()
+fs.write_file("/input.txt", "数据")       # 先预置分离工作区
+sub = VM(code, fs=fs, max_instructions=10000)
 sub.feed_input("一行输入")                # 喂 input()
 out = sub.run()
-print(sub.read_file("/result.txt"))       # 取回它写的文件
+fs = sub.take_fs()
+print(fs.read_file("/result.txt"))        # 终态后取回产出
 ```
 
-推荐工作流：运行前预置文件与输入，运行后读取结果。
+推荐工作流：运行前配置分离 VFS，移入 VM 执行，终态取出后读取结果。
 
 输入耗尽且没有更多输入来源是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，`sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
@@ -85,8 +80,8 @@ print(sub.read_file("/result.txt"))       # 取回它写的文件
 
 终态 VM 仍可被操作，但两类方法的行为不同：
 
-- 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、文件读取等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照；
-- 写入或驱动方法（上述文件/目录变更方法、`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
+- 不驱动该 VM 的方法（`snapshot`、`step`、`step_instruction`、`stdout`、`take_fs` 等）仍然可用；在终态 VM 上，`step`/`step_instruction` 只返回快照，`take_fs` 只由调用方计量；
+- 驱动方法（`feed_input`、带输入的 `run`、`exec` 等）可能因该 VM 已耗尽的配额而失败。
 
 计费模型（哪些操作由谁计量）见[架构说明](architecture.zh-CN.md)第 5.4 节。
 
@@ -116,7 +111,7 @@ writer：
 `exec(source)` 让 VM 换上新程序但保留它的世界：
 
 - **保留的世界**：新的模块帧复用先前的模块作用域，模块级名字（变量、函数、schema）因此持久；文件系统、输入队列、授予的函数和已导入模块的缓存不受影响。
-- **状态与丢弃规则**：除 `terminated` 与正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。
+- **状态与丢弃规则**：除 `terminated`、已通过 `take_fs()` 分离 VFS，以及正被驱动（`run()`/`exec()`/`step()` 进行中）之外，任何状态都接受投递。尚未执行完的程序（从未开始，或正暂停在输入上）会被丢弃，先前的错误被清除，旧的调试帧栈被替换——需要现场请先 `snapshot()`。
 - **编译原子性**：编译先于任何状态改变完成，编译失败的源码让 VM 保持原样。
 - **配额按生命周期累计**：指令、内存与输出消耗跨投递累计，而非按投递计算。
 

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 from .. import isa
 from ..accounting import UNLIMITED, AllocationPermit, Meter
-from ..compiler import VM_METHODS
+from ..compiler import VFS_METHODS, VM_METHODS
 from ..errors import SericiteError
 from ..io import VirtualIO
-from ..vfs import VirtualFileSystem
+from ..vfs import VFSAttachment, VirtualFileSystem
 
 if TYPE_CHECKING:
     from . import SericiteEngine
@@ -272,13 +272,70 @@ class _GrantedSericiteFunction:
         return f"<function {self.name}>"
 
 
+class VFSHandle:
+    _METHODS = VFS_METHODS
+
+    def __init__(self, engine: SericiteEngine, attachment: VFSAttachment) -> None:
+        self._engine = engine
+        self._attachment = attachment
+        self._consumed = False
+
+    def read_file(self, path: object) -> str:
+        return self._engine._detached_vfs(self).read_file(path)
+
+    def write_file(self, path: object, text: object) -> None:
+        self._engine._detached_vfs(self).write_file_trusted(
+            path, text, limits=self._engine._limits
+        )
+
+    def delete_file(self, path: object) -> None:
+        self._engine._detached_vfs(self).delete_file(path)
+
+    def rename_file(self, old_path: object, new_path: object) -> None:
+        self._engine._detached_vfs(self).rename_file_trusted(
+            old_path, new_path, limits=self._engine._limits
+        )
+
+    def copy_file(self, source_path: object, destination_path: object) -> None:
+        self._engine._detached_vfs(self).copy_file_trusted(
+            source_path, destination_path, limits=self._engine._limits
+        )
+
+    def delete_dir(self, path: object) -> None:
+        self._engine._detached_vfs(self).delete_dir(path)
+
+    def rename_dir(self, old_path: object, new_path: object) -> None:
+        self._engine._detached_vfs(self).rename_dir_trusted(
+            old_path, new_path, limits=self._engine._limits
+        )
+
+    def copy_dir(self, source_path: object, destination_path: object) -> None:
+        self._engine._detached_vfs(self).copy_dir_trusted(
+            source_path, destination_path, limits=self._engine._limits
+        )
+
+    def make_dir(self, path: object) -> None:
+        self._engine._detached_vfs(self).make_dir_trusted(
+            path, limits=self._engine._limits
+        )
+
+    def list_dir(self, path: object) -> list[str]:
+        return self._engine._detached_vfs(self).list_dir(path)
+
+    def path_exists(self, path: object) -> bool:
+        return self._engine._detached_vfs(self).path_exists(path)
+
+    def __repr__(self) -> str:
+        return "<VFS>"
+
+
 @dataclass
 class VMContext:
     vm_id: int
     depth: int
     parent_id: int | None
     io: VirtualIO
-    fs: VirtualFileSystem
+    vfs: VFSAttachment | None
     limits: SericiteLimits
     next_source_id: int = 1
     frames: list[Frame] = field(default_factory=list)
@@ -299,6 +356,10 @@ class VMContext:
     meter_stack: list[Meter] = field(default_factory=list)
     meter: Meter | None = None
     finalizer: weakref.finalize | None = None
+
+    @property
+    def fs(self) -> VirtualFileSystem | None:
+        return self.vfs.fs if self.vfs is not None else None
 
     @property
     def filename(self) -> str:
@@ -355,6 +416,9 @@ class VMHandle:
 
     def dispose(self) -> None:
         self._engine._dispose(self)
+
+    def take_fs(self) -> VFSHandle:
+        return self._engine._take_fs(self)
 
     def read_file(self, path: object) -> str:
         return self._engine._attached_vfs(self._engine._context(self)).read_file(path)

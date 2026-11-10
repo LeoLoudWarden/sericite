@@ -8,6 +8,7 @@ from ._model import (
     SericiteModule,
     SericiteRecord,
     SericiteSchema,
+    VFSHandle,
     VMContext,
     VMHandle,
     _GrantedHostFunction,
@@ -34,41 +35,12 @@ class _EngineHostDebug:
         if attr == "dispose":
             size, ancestor_depth = self._dispose_shape(handle)
             return 2 * size + ancestor_depth
-        fs = self._attached_vfs(self._context(handle))
         if attr == "exec":
             source = args[0] if args else kwargs.get("source")
             return 1 + len(source) // 4 if isinstance(source, str) else 0
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs", ())
             return len(inputs) if isinstance(inputs, (list, tuple)) else 0
-        if attr == "write_file":
-            path = args[0] if args else kwargs.get("path")
-            text = args[1] if len(args) > 1 else kwargs.get("text")
-            return fs.write_work(path, text)
-        if attr in ("rename_file", "rename_dir"):
-            old_path = args[0] if args else kwargs.get("old_path")
-            new_path = args[1] if len(args) > 1 else kwargs.get("new_path")
-            work = fs.rename_work if attr == "rename_file" else fs.rename_dir_work
-            return work(old_path, new_path)
-        if attr in ("copy_file", "copy_dir"):
-            source_path = args[0] if args else kwargs.get("source_path")
-            destination_path = (
-                args[1] if len(args) > 1 else kwargs.get("destination_path")
-            )
-            work = fs.copy_work if attr == "copy_file" else fs.copy_dir_work
-            return work(source_path, destination_path)
-        if attr == "list_dir":
-            path = args[0] if args else kwargs.get("path")
-            return fs.list_dir_work(path)
-        if attr == "delete_dir":
-            path = args[0] if args else kwargs.get("path")
-            return fs.delete_dir_work(path)
-        if attr == "make_dir":
-            path = args[0] if args else kwargs.get("path")
-            return fs.path_work(path)
-        if attr in ("read_file", "delete_file", "path_exists"):
-            path = args[0] if args else kwargs.get("path")
-            return fs.path_work(path)
         if attr in {
             "feed_input",
             "step",
@@ -76,7 +48,7 @@ class _EngineHostDebug:
             "snapshot",
             "stdout",
             "terminate",
-            "dispose",
+            "take_fs",
         }:
             return 0
         raise SericiteError(
@@ -93,6 +65,8 @@ class _EngineHostDebug:
         if attr == "dispose":
             size, _ = self._dispose_shape(handle)
             return 32 * size
+        if attr == "take_fs":
+            return 8
         context = kwargs["_caller_context"]
         target = self._context(handle)
         if attr == "run":
@@ -107,52 +81,8 @@ class _EngineHostDebug:
             value = args[0] if args else kwargs.get("value")
             amount = target.io.input_cost(value)
             return self._meter(context).reserve(target.io, "input", amount)
-        if attr == "make_dir":
-            path = args[0] if args else kwargs.get("path")
-            amount = self._attached_vfs(target).make_dir_allocation(path)
-            return self._meter(context).reserve(
-                self._attached_vfs(target), "write", amount
-            )
-        if attr == "write_file":
-            path = args[0] if args else kwargs.get("path")
-            text = args[1] if len(args) > 1 else kwargs.get("text")
-            amount = self._attached_vfs(target).write_allocation(path, text)
-            return self._meter(context).reserve(
-                self._attached_vfs(target), "write", amount
-            )
-        if attr in ("rename_file", "rename_dir"):
-            old_path = args[0] if args else kwargs.get("old_path")
-            new_path = args[1] if len(args) > 1 else kwargs.get("new_path")
-            estimate = (
-                self._attached_vfs(target).rename_allocation
-                if attr == "rename_file"
-                else self._attached_vfs(target).rename_dir_allocation
-            )
-            amount = estimate(old_path, new_path)
-            return self._meter(context).reserve(
-                self._attached_vfs(target), "write", amount
-            )
-        if attr in ("copy_file", "copy_dir"):
-            source_path = args[0] if args else kwargs.get("source_path")
-            destination_path = (
-                args[1] if len(args) > 1 else kwargs.get("destination_path")
-            )
-            estimate = (
-                self._attached_vfs(target).copy_allocation
-                if attr == "copy_file"
-                else self._attached_vfs(target).copy_dir_allocation
-            )
-            amount = estimate(source_path, destination_path)
-            return self._meter(context).reserve(
-                self._attached_vfs(target), "write", amount
-            )
         if attr in {
             "exec",
-            "read_file",
-            "delete_file",
-            "delete_dir",
-            "list_dir",
-            "path_exists",
             "step",
             "step_instruction",
             "snapshot",
@@ -183,30 +113,6 @@ class _EngineHostDebug:
             and set(kwargs) <= {"inputs"}
             and not (args and "inputs" in kwargs)
         )
-        write_signature = (
-            len(args) + len(kwargs) == 2
-            and len(args) <= 2
-            and set(kwargs) <= {"path", "text"}
-            and (bool(args) or "path" in kwargs)
-            and (len(args) > 1 or "text" in kwargs)
-        )
-        rename_signature = (
-            len(args) + len(kwargs) == 2
-            and len(args) <= 2
-            and set(kwargs) <= {"old_path", "new_path"}
-            and (bool(args) or "old_path" in kwargs)
-            and (len(args) > 1 or "new_path" in kwargs)
-        )
-        copy_signature = (
-            len(args) + len(kwargs) == 2
-            and len(args) <= 2
-            and set(kwargs) <= {"source_path", "destination_path"}
-            and (bool(args) or "source_path" in kwargs)
-            and (len(args) > 1 or "destination_path" in kwargs)
-        )
-        make_dir_signature = (
-            len(args) + len(kwargs) == 1 and len(args) <= 1 and set(kwargs) <= {"path"}
-        )
         if attr == "feed_input" and feed_signature:
             value = args[0] if args else kwargs.get("value")
             if not isinstance(value, str):
@@ -228,70 +134,10 @@ class _EngineHostDebug:
                 if target.state == "waiting_input":
                     target.state = "ready"
             result = self._run(handle)
-        elif attr == "make_dir" and make_dir_signature:
-            path = args[0] if args else kwargs["path"]
-            target = self._context(handle)
-            try:
-                self._attached_vfs(target).make_dir(
-                    path,
-                    permit=permit,
-                    limits=self._file_operation_limits(target),
-                )
-            except SericiteError as error:
-                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
-                    error._resource_vm_id = target.vm_id
-                raise
-            result = None
-        elif attr == "write_file" and write_signature:
-            path = args[0] if args else kwargs["path"]
-            text = args[1] if len(args) > 1 else kwargs["text"]
-            target = self._context(handle)
-            try:
-                self._attached_vfs(target).write_file(
-                    path,
-                    text,
-                    permit=permit,
-                    limits=self._file_operation_limits(target),
-                )
-            except SericiteError as error:
-                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
-                    error._resource_vm_id = target.vm_id
-                raise
-            result = None
-        elif attr in ("rename_file", "rename_dir") and rename_signature:
-            old_path = args[0] if args else kwargs["old_path"]
-            new_path = args[1] if len(args) > 1 else kwargs["new_path"]
-            target = self._context(handle)
-            try:
-                getattr(self._attached_vfs(target), attr)(
-                    old_path,
-                    new_path,
-                    permit=permit,
-                    limits=self._file_operation_limits(target),
-                )
-            except SericiteError as error:
-                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
-                    error._resource_vm_id = target.vm_id
-                raise
-            result = None
-        elif attr in ("copy_file", "copy_dir") and copy_signature:
-            source_path = args[0] if args else kwargs["source_path"]
-            destination_path = args[1] if len(args) > 1 else kwargs["destination_path"]
-            target = self._context(handle)
-            try:
-                getattr(self._attached_vfs(target), attr)(
-                    source_path,
-                    destination_path,
-                    permit=permit,
-                    limits=self._file_operation_limits(target),
-                )
-            except SericiteError as error:
-                if error.kind == "resource_exhausted" and error._resource_vm_id is None:
-                    error._resource_vm_id = target.vm_id
-                raise
-            result = None
         elif attr == "exec" and len(args) == 1 and not kwargs:
             result = self._exec_source(handle, args[0])
+        elif not args and not kwargs and attr == "take_fs":
+            result = self._take_fs(handle)
         elif not args and not kwargs and attr == "dispose":
             result = self._dispose(handle)
         elif not args and not kwargs and attr == "snapshot":
@@ -302,7 +148,8 @@ class _EngineHostDebug:
             result = self._step_instruction(handle, meter=meter)
         else:
             result = getattr(handle, attr)(*args, **kwargs)
-        _estimate_size(result, meter=result_meter)
+        if attr != "take_fs":
+            _estimate_size(result, meter=result_meter)
         return result
 
     def _snapshot(
@@ -439,7 +286,8 @@ class _EngineHostDebug:
         if isinstance(value, SericiteSchema):
             return _schema_repr(value, _seen, _budget, meter=meter)
         if isinstance(
-            value, (VMHandle, SericiteFunction, SericiteModule, _NativeFunction)
+            value,
+            (VMHandle, VFSHandle, SericiteFunction, SericiteModule, _NativeFunction),
         ):
             return repr(value)
         if isinstance(value, (_GrantedHostFunction, _GrantedSericiteFunction)):

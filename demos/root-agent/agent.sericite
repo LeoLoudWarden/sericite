@@ -81,15 +81,15 @@ def workspace_path(path):
     return f"/workspace{path}"
 
 
-def seed_tree(sub, prefix="/"):
+def seed_tree(fs, prefix="/"):
     for name in list_dir(workspace_path(prefix)):
         path = f"{prefix.rstrip('/')}/{name}"
         try:
             text = read_file(workspace_path(path))
         except is_directory:
-            seed_tree(sub, path)
+            seed_tree(fs, path)
         else:
-            sub.write_file(path, text)
+            fs.write_file(path, text)
 
 
 def print_tagged(source, color, text):
@@ -125,16 +125,10 @@ def layer_1_output(text):
             print_tagged("VM 1", "vm", "… folding live output; tail follows")
 
 
-# One persistent execution VM for the whole session: variables, definitions,
-# and files all survive across sericite_exec calls, and the file tools below
-# operate on this VM's filesystem directly. Its output is forwarded live while
-# remaining buffered for sericite_exec tool results.
-sub = VM(
-    "",
-    functions={"llm_chat": llm_chat, "http_get": http_get},
-    output_writer=layer_1_output,
-)
-seed_tree(sub)
+# The workspace survives between executions, while each delivery receives a
+# fresh VM. Output is forwarded live and remains buffered for tool results.
+session = {"workspace": VFS()}
+seed_tree(session["workspace"])
 
 
 def exec_error(kind, message):
@@ -189,17 +183,33 @@ def execute_code(code):
     live["shown"] = 0
     live["folded"] = False
     live["tail"] = []
+    run = None
     try:
-        output = sub.exec(code)
+        run = VM(
+            code,
+            fs=session["workspace"],
+            functions={"llm_chat": llm_chat, "http_get": http_get},
+            output_writer=layer_1_output,
+        )
+        output = run.run()
     except ... as e:
         finish_live_output()
-        return exec_error(e.kind, e.message)
-    finish_live_output()
-    if not output:
-        return "(no output)"
-    if len(output) > MAX_RESULT_CHARS:
-        return truncate_output(output)
-    return output
+        result = exec_error(e.kind, e.message)
+    else:
+        finish_live_output()
+        if not output:
+            result = "(no output)"
+        elif len(output) > MAX_RESULT_CHARS:
+            result = truncate_output(output)
+        else:
+            result = output
+    finally:
+        if run != None:
+            if run.snapshot()["state"] == "waiting_input":
+                run.terminate()
+            session["workspace"] = run.take_fs()
+            run.dispose()
+    return result
 
 
 def dispatch_tool(name, args):
@@ -208,16 +218,16 @@ def dispatch_tool(name, args):
     if name == "file_read":
         path = norm_path(args.get("path", ""))
         try:
-            return sub.read_file(path)
+            return session["workspace"].read_file(path)
         except file_not_found:
             return f"(no such file: {path})"
     if name == "file_write":
-        sub.write_file(norm_path(args["path"]), args["content"])
+        session["workspace"].write_file(norm_path(args["path"]), args["content"])
         return "(written)"
     if name == "file_list":
         path = norm_path(args.get("path", "/"))
         try:
-            return "\n".join(sub.list_dir(path)) or "(empty)"
+            return "\n".join(session["workspace"].list_dir(path)) or "(empty)"
         except file_not_found:
             return f"(no such file: {path})"
     return f"(unknown tool: {name})"

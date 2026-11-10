@@ -187,8 +187,9 @@ class ImportTests(unittest.TestCase):
 
     def test_child_uses_its_own_module_file(self):
         output = self.run_source(
-            "sub = VM('import util\\nprint(util.value)')\n"
-            "sub.write_file('/util.sericite', \"value = 'child'\\n\")\n"
+            "fs = VFS()\n"
+            "fs.write_file('/util.sericite', \"value = 'child'\\n\")\n"
+            "sub = VM('import util\\nprint(util.value)', fs=fs)\n"
             "print(sub.run(), end='')\n",
             {"/util.sericite": "value = 'parent'\n"},
         )
@@ -199,8 +200,9 @@ class ImportTests(unittest.TestCase):
             "def load():\n"
             "    import util\n"
             "    return util.value\n"
-            "sub = VM('print(load())', functions={'load': load})\n"
-            "sub.write_file('/util.sericite', \"value = 'caller'\\n\")\n"
+            "fs = VFS()\n"
+            "fs.write_file('/util.sericite', \"value = 'caller'\\n\")\n"
+            "sub = VM('print(load())', functions={'load': load}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {"/util.sericite": "value = 'home'\n"},
         )
@@ -209,8 +211,9 @@ class ImportTests(unittest.TestCase):
     def test_granted_module_function_keeps_home_for_nested_import(self):
         output = self.run_source(
             "from util import read_other\n"
-            "sub = VM('print(read_other())', functions={'read_other': read_other})\n"
-            "sub.write_file('/other.sericite', \"value = 'caller'\\n\")\n"
+            "fs = VFS()\n"
+            "fs.write_file('/other.sericite', \"value = 'caller'\\n\")\n"
+            "sub = VM('print(read_other())', functions={'read_other': read_other}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {
                 "/util.sericite": (
@@ -528,9 +531,10 @@ class ImportTests(unittest.TestCase):
     def test_granted_function_relative_import_uses_home_package(self):
         output = self.run_source(
             "from pkg.mod import load\n"
-            "sub = VM('print(load())', functions={'load': load})\n"
-            "sub.write_file('/pkg/__init__.sericite', '')\n"
-            "sub.write_file('/pkg/util.sericite', \"value = 'caller'\\n\")\n"
+            "fs = VFS()\n"
+            "fs.write_file('/pkg/__init__.sericite', '')\n"
+            "fs.write_file('/pkg/util.sericite', \"value = 'caller'\\n\")\n"
+            "sub = VM('print(load())', functions={'load': load}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {
                 "/pkg/__init__.sericite": "",

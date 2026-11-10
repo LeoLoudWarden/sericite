@@ -26,8 +26,8 @@ tools = [
 
 messages = [{"role": "system", "content": prompt_inner}, {"role": "user", "content": "开始"}]
 
-sub = VM("")
-sub.write_file("/sericite语言特性速览.md", doc)
+workspace = VFS()
+workspace.write_file("/sericite语言特性速览.md", doc)
 
 final = "(无结果)"
 done = False
@@ -46,21 +46,27 @@ while not done and rounds < 20:
             args = call["args"]
             result = "(未知工具)"
             if name == "sericite_exec":
+                run = VM(args["code"], fs=workspace)
                 try:
-                    result = sub.exec(args["code"])
+                    result = run.run()
                 except:
                     result = "(内层 sericite_exec 执行出错)"
+                finally:
+                    if run.snapshot()["state"] == "waiting_input":
+                        run.terminate()
+                    workspace = run.take_fs()
+                    run.dispose()
             if name == "file_read":
                 try:
-                    result = sub.read_file(args["path"])
+                    result = workspace.read_file(args["path"])
                 except file_not_found:
                     result = "(文件不存在)"
             if name == "file_write":
-                sub.write_file(args["path"], args["content"])
+                workspace.write_file(args["path"], args["content"])
                 result = "(已写入)"
             if name == "file_list":
                 result = ""
-                for n in sub.list_dir(args["path"]):
+                for n in workspace.list_dir(args["path"]):
                     result = result + n + "\\n"
                 if result == "":
                     result = "(空)"

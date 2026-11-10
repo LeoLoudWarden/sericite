@@ -10,7 +10,7 @@ from ..compiler import compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError, SericiteFrame
 from ..io import InputRequired, OutputLimitExceeded, VirtualIO
-from ..vfs import VirtualFileSystem
+from ..vfs import VFSAttachment, VirtualFileSystem
 from ._format import _format_value
 from ._model import (
     _MAX_SOURCE_BYTES,
@@ -21,6 +21,7 @@ from ._model import (
     SericiteLimits,
     SericiteRecord,
     SericiteSchema,
+    VFSHandle,
     VMContext,
     VMHandle,
     _Cell,
@@ -51,13 +52,11 @@ _ERROR_SCHEMA = SericiteSchema(
 )
 _TERMINAL_VM_READ_METHODS = frozenset(
     {
-        "VM.list_dir",
-        "VM.path_exists",
-        "VM.read_file",
         "VM.snapshot",
         "VM.step",
         "VM.step_instruction",
         "VM.stdout",
+        "VM.take_fs",
     }
 )
 
@@ -100,6 +99,7 @@ class _EngineCore:
         output_writer: Callable[[str], object] | None = None,
         buffer_output: bool = True,
         argv: Iterable[str] | None = None,
+        fs: VFSHandle | None = None,
     ) -> VMHandle:
         if not isinstance(source, str):
             raise SericiteError("source must be a string", kind="type_error")
@@ -155,6 +155,7 @@ class _EngineCore:
             limits=effective,
             granted=granted,
             initial_locals={"argv": root_argv},
+            fs=fs,
         )
 
     def _validate_host_functions(
@@ -184,7 +185,9 @@ class _EngineCore:
         granted: dict[str, object] | None = None,
         output_writer: object = None,
         initial_locals: dict[str, object] | None = None,
+        fs: VFSHandle | None = None,
     ) -> VMHandle:
+        attachment = VFSAttachment() if fs is None else self._vfs_attachment(fs)
         filename = f"<sericite:vm_{self._next_vm_id}>"
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
             raise SericiteError(
@@ -218,7 +221,7 @@ class _EngineCore:
             depth=depth,
             parent_id=parent_id,
             io=io,
-            fs=VirtualFileSystem(),
+            vfs=attachment,
             limits=limits,
             frames=[Frame(code=code, locals=dict(initial_locals or {}))],
             granted=dict(granted) if granted else {},
@@ -245,6 +248,9 @@ class _EngineCore:
             self._contexts[parent_id].child_ids.add(vm_id)
         for ancestor_id in context.ancestor_ids:
             self._contexts[ancestor_id].live_descendant_count += 1
+        attachment.owner_vm_id = vm_id
+        if fs is not None:
+            fs._consumed = True
         return VMHandle(self, vm_id)
 
     @staticmethod
@@ -308,13 +314,30 @@ class _EngineCore:
         return context
 
     def _attached_vfs(self, context: VMContext) -> VirtualFileSystem:
-        return context.fs
+        attachment = context.vfs
+        if attachment is None or attachment.owner_vm_id != context.vm_id:
+            raise SericiteError("VM has no attached VFS", kind="runtime_error")
+        return attachment.fs
 
     def _file_operation_limits(self, context: VMContext) -> SericiteLimits:
         limits = context.limits
         for account in self._meter(context).route.accounts:
             limits = _min_limits(limits, account.limits)
         return limits
+
+    def _take_fs(self, handle: VMHandle) -> VFSHandle:
+        context = self._context(handle)
+        if context.running or context.state not in _TERMINAL_STATES:
+            raise SericiteError(
+                "VFS can only be taken from a terminal VM", kind="runtime_error"
+            )
+        attachment = context.vfs
+        if attachment is None:
+            raise SericiteError("VM has no attached VFS", kind="runtime_error")
+        result = VFSHandle(self, attachment)
+        context.vfs = None
+        attachment.owner_vm_id = None
+        return result
 
     def _dispose(self, handle: VMHandle) -> None:
         if handle._engine is not self:
@@ -398,6 +421,10 @@ class _EngineCore:
         if context.state == "terminated":
             raise SericiteError(
                 "cannot exec into a terminated VM", kind="runtime_error"
+            )
+        if context.vfs is None:
+            raise SericiteError(
+                "cannot exec into a VM without an attached VFS", kind="runtime_error"
             )
         source_id = context.next_source_id
         context.next_source_id += 1

@@ -6,20 +6,21 @@ This document is for **readers who understand isolated workspaces and need to cr
 
 ## 1. What a VM is
 
-A VM is a mutually isolated workspace: it cannot see its parent's variables, files, or handles, and cannot tell how deeply it is nested. Every VM has its own module scope, virtual filesystem, input queue, and stdout; the isolation promises are in the [security model](security.md) §2.
+A VM is a mutually isolated execution session: it cannot see its parent's variables, files, or handles, and cannot tell how deeply it is nested. Every session has its own module scope and cache, input queue, stdout, and cumulative execution ledger. Its attached VFS is an exclusively owned file world. The isolation promises are in the [security model](security.md) §2.
 
-A VM is not single-use: the same VM can be fed input, have files preset and retrieved, be single-stepped by statement or instruction, be snapshotted, receive new source deliveries, or be terminated at any time.
+A VM is not single-use: the same session can be fed input, single-stepped by statement or instruction, snapshotted, receive new source through `exec()`, or be terminated. `run()`, `step()`, and repeated `exec()` do not start another session; create another VM when fresh variables, module caches, and execution ledgers are required.
 
-## 2. Creating VMs
+## 2. Creating VMs and transferring VFSs
 
 Inside a script, create a child VM with `VM(code, **options)`:
 
 ```python
 sub = VM(code, max_instructions=10000)   # quotas can only be tightened
 sub = VM(code, output_writer=forward, buffer_output=False)
+sub = VM(code, fs=workspace)              # move in a detached VFS
 ```
 
-`output_writer` and `buffer_output` configure this VM's output; `functions` grants functions (section 6); the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
+A new VM has a blank VFS by default. `fs` accepts only a detached handle returned by `VFS()` or a terminal VM's `take_fs()`; successful attachment permanently consumes the old handle, and the new VM exclusively owns the VFS. `output_writer` and `buffer_output` configure this VM's output; `functions` grants functions (section 6); the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
 
 ## 3. States and lifecycle
 
@@ -38,6 +39,8 @@ Once a VM becomes wholly unreachable, garbage collection eventually destroys it,
 - is idempotent — repeated disposal is a no-op;
 - invalidates the VM value — any other method on a disposed VM fails with `runtime_error`.
 
+`take_fs()` is available only in the `done`, `error`, `resource_exhausted`, or `terminated` terminal states. It atomically removes the VFS and returns a new detached handle. A running or `waiting_input` VM cannot surrender its VFS directly; terminate an abandoned input wait first. After removal, the old VM still supports snapshots, stdout, and disposal, but loses file access and accepts no further `exec()`. Old home functions and old VFS handles cannot reach the transferred world. If removal fails, the VFS remains with the original VM. Disposing of that VM does not affect an already detached VFS.
+
 After the VM that owns a function's definition is destroyed, functions passed from it to other VMs become invalid too; calling one fails with a catchable `runtime_error`. See section 6 for granting semantics.
 
 If resources are insufficient, `dispose()` fails before destroying anything. Disposal does not refund the parent's cumulative instruction or memory usage. Internal lifecycle and charging rules are in the [architecture notes](architecture.md) §5.4.
@@ -55,29 +58,21 @@ If resources are insufficient, `dispose()` fails before destroying anything. Dis
 | `stdout() -> str` | Return current stdout |
 | `terminate()` | Terminate the VM; effective states and no-op semantics are in section 3 |
 | `dispose()` | Forcibly destroy a VM in any state and all live descendants; see section 3 |
-| `read_file(path) -> str` | Read a text file from this VM |
-| `write_file(path, text)` | Write a text file into this VM |
-| `delete_file(path)` | Delete a file |
-| `rename_file(old_path, new_path)` | Rename or move a file; refuse to overwrite an existing file |
-| `copy_file(source_path, destination_path)` | Copy a file; refuse to overwrite an existing file |
-| `make_dir(path)` | Create a directory and missing parents; empty directories persist |
-| `delete_dir(path)` | Recursively delete a whole directory tree |
-| `rename_dir(old_path, new_path)` | Recursively move a directory tree; refuse overwrite or moving into itself |
-| `copy_dir(source_path, destination_path)` | Recursively copy a directory tree; refuse overwrite or copying into itself |
-| `list_dir(path) -> list[str]` | Return sorted direct children of a directory |
-| `path_exists(path) -> bool` | Check whether a file or directory exists |
+| `take_fs() -> VFS` | Atomically remove the VFS from a terminal VM and return a new detached handle; see section 3 |
 
-The file and directory methods have the same path, error, and empty-directory behavior as the corresponding script built-ins; see the [language reference](language-reference.md) §6.
+VM values no longer provide script-side file proxies. File builtins always operate on the current session's exclusively owned VFS; the same methods on a detached handle operate on that detached workspace. See the [language reference](language-reference.md) §6 for paths, errors, and directory behavior.
 
 ```python
-sub = VM(code, max_instructions=10000)
-sub.write_file("/input.txt", "data")     # preset a file for it
+fs = VFS()
+fs.write_file("/input.txt", "data")      # configure the detached workspace first
+sub = VM(code, fs=fs, max_instructions=10000)
 sub.feed_input("one line")               # feed input()
 out = sub.run()
-print(sub.read_file("/result.txt"))      # retrieve the file it wrote
+fs = sub.take_fs()
+print(fs.read_file("/result.txt"))       # retrieve results after termination
 ```
 
-The recommended workflow is: preset files and inputs before execution, then read results afterward.
+The recommended workflow is: configure a detached VFS, move it into the VM, then take it back for result inspection after the session reaches a terminal state.
 
 Running out of queued input with no further source is ordinary suspension (`waiting_input`), not an exception; an input source explicitly reporting closure (`input_error`) follows the normal catchable-error path. On failure, `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
@@ -85,8 +80,8 @@ After a child exhausts an execution budget and enters the terminal `resource_exh
 
 A terminal VM can still be operated on, but two kinds of methods behave differently:
 
-- methods that do not drive the VM (`snapshot`, `step`, `step_instruction`, file reads, …) remain available; on a terminal VM, `step`/`step_instruction` only return a snapshot;
-- write or driving methods (the file/directory mutation methods above, `feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
+- methods that do not drive the VM (`snapshot`, `step`, `step_instruction`, `stdout`, `take_fs`, …) remain available; on a terminal VM, `step`/`step_instruction` only return a snapshot, and `take_fs` is charged only to the caller;
+- driving methods (`feed_input`, `run` with inputs, `exec`, …) may fail because the VM's quota is exhausted.
 
 The charging model — which operations are charged to whom — is in the [architecture](architecture.md) §5.4.
 
@@ -116,7 +111,7 @@ The writer:
 `exec(source)` gives a VM a new program while keeping its world:
 
 - **The retained world**: the fresh module frame reuses the previous module scope, so module-level names (variables, functions, schemas) persist; the filesystem, input queue, granted functions, and imported-module cache are untouched.
-- **States and discarding**: delivery is accepted from any state except `terminated` or while the VM is being driven (`run()`/`exec()`/`step()` in progress). A program that has not finished — never started, or suspended on input — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them.
+- **States and discarding**: delivery is accepted from any state except `terminated`, after VFS removal through `take_fs()`, or while the VM is being driven (`run()`/`exec()`/`step()` in progress). A program that has not finished — never started, or suspended on input — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them.
 - **Compilation atomicity**: compilation completes before any state changes; source that fails to compile leaves the VM exactly as it was.
 - **Lifetime quotas**: instruction, memory, and output consumption accumulate across deliveries, not per delivery.
 

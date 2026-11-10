@@ -6,14 +6,14 @@ This demo is a multi-layer LLM application driven by a root Sericite program. **
 
 ## Runtime structure
 
-- **Outer session**: root keeps one persistent first-level VM for the whole session, grants it those two host functions, and seeds the model workspace at startup.
-- **First-level VM**: when the outer model calls `sericite_exec`, root delivers the code to that VM with `exec`. Module variables, definitions, and files survive across calls; model-generated code can use `llm_chat` to start its own inner session.
-- **Second-level VM**: when that session calls `sericite_exec`, model-written code maintains a second-level VM. It receives no host functions, so it has no network access, and the recursion ends there. The inner session and its VM management are written by the model, not supplied as another prewritten agent.
+- **Outer session**: root holds a detached VFS across calls and moves it into a fresh first-level VM for each `sericite_exec`, granting the two host functions.
+- **First-level VM**: each delivery is an independent execution session; variables, module caches, and execution ledgers do not survive. Root retrieves the file workspace with `take_fs()` after the terminal state. Model-generated code can use `llm_chat` to start its own inner session.
+- **Second-level VM**: when that session calls `sericite_exec`, model-written code maintains a second-level workspace through the same exclusive-transfer protocol. It receives no host functions, so it has no network access, and the recursion ends there. The inner session and its VM management are written by the model, not supplied as another prewritten agent.
 
 ## Files and prompt boundary
 
-- Root VFS is divided into `/control` and `/workspace`: the outer prompt stays in control, and the workspace seeds the execution VM once at startup.
-- The model's file tools operate on the persistent VM's filesystem directly, so files written by `sericite_exec` code and by `file_write` live in one place with no re-seeding or harvesting.
+- Root VFS is divided into `/control` and `/workspace`: the outer prompt stays in control, and startup materials are seeded into a separate model workspace.
+- The model's file tools operate on the detached VFS between executions. Each run exclusively moves it into a VM and takes it back afterward, so `sericite_exec` and `file_write` always write to the same place.
 - Prompts tell the model that it can create VMs, not that its own code and files are already inside one.
 
 ## Run
@@ -74,7 +74,7 @@ Default stdout shows only the execution story: one heading per outer round, comp
 - `MODEL` responses, the `FINAL` response, and root result text are always shown in full. Folding applies only to live VM output, where lines longer than `MAX_LIVE_LINE_CHARS` (240) characters are also shortened by default.
 - Append `--verbose` after `agent.sericite` to show full tool arguments/results and disable live-output folding; tool arguments and results use `repr`.
 - Neither display path changes the raw tool results sent back to the model.
-- The first-level VM keeps stdout buffered because `sub.exec()` still returns that text as the `sericite_exec` tool result; see the [VM reference](../../docs/vm-reference.md) §4 for buffering semantics.
+- The first-level VM keeps stdout buffered because `run()` also returns that text as the `sericite_exec` tool result; see the [VM reference](../../docs/vm-reference.md) §4 for buffering semantics.
 
 ```bash
 uv run --extra demo sericite \

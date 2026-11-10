@@ -1248,9 +1248,11 @@ class HomeVmTests(unittest.TestCase):
         source = (
             "def writer():\n"
             "    write_file('/log.txt', 'from home')\n"
-            "sub = VM(\"w()\", functions={'w': writer})\n"
+            "fs = VFS()\n"
+            "sub = VM(\"w()\", functions={'w': writer}, fs=fs)\n"
             "sub.run()\n"
-            "print(path_exists('/log.txt'), sub.path_exists('/log.txt'))\n"
+            "fs = sub.take_fs()\n"
+            "print(path_exists('/log.txt'), fs.path_exists('/log.txt'))\n"
         )
         self.assertEqual(run(source), "True False\n")
 

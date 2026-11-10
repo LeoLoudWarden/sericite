@@ -18,14 +18,14 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `compiler` | AST whitelist and except-kind validation + compilation to the instruction stream (the only entry point for source code); includes static stack-depth analysis so the stack can be safely truncated on exception catch |
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
-| `vfs` | Per-VM private virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree, name metadata, and subtree aggregates for prepaid recursive directory costs) |
+| `vfs` | Transferable-workspace virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree, name metadata, and subtree aggregates for prepaid recursive directory costs). The VFS holds no quotas or accounts; the engine manages exclusive attachment |
 | `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Output can be forwarded through an explicitly configured writer: script side in the [VM reference](vm-reference.md) §4, host-side root callback in the [Sericite-PY reference](sericite-py-reference.md) §2 |
 | `errors` | `SericiteError` and the central error-kind registry |
 | `cli` / `__main__` | Command-line entry points: source loading, VFS snapshots of statically reachable project modules and source-line mapping, trusted capability-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
 
 The `compiler` package is split into cohesive parts:
 
-- `_rules`: whitelist tables, operator maps, reserved/VM-method names
+- `_rules`: whitelist tables, operator maps, reserved/VM/VFS-method names
 - `_validate`: AST whitelist and except-kind validation
 - `_scopes`: lexical scope/cell analysis
 - `_stack`: static stack-depth analysis so the stack can be safely truncated on exception catch
@@ -34,13 +34,14 @@ The `compiler` package is split into cohesive parts:
 
 The `engine` package is split into cohesive parts:
 
-- `_model`: limits, frames, functions, schemas/records, module objects, native wrappers, VMContext/VMHandle
+- `_model`: limits, frames, functions, schemas/records, module objects, native wrappers, VMContext, and VM/VFS handles
 - `_values`: value semantics, rendering, contract helpers, FFI deep-copy
-- `_core`: lifecycle, dispatch loop, exception unwinding, call machinery
-- `_builtins`: built-in functions, child-VM creation
-- `_operators`: operator/index/attribute semantics, container/record natives
+- `_core`: lifecycle, dispatch loop, exception unwinding, call machinery, and VFS attachment/removal
+- `_builtins`: built-in functions, child-VM and detached-VFS creation
+- `_operators`: operator/index/attribute semantics, container/record/handle natives
 - `_modules`: module-name/VFS-path resolution, packages and module frames, import resumption, loading/success caches, and home-route accounting
 - `_hostdbg`: VM-handle method charging, debug snapshots
+- `_vfs`: detached-VFS handle validation, caller charging, and file-operation dispatch
 - `__init__`: assembles `SericiteEngine` from these parts and re-exports the public API
 
 ## 3. Design invariants
@@ -48,7 +49,7 @@ The `engine` package is split into cohesive parts:
 Anyone modifying the engine must preserve the following invariants (numbered for reference only):
 
 1. All VMs must be executed directly by the same `SericiteEngine`; never wrap another interpreter layer per nesting level. A nested VM is just another execution context in the same engine — this is the structural foundation of "creating a child VM is cheap" (measured in [benchmarks/vm_creation.py](https://github.com/LeoLoudWarden/sericite/blob/main/benchmarks/vm_creation.py)).
-2. A child VM must not implicitly read its parent's or the host's stdin, nor write directly to the host's stdout; a child VM's filesystem starts fresh and empty, sharing no files with its parent.
+2. A child VM must not implicitly read its parent's or the host's stdin, nor write directly to the host's stdout; a child VM's filesystem starts fresh and empty by default, sharing no files with its parent. Only explicit transfer of a detached VFS can choose another workspace, subject to exclusive ownership invariant 19.
 3. A child VM by default cannot obtain parent locals, parent handles, host objects, or Python reflection entry points.
 4. Script capabilities are provided through controlled native functions and VM handle methods; arbitrary Python attributes must not be exposed.
 5. Execution must go through the internal instruction stream and the unified dispatch loop; `run()`, `exec()`, `step()`, and `step_instruction()` share the same execution path — no bypassing execution semantics. `run()` takes no per-statement snapshots; snapshots are produced only by explicit `step()/snapshot()` calls.
@@ -93,6 +94,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 18.
   - a. Module imports reuse the calling VM's frame stack and unified dispatch rather than creating a child VM. Name resolution, VFS reads, and module caches belong to the definition-side home; loading and cache creation use caller/home causal accounting.
   - b. A module enters the success cache only after its frame completes. Exception unwinding or `exec()` discarding unfinished execution must clear the corresponding loading state, leaving no partial module to contaminate later imports.
+19.
+  - a. A VFS is attached to at most one VM at a time; detached handles operate only while unattached and unconsumed. `fs=` consumes the handle and commits attachment only after VM creation fully succeeds, never losing the workspace on failure.
+  - b. `take_fs()` requires a terminal state and revokes access through the old VM, old home functions, old bound natives, and old VFS handles via dynamic ownership checks. The detached VM accepts no further `exec()`. Failure leaves ownership unchanged.
+  - c. A VFS enters neither the VM registry nor resource accounts. Module caches, IO, locals, and function homes do not transfer with it. Script VM handles expose no file proxies; trusted host file management is a separate channel.
 
 ## 4. Script interface
 
@@ -177,7 +182,7 @@ Caveats:
 - VMs within VMs: any layer can create child VMs; a child cannot tell its depth; the parent can preset files, feed input, single-step (statement- and instruction-level), snapshot, and terminate.
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
 - Resource governance: see the previous section. The prototype went through one round of adversarial security review (including an independent third-party perspective); all discovered denial-of-service and information-leak paths were fixed and locked in with regression tests.
-- Every VM has its own private virtual filesystem, configurable before the run and harvestable after.
+- Every VM has a blank VFS by default; a detached workspace can be configured, exclusively moved into a VM, and retrieved after a terminal state without transferring module caches or IO.
 - Module system: supports VFS modules, packages, and relative imports through the unified execution, debugging, and quota paths.
 
 Deliberate trade-offs: additional container methods, variadic arguments, and chained comparisons are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.

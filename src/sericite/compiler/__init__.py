@@ -4,7 +4,7 @@ Source is parsed with ``ast``, validated against the node whitelist and
 except-kind rules, compiled to the internal instruction stream, and passed
 through static stack-depth analysis. Split into cohesive parts:
 
-- `_rules`: whitelist tables, operator maps, reserved and VM-method names
+- `_rules`: whitelist tables, operator maps, reserved and VM/VFS-method names
 - `_validate`: AST whitelist and except-kind validation
 - `_scopes`: lexical scope/cell analysis
 - `_stack`: static stack-depth analysis (safe truncation on exception catch)
@@ -18,12 +18,12 @@ import ast
 from .. import isa
 from ..errors import SericiteError
 from ._compiler import _Compiler
-from ._rules import RESERVED_NAMES, VM_METHODS
+from ._rules import RESERVED_NAMES, VFS_METHODS, VM_METHODS
 from ._scopes import _analyze_scopes
 from ._stack import _analyze_stack
 from ._validate import _validate
 
-__all__ = ["RESERVED_NAMES", "VM_METHODS", "compile_source"]
+__all__ = ["RESERVED_NAMES", "VFS_METHODS", "VM_METHODS", "compile_source"]
 
 
 def compile_source(source: object, filename: str) -> isa.CodeUnit:

@@ -6,6 +6,7 @@ RESERVED_NAMES = {
     "input",
     "print",
     "VM",
+    "VFS",
     "len",
     "int",
     "float",
@@ -122,16 +123,7 @@ _COMPARE_OPS = {
     ast.NotIn: "not in",
 }
 
-VM_METHODS = {
-    "run",
-    "exec",
-    "feed_input",
-    "step",
-    "step_instruction",
-    "snapshot",
-    "stdout",
-    "terminate",
-    "dispose",
+VFS_METHODS = {
     "read_file",
     "write_file",
     "delete_file",
@@ -143,4 +135,17 @@ VM_METHODS = {
     "make_dir",
     "list_dir",
     "path_exists",
+}
+
+VM_METHODS = {
+    "run",
+    "exec",
+    "feed_input",
+    "step",
+    "step_instruction",
+    "snapshot",
+    "stdout",
+    "terminate",
+    "dispose",
+    "take_fs",
 }

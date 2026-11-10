@@ -641,8 +641,9 @@ class VFSTests(unittest.TestCase):
 
     def test_parent_presets_child_files(self):
         source = (
-            'sub = VM("print(read_file(\\"/config.txt\\"))")\n'
-            'sub.write_file("/config.txt", "preset")\n'
+            "fs = VFS()\n"
+            'fs.write_file("/config.txt", "preset")\n'
+            'sub = VM("print(read_file(\\"/config.txt\\"))", fs=fs)\n'
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "preset\n\n")
@@ -651,7 +652,8 @@ class VFSTests(unittest.TestCase):
         source = (
             'sub = VM("write_file(\\"/result.txt\\", \\"done\\")")\n'
             "sub.run()\n"
-            'print(sub.read_file("/result.txt"))\n'
+            "fs = sub.take_fs()\n"
+            'print(fs.read_file("/result.txt"))\n'
         )
         self.assertEqual(run(source), "done\n")
 
@@ -707,7 +709,7 @@ class VFSTests(unittest.TestCase):
 
     def test_child_handle_file_mutations(self):
         source = (
-            'sub = VM("")\n'
+            "sub = VFS()\n"
             'sub.write_file("/source.txt", "child")\n'
             'sub.copy_file(source_path="/source.txt", destination_path="/copy.txt")\n'
             'sub.rename_file(old_path="/source.txt", new_path="/moved.txt")\n'
@@ -764,7 +766,7 @@ class VFSTests(unittest.TestCase):
 
     def test_child_handle_directory_mutations(self):
         source = (
-            'sub = VM("")\n'
+            "sub = VFS()\n"
             'sub.write_file("/tree/nested/file.txt", "child")\n'
             'sub.copy_dir(source_path="/tree", destination_path="/copy")\n'
             'sub.rename_dir(old_path="/copy", new_path="/moved")\n'
@@ -802,7 +804,7 @@ class VFSTests(unittest.TestCase):
     def test_child_and_host_make_dir(self):
         engine = SericiteEngine()
         vm = engine.create_root(
-            'sub = VM("")\nsub.make_dir(path="/empty")\n'
+            'sub = VFS()\nsub.make_dir(path="/empty")\n'
             'print(sub.path_exists("/empty"))\n'
         )
         vm.make_dir("/host/empty")
@@ -820,7 +822,7 @@ class VFSTests(unittest.TestCase):
             '    make_dir("/a/b")\n'
             "except not_directory:\n"
             '    print("mkdir caught")\n'
-            'sub = VM("")\n'
+            "sub = VFS()\n"
             'sub.write_file("/a", "child")\n'
             "try:\n"
             '    sub.copy_file("/a", "/a/b")\n'
