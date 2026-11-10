@@ -18,7 +18,6 @@ CATCHABLE_ERROR_KINDS = frozenset(
     {
         "arity_error",
         "attribute_error",
-        "breakpoint_limit_error",
         "contract_error",
         "conversion_error",
         "ffi_error",

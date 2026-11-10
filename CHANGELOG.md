@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Removed
+- **破坏性变更**：移除目标 VM 的 `max_breakpoints` 断点数量配额及 `breakpoint_limit_error`；断点添加、删除、枚举与命中语义不变，脚本控制方的一般指令与内存配额仍然约束断点管理，不再存在目标专属数量上限。
+
 ## [0.18.0] - 2026-11-11
 
 ### Added

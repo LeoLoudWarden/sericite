@@ -58,10 +58,6 @@ class _EngineHostDebug:
     def _add_breakpoint_key(context: VMContext, key: tuple[int, str | None]) -> None:
         if key in context.breakpoints:
             return
-        if len(context.breakpoints) >= context.limits.max_breakpoints:
-            raise SericiteError(
-                "breakpoint limit exceeded", kind="breakpoint_limit_error"
-            )
         context.breakpoints[key] = None
 
     def _add_breakpoint(

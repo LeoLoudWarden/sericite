@@ -99,35 +99,48 @@ class BreakpointAPITests(unittest.TestCase):
         )
         self.assertEqual(root.run(), "paused\n\n[{'line': 1, 'path': None}]\n")
 
-    def test_limit_is_structural_inherited_and_atomic(self):
-        for value in (-1, -2, 1.5, True):
-            with self.subTest(value=value), self.assertRaises(SericiteError):
-                SericiteLimits(max_breakpoints=value)
-
-        vm = SericiteEngine().create_root(
-            "x = 1\ny = 2", limits=SericiteLimits(max_breakpoints=1)
-        )
+    def test_host_breakpoints_have_no_count_limit(self):
+        vm = SericiteEngine().create_root("x = 1\ny = 2")
+        for line in range(1, 151):
+            vm.add_breakpoint(line)
+        self.assertEqual(len(vm.breakpoints()), 150)
         vm.add_breakpoint(1)
-        with self.assertRaises(SericiteError) as caught:
-            vm.add_breakpoint(2)
-        self.assertEqual(caught.exception.kind, "breakpoint_limit_error")
+        self.assertEqual(len(vm.breakpoints()), 150)
+        for line in range(2, 151):
+            vm.remove_breakpoint(line)
         self.assertEqual(vm.breakpoints(), [{"line": 1, "path": None}])
-        self.assertEqual(vm.snapshot()["state"], "ready")
-        vm.add_breakpoint(1)
-        self.assertEqual(vm.snapshot()["state"], "ready")
+        vm.run()
+        self.assertEqual(vm.snapshot()["state"], "paused")
+        self.assertEqual(vm.snapshot()["next_line"], 1)
+
+    def test_script_breakpoints_have_no_target_count_limit(self):
+        root = SericiteEngine().create_root(
+            'sub = VM("x = 1\\ny = 2")\n'
+            "for line in range(1, 151):\n"
+            "    sub.add_breakpoint(line)\n"
+            "print(len(sub.breakpoints()))\n"
+            "print(sub.run())\n"
+            "print(sub.snapshot()['state'])"
+        )
+        self.assertEqual(root.run(), "150\n\npaused\n")
+
+    def test_removed_limit_option_and_error_kind_are_rejected(self):
+        with self.assertRaises(TypeError):
+            SericiteLimits(max_breakpoints=1)
 
         root = SericiteEngine().create_root(
-            'sub = VM("x = 1", max_breakpoints=0)\n'
             "try:\n"
-            "    sub.add_breakpoint(1)\n"
-            "except breakpoint_limit_error as error:\n"
-            "    print(error.kind)\n"
-            "sub.run()\n"
-            "print(sub.breakpoints())\n"
-            "print('parent alive')"
+            "    sub = VM('', max_breakpoints=1)\n"
+            "except type_error as error:\n"
+            "    print(error.message)"
         )
-        self.assertEqual(root.run(), "breakpoint_limit_error\n[]\nparent alive\n")
-        self.assertEqual(root.snapshot()["state"], "done")
+        self.assertEqual(root.run(), "unknown VM option: max_breakpoints\n")
+
+        with self.assertRaises(SericiteError) as caught:
+            SericiteEngine().create_root(
+                "try:\n    pass\nexcept breakpoint_limit_error:\n    pass"
+            )
+        self.assertEqual(caught.exception.kind, "syntax_error")
 
 
 class BreakpointExecutionTests(unittest.TestCase):

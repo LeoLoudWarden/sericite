@@ -31,7 +31,6 @@ _VM_OPTIONS = {
     "max_total_vms",
     "max_descendant_vms",
     "max_vm_depth",
-    "max_breakpoints",
     "max_fs_files",
     "max_fs_file_bytes",
     "max_fs_storage_bytes",
@@ -56,7 +55,6 @@ class SericiteLimits:
     max_total_vms: int = 1000
     max_descendant_vms: int = 1000
     max_vm_depth: int = 8
-    max_breakpoints: int = 100
     max_fs_files: int = 1000
     max_fs_file_bytes: int = 1_048_576
     max_fs_storage_bytes: int = 67_108_864
