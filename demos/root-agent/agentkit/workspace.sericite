@@ -70,9 +70,8 @@ def run_path(state, path):
     display.begin_run(display.config["vm_label"])
     run = None
     try:
-        source = state["fs"].read_file(path)
         run = VM(
-            source,
+            entry_file=path,
             fs=state["fs"],
             functions={"llm_chat": llm_chat, "http_get": http_get},
             max_instructions=RUN_INSTRUCTION_LIMIT,

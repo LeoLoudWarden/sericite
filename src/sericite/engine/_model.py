@@ -337,6 +337,7 @@ class VMContext:
     io: VirtualIO
     vfs: VFSAttachment | None
     limits: SericiteLimits
+    module_root: str = "/"
     next_source_id: int = 1
     frames: list[Frame] = field(default_factory=list)
     granted: dict[str, object] = field(default_factory=dict)

@@ -10,7 +10,7 @@ from ..compiler import compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError, SericiteFrame
 from ..io import InputRequired, OutputLimitExceeded, VirtualIO
-from ..vfs import VFSAttachment, VirtualFileSystem
+from ..vfs import VFSAttachment, VirtualFileSystem, normalize_path
 from ._format import _format_value
 from ._model import (
     _MAX_SOURCE_BYTES,
@@ -91,7 +91,7 @@ class _EngineCore:
 
     def create_root(
         self,
-        source: str,
+        source: str | None = None,
         inputs: Iterable[str] | None = None,
         input_provider: Callable[[], str | None] | None = None,
         limits: SericiteLimits | None = None,
@@ -100,9 +100,9 @@ class _EngineCore:
         buffer_output: bool = True,
         argv: Iterable[str] | None = None,
         fs: VFSHandle | None = None,
+        entry_file: str | None = None,
     ) -> VMHandle:
-        if not isinstance(source, str):
-            raise SericiteError("source must be a string", kind="type_error")
+        self._validate_program(source, entry_file)
         self._validate_limits(limits)
         if type(buffer_output) is not bool:
             raise SericiteError("buffer_output must be a bool", kind="type_error")
@@ -147,6 +147,10 @@ class _EngineCore:
             output_writer=output_writer,
             buffer_output=buffer_output,
         )
+        module_root = "/"
+        filename = None
+        if entry_file is not None:
+            source, module_root, filename = self._load_entry(fs, entry_file)
         return self._create_vm(
             source=source,
             parent_id=None,
@@ -156,7 +160,32 @@ class _EngineCore:
             granted=granted,
             initial_locals={"argv": root_argv},
             fs=fs,
+            module_root=module_root,
+            filename=filename,
         )
+
+    @staticmethod
+    def _validate_program(source: object, entry_file: object) -> None:
+        if (source is None) == (entry_file is None):
+            raise SericiteError(
+                "exactly one of source or entry_file is required", kind="type_error"
+            )
+        if source is not None and not isinstance(source, str):
+            raise SericiteError("source must be a string", kind="type_error")
+        if entry_file is not None and not isinstance(entry_file, str):
+            raise SericiteError("entry_file must be a string", kind="type_error")
+
+    def _load_entry(
+        self, fs: VFSHandle | None, entry_file: str, meter: Meter | None = None
+    ) -> tuple[str, str, str]:
+        if fs is None:
+            raise SericiteError("entry_file requires fs", kind="type_error")
+        filename = normalize_path(entry_file)
+        source = self._detached_vfs(fs).read_file(filename)
+        if meter is not None:
+            meter.work(1 + len(source) // 4)
+        module_root = filename.rpartition("/")[0] or "/"
+        return source, module_root, filename
 
     def _validate_host_functions(
         self, functions: dict[str, Callable[..., object]] | None
@@ -186,9 +215,13 @@ class _EngineCore:
         output_writer: object = None,
         initial_locals: dict[str, object] | None = None,
         fs: VFSHandle | None = None,
+        module_root: str = "/",
+        filename: str | None = None,
     ) -> VMHandle:
+        module_root = normalize_path(module_root)
         attachment = VFSAttachment() if fs is None else self._vfs_attachment(fs)
-        filename = f"<sericite:vm_{self._next_vm_id}>"
+        if filename is None:
+            filename = f"<sericite:vm_{self._next_vm_id}>"
         if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
             raise SericiteError(
                 "source too large", kind="syntax_error", filename=filename
@@ -223,6 +256,7 @@ class _EngineCore:
             io=io,
             vfs=attachment,
             limits=limits,
+            module_root=module_root,
             frames=[Frame(code=code, locals=dict(initial_locals or {}))],
             granted=dict(granted) if granted else {},
             output_writer=output_writer,
@@ -233,6 +267,8 @@ class _EngineCore:
         context.ancestor_ids = tuple(account.vm_id for account in route.accounts[1:])
         meter = Meter(route)
         meter.allocate(_const_bytes(code))
+        if module_root != "/":
+            meter.allocate(len(module_root) * 4)
         context.meter = meter
         self._next_vm_id += 1
         self._contexts[vm_id] = context

@@ -544,9 +544,21 @@ VM 可以被自动回收，但使用 `dispose()` 手动清理是更好的做法�
         └── mod.sericite
 ```
 
-模块名 `util` 对应 `/util.sericite`，`lib.math` 对应 `/lib/math.sericite`。目标也可以是包：`lib.math` 可对应 `/lib/math/__init__.sericite`。
+默认从工作空间根目录解析模块名：`util` 对应 `/util.sericite`，`lib.math` 对应 `/lib/math.sericite`。目标也可以是包：`lib.math` 可对应 `/lib/math/__init__.sericite`。
 
 每个中间目录都必须是含 `__init__.sericite` 的包，不支持无初始化文件的 namespace package。同一名字同时存在模块文件和包，或父级不是包时，导入报 `import_error`。
+
+### 入口文件与模块解析根
+
+`VM(source=code, fs=fs)` 执行没有文件身份的字符串代码，模块从工作空间根目录解析。`VM(entry_file=path, fs=fs)` 则执行工作空间中的入口文件，并以入口文件所在目录为模块解析根：
+
+```python
+sub = VM(entry_file="/project/main.sericite", fs=fs)
+```
+
+此时入口中的 `import util` 使用 `/project/util.sericite`，`import lib.math` 使用 `/project/lib/math.sericite`。相对导入也先按当前包解析，再落到这个目录下。
+
+入口路径按普通文件路径规则规范化。模块解析根只改变 import 的位置，不改变 `read_file()` 等文件操作的路径根。入口读取时机、模块根的会话保留规则及其与工作区移交的关系，见[虚拟机参考](vm-reference.zh-CN.md)第 2～4 节。
 
 ### 导入形式与绑定
 

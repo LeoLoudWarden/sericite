@@ -27,7 +27,7 @@ assert output == "hello world\n"
 SericiteEngine(limits=None)
 engine.create_vfs() -> VFSHandle
 engine.create_root(
-    source,
+    source=None,
     inputs=None,
     input_provider=None,
     limits=None,
@@ -36,10 +36,11 @@ engine.create_root(
     buffer_output=True,
     argv=None,
     fs=None,
+    entry_file=None,
 )
 ```
 
-- `source`: Sericite source text, capped at 4MB in UTF-8.
+- `source`: Sericite source text, capped at 4MB in UTF-8. Exactly one of `source` and `entry_file` must be provided.
 - `limits`: the root's `SericiteLimits`; see section 3.
 - `inputs`: an iterable of strings queued in order.
 - `input_provider`: a host callable invoked after the queue is exhausted, returning the next string or `None`. Returning `None`, raising `EOFError`, or raising `StopIteration` moves the VM to `waiting_input`; to report a permanently closed input source, raise `SericiteError(kind="input_error")`, which scripts can catch.
@@ -48,6 +49,7 @@ engine.create_root(
 - `buffer_output`: whether root stdout is retained in memory, default `True`. With `False`, buffered output is not retained, which lets a long-running root avoid unbounded historical-output retention; full semantics are in the [VM reference](vm-reference.md) §4.
 - `argv`: an iterable of strings used to initialize the root module's `argv` list; the default is an empty list. The engine copies it, so later host-side mutations are not shared. `argv` cannot be used as a grant name. Its semantics are in the [CLI reference](cli-reference.md) §2.
 - `fs`: an optional detached `VFSHandle`. `engine.create_vfs()` creates an independent workspace; `create_root(..., fs=fs)` moves ownership only on success, leaving the handle usable on failure. A terminal VM's `take_fs()` returns a new detached handle.
+- `entry_file`: reads and compiles an entry file from the `fs` workspace, using its directory as the module resolution root. It requires an explicit `fs` and cannot be combined with `source`. File operations remain rooted at the workspace. See the [VM reference](vm-reference.md) §§2–4 for loading timing and session ownership.
 
 Invalid argument types raise `type_error` at the API boundary. Root arguments are validated before VM creation, so a failure registers no VM; `limits` may be `None` or a `SericiteLimits`, and `fs` must be an unconsumed handle belonging to the same engine.
 

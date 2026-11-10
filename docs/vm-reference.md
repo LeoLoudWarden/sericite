@@ -12,15 +12,20 @@ A VM is not single-use: the same session can be fed input, single-stepped by sta
 
 ## 2. Creating VMs and transferring VFSs
 
-Inside a script, create a child VM with `VM(code, **options)`:
+Inside a script, create a child VM with `VM(source=code, **options)` or `VM(entry_file=path, **options)`; the positional form `VM(code, ...)` is shorthand for `source=code`. Exactly one source kind must be selected:
 
 ```python
-sub = VM(code, max_instructions=10000)   # quotas can only be tightened
+sub = VM(source=code, max_instructions=10000)  # quotas can only be tightened
 sub = VM(code, output_writer=forward, buffer_output=False)
-sub = VM(code, fs=workspace)              # move in a detached VFS
+sub = VM(code, fs=workspace)                   # move in a detached VFS
+sub = VM(entry_file="/project/main.sericite", fs=workspace)
 ```
 
-A new VM has a blank VFS by default. `fs` accepts only a detached handle returned by `VFS()` or a terminal VM's `take_fs()`; successful attachment permanently consumes the old handle, and the new VM exclusively owns the VFS. `output_writer` and `buffer_output` configure this VM's output; `functions` grants functions (section 6); the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
+A new VM has a blank VFS by default. `fs` accepts only a detached handle returned by `VFS()` or a terminal VM's `take_fs()`; successful attachment permanently consumes the old handle, and the new VM exclusively owns the VFS.
+
+`source` executes string code with modules resolved from the workspace root. `entry_file` requires an explicit `fs`, reads and compiles that file during creation, and uses its directory as the module resolution root. A missing entry or a read/compile failure does not consume the VFS. The module root belongs to the session, persists across later `exec()` deliveries, and is neither carried by a transferred VFS nor implicitly inherited by child VMs. It affects only imports; file operations such as `read_file()` remain rooted at the whole workspace. See the [language reference](language-reference.md) §9 for path rules.
+
+`output_writer` and `buffer_output` configure this VM's output; `functions` grants functions (section 6); the remaining options are quota fields. See section 4 for output forwarding and section 5 for quotas.
 
 ## 3. States and lifecycle
 
@@ -110,7 +115,7 @@ The writer:
 
 `exec(source)` gives a VM a new program while keeping its world:
 
-- **The retained world**: the fresh module frame reuses the previous module scope, so module-level names (variables, functions, schemas) persist; the filesystem, input queue, granted functions, and imported-module cache are untouched.
+- **The retained world**: the fresh module frame reuses the previous module scope, so module-level names (variables, functions, schemas) persist; the filesystem, module resolution root, input queue, granted functions, and imported-module cache are untouched.
 - **States and discarding**: delivery is accepted from any state except `terminated`, after VFS removal through `take_fs()`, or while the VM is being driven (`run()`/`exec()`/`step()` in progress). A program that has not finished — never started, or suspended on input — is discarded, a previous error is cleared, and old debugging frames are replaced, so call `snapshot()` first if you need them.
 - **Compilation atomicity**: compilation completes before any state changes; source that fails to compile leaves the VM exactly as it was.
 - **Lifetime quotas**: instruction, memory, and output consumption accumulate across deliveries, not per delivery.

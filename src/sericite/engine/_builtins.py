@@ -281,18 +281,22 @@ class _EngineBuiltins:
         if name == "VM":
             return _NativeFunction(
                 "VM",
-                lambda source, **kwargs: self._create_child(
+                lambda source=None, **kwargs: self._create_child(
                     home, source, kwargs, cap=caller
                 ),
                 home,
-                work=self._source_work,
+                work=self._vm_creation_work,
                 allocation=_no_allocation,
             )
         return None
 
     @staticmethod
-    def _source_work(source: object, **kwargs: object) -> int:
-        return 1 + len(source) // 4 if isinstance(source, str) else 0
+    def _vm_creation_work(
+        source: object = None, entry_file: object = None, **kwargs: object
+    ) -> int:
+        if isinstance(source, str):
+            return 1 + len(source) // 4
+        return len(entry_file) if isinstance(entry_file, str) else 0
 
     def _create_child(
         self,
@@ -305,8 +309,8 @@ class _EngineBuiltins:
         # owner is caller `cap`. A supplied VFS moves into the new VM, while the
         # default remains a fresh empty world.
         causal = cap if cap is not None else parent
-        if not isinstance(source, str):
-            raise SericiteError("VM source must be a string", kind="type_error")
+        entry_file = config.pop("entry_file", None)
+        self._validate_program(source, entry_file)
         fs = config.pop("fs", None)
         granted = self._validate_child_functions(parent, config.pop("functions", None))
         output_writer = config.pop("output_writer", None)
@@ -343,6 +347,12 @@ class _EngineBuiltins:
         depth = causal.depth + 1
         if depth > limits.max_vm_depth:
             raise SericiteError("VM depth limit exceeded", kind="resource_exhausted")
+        module_root = "/"
+        filename = None
+        if entry_file is not None:
+            source, module_root, filename = self._load_entry(
+                fs, entry_file, self._meter(causal)
+            )
         handle = self._create_vm(
             source=source,
             parent_id=causal.vm_id,
@@ -359,6 +369,8 @@ class _EngineBuiltins:
             granted=granted,
             output_writer=output_writer,
             fs=fs,
+            module_root=module_root,
+            filename=filename,
         )
         causal.child_count += 1
         return handle

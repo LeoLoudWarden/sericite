@@ -27,7 +27,7 @@ assert output == "hello world\n"
 SericiteEngine(limits=None)
 engine.create_vfs() -> VFSHandle
 engine.create_root(
-    source,
+    source=None,
     inputs=None,
     input_provider=None,
     limits=None,
@@ -36,10 +36,11 @@ engine.create_root(
     buffer_output=True,
     argv=None,
     fs=None,
+    entry_file=None,
 )
 ```
 
-- `source`：Sericite 源码字符串，UTF-8 长度上限 4MB。
+- `source`：Sericite 源码字符串，UTF-8 长度上限 4MB。与 `entry_file` 必须恰好提供一个。
 - `limits`：root 使用的 `SericiteLimits`，见第 3 节。
 - `inputs`：预置输入字符串的可迭代对象，按顺序进入输入队列。
 - `input_provider`：队列耗尽后调用的宿主函数，返回下一行字符串或 `None`。返回 `None`、抛出 `EOFError` 或 `StopIteration` 时，VM 进入 `waiting_input`；要报告输入源永久关闭，抛出 `SericiteError(kind="input_error")`，脚本可以捕获。
@@ -48,6 +49,7 @@ engine.create_root(
 - `buffer_output`：是否在内存中保留 root stdout，默认 `True`。设为 `False` 时不保留缓冲输出，可避免长期 root 无限保留历史输出；完整语义见[虚拟机参考](vm-reference.zh-CN.md)第 4 节。
 - `argv`：root 模块初始 `argv` 列表的字符串可迭代对象；缺省为空列表。引擎复制该列表，后续不与宿主共享变更；`argv` 不能用作授予名。其语义见 [CLI 参考](cli-reference.zh-CN.md)第 2 节。
 - `fs`：可选的分离状态 `VFSHandle`。`engine.create_vfs()` 创建独立工作区；`create_root(..., fs=fs)` 成功后才移动所有权，失败时句柄仍可使用。终态 VM 的 `take_fs()` 返回新的分离句柄。
+- `entry_file`：从 `fs` 工作区读取并编译入口文件，以入口所在目录为模块解析根；必须显式提供 `fs`，且不能同时提供 `source`。文件操作仍以工作区根为基准。读取时机与会话归属见[虚拟机参考](vm-reference.zh-CN.md)第 2～4 节。
 
 参数类型错误在 API 边界报 `type_error`。root 参数校验先于 VM 创建，失败不会注册 VM；`limits` 可以是 `None` 或 `SericiteLimits`，`fs` 必须属于同一引擎且未被消费。
 

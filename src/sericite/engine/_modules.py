@@ -101,8 +101,9 @@ class _EngineModules:
             )
 
         stem = full_name.replace(".", "/")
-        file_path = f"/{stem}.sericite"
-        package_path = f"/{stem}/__init__.sericite"
+        root = home.module_root.rstrip("/")
+        file_path = f"{root}/{stem}.sericite"
+        package_path = f"{root}/{stem}/__init__.sericite"
         meter.work(len(file_path) + len(package_path))
         fs = self._attached_vfs(home)
         file_exists = fs.path_exists(file_path)
