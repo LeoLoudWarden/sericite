@@ -113,7 +113,7 @@ Script calls receive only the safe view and cannot see these host fields.
 The host side also has one privilege — host management is not script accounting:
 
 - Direct `feed_input()`, breakpoint management, file operations through `VMHandle`/`VFSHandle`, stdout access, snapshots, and `dispose()` do not enter script accounting;
-- Resource-specific limits such as file count, per-file bytes, total file storage, output bytes, and `max_breakpoints` still apply;
+- Resource-specific limits such as file count, per-file bytes, total file storage, and output bytes still apply;
 - Instructions and dynamic operations executed by `run()`, `exec()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
 
 This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.** See the [architecture notes](architecture.md) §5 for the script accounting model.
@@ -218,7 +218,7 @@ Records/schemas, module objects, VM/VFS handles, functions, and other host objec
 
 ### 6.3 Exceptions and reentrancy
 
-- The FFI exception contract: a well-behaved host callback either returns a result or raises `SericiteError` with a contract kind (`file_not_found`, `runtime_error`, …) — this says "I'm alive, and this job cannot be delivered." A `SericiteError` propagates under its original kind, with catchability governed by the language rules; ordinary catchable kinds can be handled by the script, so the host must keep secrets out of the message.
+- The FFI exception contract: a well-behaved host callback either returns a result or raises `SericiteError` with a concrete contract kind (`file_not_found`, `runtime_error`, …) — this says "I'm alive, and this job cannot be delivered." A `SericiteError` propagates under its original kind, with catchability governed by the language rules; ordinary catchable kinds can be handled by the script, so the host must keep secrets out of the message. Compile-time filter aliases such as `file_error` and `lookup_error` are not FFI contract kinds.
 - `resource_exhausted` is special: if a host callback raises it, the engine treats it as the VM's own quota exhaustion — the VM enters the terminal `resource_exhausted` state, and the script cannot catch it. If the script should be able to recover from such a failure, raise an ordinary contract kind such as `runtime_error` or `ffi_error` inside the callback instead.
 - Any **other** `Exception` escaping a host callback is a governance failure: the callback's internal state is no longer trustworthy. The engine kills the VM with the **uncatchable** `host_error` — message: only the host exception's type name, never its text — and returns control to the host.
 - Scripts cannot catch this failure — not even with a bare `except:` — and cannot probe host exception types through it. Catch your own exceptions inside the callback and translate the ones scripts may see into contract kinds.

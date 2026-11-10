@@ -84,6 +84,8 @@ The recommended workflow is: configure a detached VFS, move it into the VM, then
 
 Running out of queued input with no further source is ordinary suspension (`waiting_input`), not an exception; an input source explicitly reporting closure (`input_error`) follows the normal catchable-error path. On failure, `sub.run()` propagates the child VM's error to the calling script under its original kind, and catchable kinds can still be caught.
 
+Each VM's error retains only that VM's call trace. Functions defined in another VM appear under their granted names with `line` set to `None`; see the [language reference](language-reference.md) §5 for the error record's fields and general frame ordering.
+
 After a child exhausts an execution budget and enters the terminal `resource_exhausted` state, a parent can catch that error; the parent's own or an ancestor's execution-budget errors remain uncatchable. File-operation constraints use a separate, recoverable error contract described in section 5 below.
 
 A terminal VM can still be operated on, but two kinds of methods behave differently:
@@ -136,7 +138,7 @@ snapshot = sub.snapshot()                # state == "paused"
 sub.run()                                # executes line 2 and continues
 ```
 
-`line` must be a positive integer; `path` is `None` or a logical path normalized under VFS rules. Addition and removal are idempotent. `breakpoints()` returns pure-data `{"line": int, "path": str | None}` entries in insertion order. Breakpoints can be managed as long as the VM has not been disposed; `max_breakpoints` bounds their count.
+`line` must be a positive integer; `path` is `None` or a logical path normalized under VFS rules. Addition and removal are idempotent. `breakpoints()` returns pure-data `{"line": int, "path": str | None}` entries in insertion order. Breakpoints can be managed as long as the VM has not been disposed, with no target-specific count limit. Script-driven breakpoint management and storage consume the controlling script's own instruction and memory quotas, not the target VM's quotas.
 
 Breakpoint semantics are:
 
@@ -146,7 +148,6 @@ Breakpoint semantics are:
 - `path=None` matches the current main source and its functions. After successful `exec()`, it binds by line to the new main source and does not hit functions left by older deliveries.
 - An explicit `path` matches the target VM's own entry file and imported modules. Granted code defined by another VM never hits the target's breakpoints, even at the same path and line.
 - Pausing does not propagate through the creation chain. When the child's `run()` returns, its direct parent may inspect and resume it or continue its own program; ancestors and the host enter no global pause.
-- When the current count has reached `max_breakpoints`, adding another new location raises the ordinary catchable `breakpoint_limit_error` without modifying the table or terminating caller or target. The controller may remove an old location and retry.
 
 ### Snapshots
 
@@ -164,7 +165,7 @@ A snapshot returned by `step()`, `step_instruction()`, or `snapshot()` contains 
 
 Complex values have node and depth budgets. Cycles and shared structures use placeholders rather than exponential expansion. Snapshots do not expose operable child VM values.
 
-`error.frames` is that VM's call stack. Each entry is `{"function": str, "line": int | None}`; ordering and line redaction follow the script error record — see the [language reference](language-reference.md) §5.
+`error.frames` is that VM's call stack, and each entry is `{"function": str, "line": int | None}`. See the [language reference](language-reference.md) §5 for general frame ordering and the cross-VM rules above for granted names and line numbers.
 
 ## 5. Quotas
 
@@ -183,7 +184,6 @@ Each VM's resource quotas are defined by the following fields. Every field has a
 | `max_total_vms` | 1000 | Live, not-yet-disposed VMs across the runtime, including the entry VM; disposal releases a slot |
 | `max_descendant_vms` | 1000 | Live descendants throughout a VM's whole subtree, excluding itself; disposal releases a slot |
 | `max_vm_depth` | 8 | VM nesting depth |
-| `max_breakpoints` | 100 | Breakpoint locations retained by the current VM |
 | `max_fs_files` | 1000 | Maximum total VFS file count to which the current VM may grow the world |
 | `max_fs_file_bytes` | 1,048,576 | Maximum UTF-8 file size the current VM may write or copy |
 | `max_fs_storage_bytes` | 67,108,864 | Approximate total VFS storage to which the current VM may grow the world, including text, paths, and directory metadata |

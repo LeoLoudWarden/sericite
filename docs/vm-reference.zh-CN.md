@@ -84,6 +84,8 @@ print(fs.read_file("/result.txt"))        # 终态后取回产出
 
 输入耗尽且没有更多输入来源是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，`sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
+每台 VM 的错误只保留该 VM 的调用栈。其他 VM 定义的函数在栈中以授予名显示，`line` 为 `None`；异常 record 的字段与通用顺序规则见[语言参考](language-reference.zh-CN.md)第 5 节。
+
 子 VM 因执行预算耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的执行预算错误仍不可捕获。文件操作约束使用另一套可恢复的错误语义，见下文第 5 节。
 
 终态 VM 仍可被操作，但两类方法的行为不同：
@@ -136,7 +138,7 @@ snapshot = sub.snapshot()             # state == "paused"
 sub.run()                             # 执行第 2 行并继续
 ```
 
-`line` 必须是大于 0 的整数；`path` 为 `None` 或经 VFS 规则规范化的逻辑路径。添加和删除都幂等，`breakpoints()` 按添加顺序返回 `{"line": int, "path": str | None}` 纯数据列表。只要 VM 尚未销毁，就可以管理断点；数量受 `max_breakpoints` 限制。
+`line` 必须是大于 0 的整数；`path` 为 `None` 或经 VFS 规则规范化的逻辑路径。添加和删除都幂等，`breakpoints()` 按添加顺序返回 `{"line": int, "path": str | None}` 纯数据列表。只要 VM 尚未销毁，就可以管理断点，没有目标专属数量上限。脚本驱动的断点管理及其存储消耗控制脚本自己的指令和内存配额，不消耗目标 VM 的配额。
 
 断点语义如下：
 
@@ -146,7 +148,6 @@ sub.run()                             # 执行第 2 行并继续
 - `path=None` 匹配当前主源码及其函数。成功 `exec()` 后按相同行号绑定新主源码，不命中旧投递留下的函数。
 - 显式 `path` 匹配目标 VM 自己的入口文件和 import 模块。其他 VM 授予的函数即使路径和行号相同，也不会命中目标断点。
 - 暂停不沿创建链传播。子 VM 的 `run()` 返回后，直接父 VM 可以检查和恢复它，也可以继续自己的程序；祖先和宿主不会进入全局暂停。
-- 当前断点数已达到 `max_breakpoints` 时，再添加新位置会抛出普通可捕获的 `breakpoint_limit_error`，不修改断点表，也不终止调用方或目标。调用方可删除旧位置后重试。
 
 ### 快照
 
@@ -164,7 +165,7 @@ sub.run()                             # 执行第 2 行并继续
 
 复杂值受节点和深度预算约束；环与共享结构使用占位符，不会指数展开。快照不包含可继续操作的子 VM 值。
 
-`error.frames` 是该 VM 的调用栈。每项是 `{"function": str, "line": int | None}`；栈顺序与行号脱敏规则同脚本异常 record，见[语言参考](language-reference.zh-CN.md)第 5 节。
+`error.frames` 是该 VM 的调用栈，每项是 `{"function": str, "line": int | None}`。通用帧顺序见[语言参考](language-reference.zh-CN.md)第 5 节，跨 VM 的授予名与行号规则见上文。
 
 ## 5. 配额
 
@@ -183,7 +184,6 @@ sub.run()                             # 执行第 2 行并继续
 | `max_total_vms` | 1000 | 整个运行时同时存活且尚未销毁的 VM 数上限，包括入口 VM；销毁后释放槽位 |
 | `max_descendant_vms` | 1000 | 单台 VM 的整棵子树中同时存活的后代数上限，不含自身；销毁后释放槽位 |
 | `max_vm_depth` | 8 | VM 嵌套深度上限 |
-| `max_breakpoints` | 100 | 当前 VM 可同时保存的断点位置数上限 |
 | `max_fs_files` | 1000 | 当前 VM 可扩张到的 VFS 文件总数上限 |
 | `max_fs_file_bytes` | 1,048,576 | 当前 VM 可写入或复制的单文件 UTF-8 字节上限 |
 | `max_fs_storage_bytes` | 67,108,864 | 当前 VM 可扩张到的 VFS 近似总存储量，包含文本、路径与目录元数据 |

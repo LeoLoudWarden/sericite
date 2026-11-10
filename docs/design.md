@@ -79,6 +79,8 @@ Ordinary containers, records, and functions are data; a VM context is a resource
 
 VM lifetime therefore has two mechanisms: Python GC automatically destroys a resource after its references become wholly unreachable, while `dispose()` gives well-behaved code deterministic, forced destruction. Even a hypothetical scope-cleanup syntax would only help cooperative code; it cannot provide resource safety against malicious code. Destruction does not execute target script code; otherwise collection itself would become an execution and re-entrancy entry point.
 
+**Debug configuration belongs to the controller, not to the target's execution world.** Holding a VM handle includes the authority to inspect and control that VM. Breakpoints record the controller's debugging intent, so they have no target-specific count quota. Script-driven management still consumes the controller's own resources; this distinction does not remove the quotas governing actual target execution.
+
 ### 3.6 VMs are execution sessions; VFSs are transferable workspaces
 
 **A VM isolates an execution session, not one `run()` call.** `run()`, `step()`, and repeated `exec()` deliveries all drive the same session: module-level variables, the loaded-module cache, virtual IO, granted-function environments, and cumulative execution budgets remain within it. Only creating another VM starts an independent session; `exec()` merely delivers more code to an existing session.

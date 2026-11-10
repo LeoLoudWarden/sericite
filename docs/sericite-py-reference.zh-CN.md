@@ -113,7 +113,7 @@ vm.dispose()
 宿主侧还有一条特权规则——宿主管理不计入脚本账：
 
 - 直接 `feed_input()`、断点管理、通过 `VMHandle`/`VFSHandle` 读写文件、查看 stdout 或快照、`dispose()`，不计入脚本账；
-- 文件数、单文件字节、文件总存储量、输出字节和 `max_breakpoints` 等资源自身限制仍然有效；
+- 文件数、单文件字节、文件总存储量和输出字节等资源自身限制仍然有效；
 - `run()`、`exec()`、`step()`、`step_instruction()` 所执行的 VM 指令和动态操作始终受 VM 配额约束。
 
 不要把这条区别理解成"宿主调用会让 VM 免费执行"。它只表示：**宿主的管理动作不是脚本因果工作；VM 的实际执行仍然计量。**脚本计量模型见[架构说明](architecture.zh-CN.md)第 5 节。
@@ -218,7 +218,7 @@ record/schema、模块对象、VM/VFS 句柄、函数及其他宿主对象不能
 
 ### 6.3 异常与重入
 
-- FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原 kind 传播，是否可捕获遵守语言规则；普通可捕获 kind 可由脚本按 kind 处理，因此其消息由宿主自行保证不含秘密。
+- FFI 异常契约：行为良好的宿主回调要么返回结果，要么抛具体契约 kind 的 `SericiteError`（`file_not_found`、`runtime_error` 等）——语义是"我还活着，这个活干不了"。`SericiteError` 按原 kind 传播，是否可捕获遵守语言规则；普通可捕获 kind 可由脚本按 kind 处理，因此其消息由宿主自行保证不含秘密。`file_error`、`lookup_error` 等编译期过滤器别名不是 FFI 契约 kind。
 - `resource_exhausted` 是特殊情况：宿主回调直接抛出它时，引擎视为该 VM 自身的配额耗尽——VM 进入 `resource_exhausted` 终态，脚本不可捕获。若这类失败应当允许脚本恢复，请在回调内改抛 `runtime_error`、`ffi_error` 等普通契约 kind。
 - 回调抛出契约**之外**的任何 `Exception` 都视为治理失败：其内部状态不再可信。引擎让当前 VM 以**不可捕获**的 `host_error` 终止，消息只含宿主异常的类型名，绝不含异常文本，控制权交还宿主。
 - 脚本无法捕获这类失败——裸 `except:` 也不行——也无法借它探测宿主异常类型。请在回调内部捕获自己的异常，把脚本可见的失败翻译成契约 kind。

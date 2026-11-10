@@ -273,74 +273,105 @@ Parameter and argument validation:
 
 ## 5. Exceptions
 
+### Catching errors
+
 ```python
 try:
     x = 1 / 0
-except zero_division as e:   # filter by error kind; e is an error record
+except zero_division as e:
     print("caught:", e.message)
-except (name_error, type_error) as e:  # catch several kinds in one clause
-    print("caught:", e.kind, e.message)
-except ... as e:             # catch everything catchable and bind e
-    print("caught:", e.kind, e.message)
-except:                      # bare except catches all without binding a value
-    print("wrong")
 else:
     print("no error")
 finally:
     print("always runs")
 
-raise "something wrong"      # raises kind raise_error, catchable
-raise                        # bare raise inside except: re-raise the current error
+raise "something wrong"      # raises the catchable kind raise_error
 ```
 
-An `except` filter is static syntax, not variable evaluation or a general-purpose tuple. There are three filter forms:
-
-- a single catchable kind: `except kind`;
-- a non-empty parenthesized group of kinds: `except (kind1, kind2)`;
-- `...` for every catchable kind: `except ...`.
-
-Unknown names (including misspellings), empty groups, and uncatchable kinds inside a group are rejected at compile time with a `syntax_error`.
-
-`as e` binds a record with exactly three fields:
-
-- `e.kind`: a string containing the actual error kind;
-- `e.message`: a string containing the readable error text;
-- `e.frames`: a list of call frames. Each frame is a record with exactly two fields:
-  - `function`: the function name string;
-  - `line`: the source line integer; code defined in another VM does not disclose it and always uses `None`.
-
-  Frames are ordered from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call; for a call spanning multiple lines, it does not fall back to the first line of the statement or expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
-
-Bare `except:` catches everything catchable without binding a value; `except ... as e` both catches everything catchable and binds the error record. The `as e` binding is an ordinary binding in the current scope: it remains after the handler, and a nested handler using the same name overwrites it.
-
-Bare `raise` and saved rethrows through `finally` preserve the original frames; a new error raised in a handler or `finally` gets a new trace.
-
-`e` and its frame records are safe copies: mutating them does not affect the internal error.
-
-The trace contains only calls in the current VM. Functions defined in another VM appear under their granted names with `line` set to `None`.
-
-Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
-
-- General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`, `import_error`.
-- Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
-- Files and external functions: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
-- File-operation constraint rejection: `file_limit_error`, an ordinary catchable error; the program can handle it and continue.
-- Breakpoint-count constraint rejection: `breakpoint_limit_error`, ordinary and catchable; remove old breakpoints and continue.
-- Resource failure in another VM: `resource_exhausted`, catchable only when it comes from another, terminated VM isolated behind `VM()`; exhaustion of the current VM's own quota is uncatchable.
+Use `except ... as e` to catch every catchable error and bind its record, or bare `except:` to do so without binding a value. The following independent examples show `except` clauses with and without a bound error record:
 
 ```python
 try:
-    sub = VM("while True: pass", max_instructions=100)  # isolate an infinite loop behind VM(), with a small quota
-    sub.run()                                           # the loop exhausts its quota → resource_exhausted
-except resource_exhausted as e:
-    print("caught:", e.message)      # this can be caught
+    value = int("bad")
+except ... as e:
+    print(e.kind, e.message)
 
-# An infinite loop written directly in the current script (not behind VM()) is not catchable.
+try:
+    value = int("bad")
+except:
+    print("conversion failed")
 ```
 
-`input_error` means the input has ended: `input()` raises it when no further line will arrive, and scripts can catch it. So `except input_error` can end a loop that reads until input ends; if input is merely delayed, `input()` waits instead of raising.
+### Static filters and aliases
+
+An `except` filter is static syntax, not variable evaluation or a general-purpose tuple. There are three forms:
+
+- one catchable kind or filter alias: `except file_error`;
+- a non-empty parenthesized filter containing those names: `except (file_error, input_error)`;
+- `...` for every catchable kind: `except ...`.
+
+Unknown names (including misspellings), empty filters, dynamic values, and uncatchable kinds are rejected at compile time with `syntax_error`.
+
+The built-in filter aliases have fixed memberships:
+
+| Filter alias | Concrete kinds caught |
+|---|---|
+| `file_error` | `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `file_limit_error` |
+| `lookup_error` | `index_error`, `key_error` |
+
+An alias is used only for filtering at compile time. It is not a runtime value or an actual error kind. `e.kind` always contains the concrete error:
+
+```python
+try:
+    read_file("/missing.txt")
+except file_error as e:
+    print(e.kind)               # file_not_found
+```
+
+`except` clauses are tried in source order, so put a specific kind before an alias when it needs different handling. Aliases and concrete kinds can be mixed in one parenthesized filter; duplicate members have no additional effect.
+
+### Error records
+
+`as e` binds a record with exactly three fields:
+
+- `e.kind`: the actual error kind string;
+- `e.message`: the readable error text;
+- `e.frames`: a list of call frames described below.
+
+The binding is an ordinary binding in the current scope: it remains after the `except` clause, and a nested `except` clause using the same name overwrites it. The record and its frame records are safe copies; mutating them does not affect the internal error.
+
+### Catchability and special boundaries
+
+The concrete catchable kinds are:
+
+| Category | Kinds |
+|---|---|
+| General | `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`, `import_error` |
+| Operations and contracts | `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error`, `attribute_error`, `contract_error` |
+| Files | `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `file_limit_error` |
+| External-function boundary | `ffi_error` |
+| Resource failure | `resource_exhausted` |
+
+`resource_exhausted` means that a resource quota has been exhausted; a script cannot catch its own resource exhaustion.
+
+Here `value_error` covers unpacking length mismatches and unsuccessful `index()` searches; `attribute_error` covers missing or forbidden members; `contract_error` covers construction, annotation, wrap, and field-write contract failures. `file_limit_error` is an ordinary recoverable error, so the program can handle it and continue.
+
+A `try` cannot catch a `syntax_error` in the same source, because the source is checked before it starts running.
+
+`input_error` means input has ended: `input()` raises it when no further line will arrive, so `except input_error` can end a read-until-EOF loop. If input is merely delayed, `input()` waits instead of raising.
 
 `internal_error` (an unexpected internal failure) and `host_error` (an external function failed in a way that cannot be recovered safely) are always uncatchable.
+
+### Call frames and rethrows
+
+Each entry in `e.frames` is a record with exactly two fields:
+
+- `function`: the function name string;
+- `line`: the source line integer, or `None` when unavailable.
+
+Frames run from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call, even for a multiline call. For example, printing the list may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
+
+Bare `raise` inside an `except` clause and saved rethrows through `finally` preserve the original frames; a new error raised in an `except` clause or `finally` gets a new trace.
 
 ## 6. Built-in functions
 
@@ -396,6 +427,8 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
 - Mutating operations complete path and resource checks before changing the file tree. Failure leaves no partial change. See the [VM reference](vm-reference.md) §5 for recoverable file-constraint errors and operations on an already over-limit world.
+
+When the file errors and file-constraint errors above share the same recovery, use `except file_error` instead of listing them individually; see section 5 for its exact membership.
 
 ### List, tuple, and dict methods
 

@@ -15,8 +15,14 @@ except name_error as e:
 
 try:
     read_file("/missing.txt")
-except file_not_found as e:
-    print("caught: " + e.message)
+except file_error as e:
+    print("file alias caught: " + e.kind)
+
+try:
+    values = []
+    print(values[0])
+except lookup_error as e:
+    print("lookup alias caught: " + e.kind)
 
 i = 0
 caught = 0

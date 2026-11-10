@@ -273,74 +273,105 @@ def double(x):
 
 ## 5. 异常
 
+### 捕获异常
+
 ```python
 try:
     x = 1 / 0
-except zero_division as e:   # 按错误类型过滤，e 是异常 record
+except zero_division as e:
     print("caught:", e.message)
-except (name_error, type_error) as e:  # 一个分支捕获多种类型
-    print("caught:", e.kind, e.message)
-except ... as e:             # 捕获所有可捕获错误并绑定 e
-    print("caught:", e.kind, e.message)
-except:                      # 裸 except 兜底，不绑定异常值
-    print("wrong")
 else:
     print("没出错")
 finally:
     print("一定执行")
 
-raise "出问题了"             # 抛出 raise_error 类型，可捕获
-raise                        # 在 except 块内裸 raise：重新抛出当前错误
+raise "出问题了"             # 抛出可捕获的 raise_error
 ```
 
-`except` 的过滤条件是静态语法，不是变量求值或通用元组，共有三种形式：
-
-- 单个可捕获 kind：`except kind`；
-- 非空的 kind 括号组：`except (kind1, kind2)`；
-- `...`，表示全部可捕获 kind：`except ...`。
-
-编译期以 `syntax_error` 拒绝：未知名字（含拼写错误）、空组、组内出现不可捕获 kind。
-
-`as e` 绑定一个固定含三个字段的 record：
-
-- `e.kind`：字符串，实际发生的错误类型；
-- `e.message`：字符串，可读错误文本；
-- `e.frames`：调用栈 list，每项是 record，固定含两个字段：
-  - `function`：函数名字符串；
-  - `line`：源码行号整数；其他 VM 定义的代码不显示行号，固定为 `None`。
-
-  栈从最外层调用排列到实际错误点，最后一帧是错误点。调用方帧的行号是实际发起该调用的那一行；调用跨多行时，不会退回到语句或表达式的起始行。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
-
-裸 `except:` 捕获所有可捕获错误但不绑定值；`except ... as e` 则同时兜底并绑定异常 record。`as e` 是当前作用域中的普通绑定，handler 结束后仍然保留，嵌套的同名 handler 会覆盖它。
-
-裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；handler 或 `finally` 中新产生的错误则使用新调用栈。
-
-`e` 及其帧 record 是安全副本：修改它们不影响内部错误。
-
-调用栈只包含当前 VM 中的调用。其他 VM 定义的函数以授予名显示，`line` 为 `None`。
-
-注意：裸 `except:` 和 `except ...` 只能处理**可捕获**的错误。可捕获 kind 的完整列表：
-
-- 通用：`runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`、`import_error`。
-- 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
-- 文件与外部函数：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
-- 文件操作约束拒绝：`file_limit_error`，普通且可捕获，处理后可以继续执行。
-- 断点数量约束拒绝：`breakpoint_limit_error`，普通且可捕获；删除旧断点后可以继续执行。
-- 其他 VM 的资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的另一台已终止 VM 时可捕获；当前 VM 自身的配额耗尽不可捕获。
+`except ... as e` 捕获所有可捕获错误并绑定异常 record；裸 `except:` 同样兜底，但不绑定值。以下分别演示绑定与不绑定异常值：
 
 ```python
 try:
-    sub = VM("while True: pass", max_instructions=100)  # 在 VM() 里隔离死循环，配额设小
-    sub.run()                                           # 循环耗尽配额 → resource_exhausted
-except resource_exhausted as e:
-    print("caught:", e.message)      # 可以被捕获
+    value = int("bad")
+except ... as e:
+    print(e.kind, e.message)
 
-# 直接写在当前脚本里的死循环（不经 VM() 隔离）不可捕获。
+try:
+    value = int("bad")
+except:
+    print("conversion failed")
 ```
 
-`input_error` 表示输入已经结束：不会再有新的输入行时，`input()` 抛出它，脚本可以捕获。因此可以用 `except input_error` 结束读到结尾的循环；如果输入只是暂时没到，`input()` 会等待，不会报错。
+### 静态过滤器与别名
+
+`except` 的过滤条件是静态语法，不是变量求值或通用元组，共有三种形式：
+
+- 单个可捕获 kind 或过滤器别名：`except file_error`；
+- 由这些名字组成的非空括号过滤器：`except (file_error, input_error)`；
+- `...`，表示全部可捕获 kind：`except ...`。
+
+未知名字（含拼写错误）、空过滤器、动态值和不可捕获 kind 都在编译期以 `syntax_error` 拒绝。
+
+内建过滤器别名的成员固定如下：
+
+| 过滤器别名 | 捕获的具体 kind |
+|---|---|
+| `file_error` | `file_not_found`、`file_exists`、`is_directory`、`not_directory`、`file_limit_error` |
+| `lookup_error` | `index_error`、`key_error` |
+
+别名只在编译期用于过滤，不是运行期值或实际错误 kind。`e.kind` 始终保存实际错误：
+
+```python
+try:
+    read_file("/missing.txt")
+except file_error as e:
+    print(e.kind)               # file_not_found
+```
+
+`except` 分支按源码顺序尝试；某种具体错误需要不同处理时，把它的分支放在别名之前。别名与具体 kind 可以混写在同一个括号过滤器中，重复成员没有额外效果。
+
+### 异常 record
+
+`as e` 绑定一个固定含三个字段的 record：
+
+- `e.kind`：实际错误 kind 的字符串；
+- `e.message`：可读错误文本；
+- `e.frames`：下文说明的调用栈 list。
+
+这个绑定是当前作用域中的普通绑定，`except` 分支结束后仍然保留，嵌套的同名 `except` 分支会覆盖它。异常 record 及其帧 record 都是安全副本，修改它们不影响内部错误。
+
+### 可捕获性与特殊边界
+
+具体可捕获 kind 的完整清单如下：
+
+| 类别 | kind |
+|---|---|
+| 通用 | `runtime_error`、`syntax_error`、`type_error`、`name_error`、`arity_error`、`raise_error`、`input_error`、`import_error` |
+| 运算与契约 | `zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`、`attribute_error`、`contract_error` |
+| 文件 | `file_not_found`、`file_exists`、`is_directory`、`not_directory`、`file_limit_error` |
+| 外部函数边界 | `ffi_error` |
+| 资源失败 | `resource_exhausted` |
+
+`resource_exhausted` 表示资源配额耗尽；脚本不能捕获自己的资源耗尽。
+
+其中，`value_error` 表示解构长度不匹配或 `index()` 未找到值；`attribute_error` 表示成员缺失或禁止访问；`contract_error` 表示构造、注解、wrap 或字段写入的契约检查失败。`file_limit_error` 是普通可恢复错误，程序可以处理并继续执行。
+
+同一份源码不能用自己的 `try` 捕获自身的 `syntax_error`，因为源码先经过检查，然后才开始运行。
+
+`input_error` 表示输入已经结束：不会再有新的输入行时，`input()` 抛出它，因此可以用 `except input_error` 结束读到 EOF 为止的循环。如果输入只是暂时没到，`input()` 会等待，不会报错。
 
 `internal_error`（意外的内部失败）与 `host_error`（外部函数发生无法安全恢复的失败）始终不可捕获。
+
+### 调用栈与重抛
+
+`e.frames` 中每项都是固定含两个字段的 record：
+
+- `function`：函数名字符串；
+- `line`：源码行号整数，无法提供时为 `None`。
+
+栈从最外层调用排列到实际错误点，最后一帧是错误点。调用方帧的行号是实际发起调用的那一行，多行调用也遵守这一规则。例如打印结果可能类似 `[record(function='<module>', line=8), record(function='outer', line=5)]`。
+
+`except` 分支内的裸 `raise` 与 `finally` 暂存重抛保留原始调用栈；`except` 分支或 `finally` 中新产生的错误使用新调用栈。
 
 ## 6. 内建函数
 
@@ -396,6 +427,8 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 
 - 所有会创建文件或目录的操作都先校验目标的中间路径段；任一段已是文件时报 `not_directory`。
 - 变更操作会在修改文件树之前完成路径与资源检查，失败不会留下部分变更。文件约束的可恢复错误与超限后的操作规则见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。
+
+如果上述文件错误与文件约束错误都采用同一种恢复方式，可以用 `except file_error` 代替逐个罗列；其准确成员见第 5 节。
 
 ### 列表、元组与字典方法
 
