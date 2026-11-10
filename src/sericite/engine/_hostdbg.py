@@ -213,7 +213,7 @@ class _EngineHostDebug:
             target = self._context(handle)
             target.io.feed_input(value, permit=permit)
             if target.state == "waiting_input":
-                target.state = "ready"
+                self._set_state(target, "ready")
             result = None
         elif attr == "run" and run_signature:
             inputs = args[0] if args else kwargs.get("inputs")
@@ -225,7 +225,7 @@ class _EngineHostDebug:
                 target = self._context(handle)
                 target.io.feed_batch(inputs, permit=permit)
                 if target.state == "waiting_input":
-                    target.state = "ready"
+                    self._set_state(target, "ready")
             result = self._run(handle)
         elif attr == "exec" and len(args) == 1 and not kwargs:
             result = self._exec_source(handle, args[0])

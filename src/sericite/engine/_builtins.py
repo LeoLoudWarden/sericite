@@ -372,7 +372,6 @@ class _EngineBuiltins:
             module_root=module_root,
             filename=filename,
         )
-        causal.child_count += 1
         return handle
 
     def _validate_child_functions(
@@ -449,6 +448,7 @@ class _EngineBuiltins:
         line = renderer.text()
         meter.work(len(line) // 64)
         context.io.write_output(line)
+        context.io.forward_output(line)
         if context.output_writer is not None:
             self._invoke_output_writer(caller or context, context.output_writer, line)
 

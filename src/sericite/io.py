@@ -104,6 +104,8 @@ class VirtualIO:
             self._output_size += size
         if self._buffer_output:
             self._output.write(value)
+
+    def forward_output(self, value: str) -> None:
         if self._output_writer is not None:
             self._output_writer(value)
 
