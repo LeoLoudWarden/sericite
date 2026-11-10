@@ -262,7 +262,7 @@ class _EngineCore:
             output_writer=output_writer,
         )
         if not any(instr.stmt_start for instr in code.instrs):
-            context.state = "done"
+            self._set_state(context, "done")
         route = AccountRoute(context, resolve=self._resolve_account)
         context.ancestor_ids = tuple(account.vm_id for account in route.accounts[1:])
         meter = Meter(route)
@@ -281,7 +281,9 @@ class _EngineCore:
             context.ancestor_ids,
         )
         if parent_id is not None:
-            self._contexts[parent_id].child_ids.add(vm_id)
+            parent = self._contexts[parent_id]
+            parent.child_ids.add(vm_id)
+            parent.child_count += 1
         for ancestor_id in context.ancestor_ids:
             self._contexts[ancestor_id].live_descendant_count += 1
         attachment.owner_vm_id = vm_id
@@ -309,7 +311,7 @@ class _EngineCore:
     ) -> None:
         context = self._contexts.pop(vm_id, None)
         if context is not None:
-            context.state = "terminated"
+            self._set_state(context, "terminated")
             context.meter = None
             parent_id = context.parent_id
             ancestor_ids = context.ancestor_ids
@@ -397,7 +399,7 @@ class _EngineCore:
                 if child is not None:
                     pending.append(child)
         for current in contexts:
-            current.state = "terminated"
+            self._set_state(current, "terminated")
         for current in reversed(contexts):
             self._unregister_vm(
                 current.vm_id,
@@ -430,10 +432,14 @@ class _EngineCore:
                     raise SericiteError("meter stack corrupted", kind="internal_error")
 
     @staticmethod
-    def _resume_breakpoint(context: VMContext) -> bool:
+    def _set_state(context: VMContext, state: str) -> None:
+        if context.state != state:
+            context.state = state
+
+    def _resume_breakpoint(self, context: VMContext) -> bool:
         if context.state != "paused":
             return False
-        context.state = "ready"
+        self._set_state(context, "ready")
         context.paused_breakpoint = None
         return True
 
@@ -489,8 +495,9 @@ class _EngineCore:
         context.error = None
         context.last_line = None
         context.paused_breakpoint = None
-        context.state = (
-            "ready" if any(instr.stmt_start for instr in code.instrs) else "done"
+        self._set_state(
+            context,
+            "ready" if any(instr.stmt_start for instr in code.instrs) else "done",
         )
         before = len(context.io.stdout())
         self._run(handle)
@@ -574,7 +581,7 @@ class _EngineCore:
                 )
         finally:
             if context.state == "waiting_input":
-                context.state = "ready"
+                self._set_state(context, "ready")
             for discarded in context.frames[frame_depth:]:
                 self._discard_module_frame(discarded)
             del context.frames[frame_depth:]
@@ -598,7 +605,7 @@ class _EngineCore:
             else None
         )
         if breakpoint is not None:
-            context.state = "paused"
+            self._set_state(context, "paused")
             context.paused_breakpoint = breakpoint
             return False
         self._sync_active_errors(frame)
@@ -606,7 +613,7 @@ class _EngineCore:
             self._meter(context).work(1)
             self._dispatch(context, frame, instr)
         except InputRequired:
-            context.state = "waiting_input"
+            self._set_state(context, "waiting_input")
             return False
         except OutputLimitExceeded:
             error = SericiteError("output limit exceeded", kind="resource_exhausted")
@@ -699,8 +706,9 @@ class _EngineCore:
             if logical is not None and not logical.startswith("<sericite:"):
                 filename = logical
         context.error = error.bind(filename, line)
-        context.state = (
-            "resource_exhausted" if error.kind == "resource_exhausted" else "error"
+        self._set_state(
+            context,
+            "resource_exhausted" if error.kind == "resource_exhausted" else "error",
         )
 
     @staticmethod
@@ -1089,7 +1097,7 @@ class _EngineCore:
                         meter=self._meter(context),
                     )
             if len(context.frames) == 1:
-                context.state = "done"
+                self._set_state(context, "done")
             else:
                 context.frames.pop()
                 context.frames[-1].stack.append(value)
