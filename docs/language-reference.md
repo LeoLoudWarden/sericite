@@ -307,7 +307,7 @@ Unknown names (including misspellings), empty groups, and uncatchable kinds insi
 - `e.message`: a string containing the readable error text;
 - `e.frames`: a list of call frames. Each frame is a record with exactly two fields:
   - `function`: the function name string;
-  - `line`: the source line integer; code defined in another workspace does not disclose it and always uses `None`.
+  - `line`: the source line integer; code defined in another VM does not disclose it and always uses `None`.
 
   Frames are ordered from the outermost call to the failure; the last frame is the error site. A caller frame's line is the line that actually issues the call; for a call spanning multiple lines, it does not fall back to the first line of the statement or expression. For example, printing it may show `[record(function='<module>', line=8), record(function='outer', line=5)]`.
 
@@ -317,15 +317,15 @@ Bare `raise` and saved rethrows through `finally` preserve the original frames; 
 
 `e` and its frame records are safe copies: mutating them does not affect the internal error.
 
-The trace contains only calls in the current workspace. Functions defined in another workspace appear under their granted names with `line` set to `None`.
+The trace contains only calls in the current VM. Functions defined in another VM appear under their granted names with `line` set to `None`.
 
 Note: bare `except:` and `except ...` only handle **catchable** errors. The catchable kinds are:
 
 - General: `runtime_error`, `syntax_error`, `type_error`, `name_error`, `arity_error`, `raise_error`, `input_error`, `import_error`.
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and external functions: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
-- File-operation constraint rejection: `file_limit_error`, an ordinary catchable error that does not terminate the VM.
-- Other execution-session resource failure: `resource_exhausted`, catchable only when it comes from another, terminated VM isolated behind `VM()`; exhaustion of the current VM's or an ancestor's execution account is uncatchable.
+- File-operation constraint rejection: `file_limit_error`, an ordinary catchable error; the program can handle it and continue.
+- Resource failure in another VM: `resource_exhausted`, catchable only when it comes from another, terminated VM isolated behind `VM()`; exhaustion of the current VM's own quota is uncatchable.
 
 ```python
 try:
@@ -350,7 +350,7 @@ except resource_exhausted as e:
 
 ### Files and directories
 
-The VFS exclusively owned by the current execution session provides a text-only filesystem, with paths such as `/notes/a.txt`. Scripts access it through these built-ins:
+Use these built-ins to read and write text files in the current workspace, with paths such as `/notes/a.txt`:
 
 | Operation | Purpose |
 |---|---|
@@ -365,8 +365,6 @@ The VFS exclusively owned by the current execution session provides a text-only 
 | `copy_dir(source_path, destination_path)` | Recursively copy a directory tree |
 | `list_dir(path)` | Return sorted direct children of a directory |
 | `path_exists(path)` | Check whether a file or directory exists |
-
-`VFS()` creates a detached workspace whose handle supports the same methods shown above. `VM(code, fs=fs)` moves a detached workspace into a new session and consumes the old handle; `take_fs()` retrieves it after a terminal state. A VFS belongs to at most one VM at a time, and old handles, old sessions, and their home functions lose access after transfer. See the [VM reference](vm-reference.md) §§2–4.
 
 **Implicit and explicit directories.** Writing a file creates missing parent directories implicitly. When deletion or rename leaves an implicit directory with no files or subdirectories, that directory is removed automatically. `make_dir` creates its target and any missing parents explicitly; they remain even when empty. The root directory always remains.
 
@@ -396,9 +394,7 @@ print(path_exists("/keep"), path_exists("/keep/empty"))  # True True
 **Common path and failure rules**
 
 - Every operation that creates a file or directory first validates all intermediate destination path segments. If any segment is an existing file, the operation raises `not_directory`.
-- Mutating operations complete path and resource checks before changing the file tree. Failure leaves no partial change.
-- File count, per-file size, and total file storage constrain the current VM's operations; they are not accounts owned by the VFS. Constraint rejection raises the ordinary, catchable `file_limit_error` without terminating the VM. The program can delete, shrink, or take another path before retrying, and failed attempts and retries remain metered.
-- If an existing world already exceeds the current VM's limits, it can be read, deleted, renamed, or overwritten without increasing its size, but cannot be extended or enlarged.
+- Mutating operations complete path and resource checks before changing the file tree. Failure leaves no partial change. See the [VM reference](vm-reference.md) §5 for recoverable file-constraint errors and operations on an already over-limit world.
 
 ### List, tuple, and dict methods
 
@@ -507,9 +503,9 @@ print(out)                       # 'hi\n'
 sub.dispose()                    # release when done
 ```
 
-VMs are mutually isolated workspaces: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions.
+VMs are mutually isolated environments for running code: a VM cannot see your variables or touch your files. At creation you can tighten quotas and grant functions.
 
-The same VM can be driven repeatedly: deliver new source with `exec()`, feed input, or single-step execution; you can also take snapshots at any time. The full contract is in the [VM reference](vm-reference.md).
+The same VM can be driven repeatedly: deliver new source with `exec()`, feed input, or single-step execution; you can also take snapshots at any time. Variables and imported modules persist across `exec()` deliveries, and resource usage accumulates; create another VM when a fresh environment is required. The full contract is in the [VM reference](vm-reference.md).
 
 ```python
 sub = VM("", max_instructions=10000, functions={"double": double})
@@ -525,9 +521,11 @@ finally:
 
 VMs can be garbage-collected automatically, but using `dispose()` for explicit cleanup is the better practice.
 
+To preserve files across independent VM executions, create a transferable workspace with `VFS()`. Its handle supports the same file methods listed in section 6; `VM(code, fs=fs)` moves the workspace into a new VM, and `take_fs()` retrieves it after a terminal state. Variables and imported modules do not move with the files. See the [VM reference](vm-reference.md) §§2–4 for the complete rules.
+
 ## 9. Modules and import
 
-Modules and packages load from the current workspace's filesystem. Each module has its own global namespace but shares the workspace with the code importing it.
+Modules and packages load from the current workspace. Each module has its own global namespace but shares that workspace with its importer.
 
 ### Modules, packages, and file paths
 
@@ -587,11 +585,11 @@ An entry module outside a package cannot use relative imports, and escaping the 
 ### Execution environment and scope
 
 - Import loads a module when execution reaches the statement and may appear in functions, conditionals, and `try`; imported bindings follow ordinary lexical scope.
-- A module shares files, virtual IO, granted functions, and resource limits with its importer. A module function reads globals from its defining module.
+- A module function reads globals from its defining module.
 
 ### Cache, failures, and errors
 
-- After a canonical module name executes successfully in a workspace, it is cached; repeated imports return the same module object, and the cache lasts for the workspace's lifetime.
+- After a canonical module name executes successfully in a VM, it is cached; repeated imports return the same module object, and the cache lasts for that VM's lifetime. Transferring the workspace to another VM does not carry the cache; the new VM loads modules again from the transferred files.
 - Changing a source file does not automatically reload a cached module.
 - Failed imports are not cached, so the import can be retried after fixing the file; output and file side effects that already happened are not rolled back.
 - Direct and indirect circular imports, missing modules, and missing requested exports raise the catchable `import_error`; syntax, runtime, and resource errors raised by the module itself retain their original kinds.

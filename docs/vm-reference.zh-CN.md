@@ -2,7 +2,7 @@
 
 [English](vm-reference.md)
 
-本文面向**已经理解隔离工作空间、需要在 Sericite 脚本中创建和驱动子 VM 的读者**。VM 的状态、驱动方法、exec 投递、配额与函数授予的脚本契约都在这里；Python 宿主 API 见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
+本文面向**需要在 Sericite 脚本中创建和驱动子 VM 的读者**。执行会话、VFS 移交、VM 状态、驱动方法、exec 投递、配额与函数授予的脚本契约都在这里；Python 宿主 API 见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)。
 
 ## 1. VM 是什么
 
@@ -26,9 +26,9 @@ sub = VM(code, fs=workspace)              # 移入一个分离状态的 VFS
 
 VM 状态包括：`ready`、`waiting_input`、`done`、`error`、`resource_exhausted`、`terminated`。
 
-`terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作——`done`/`error` 等终态 VM 仍可被 `exec` 投递。
+`terminate()` 只把 `ready` 或 `waiting_input` 的 VM 标记为 `terminated`；其他状态下是静默空操作。仍依附 VFS 的 `done`/`error` 等终态 VM 可以继续接受 `exec` 投递。
 
-VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环境访问它，它就会保留；终态 VM 因此仍能用于调试快照和后续 `exec` 投递。
+VM 会占用需要释放的资源。只要仍能从 VM 值或授予函数的环境访问它，它就会保留；因此终态 VM 仍能用于调试快照，并在仍依附 VFS 时接受后续 `exec` 投递。
 
 当一台 VM 彻底不可达后，垃圾回收会最终自动销毁它，包括存在自引用或跨 VM 循环的情况。自动回收不保证在某个语句或作用域边界立即发生；需要确定释放时点时仍应显式调用 `dispose()`。
 
@@ -76,7 +76,7 @@ print(fs.read_file("/result.txt"))        # 终态后取回产出
 
 输入耗尽且没有更多输入来源是正常暂停（`waiting_input`），不是异常；输入源显式报告关闭（`input_error`）则走普通可捕获错误路径。执行失败时，`sub.run()` 把子 VM 的错误按原 kind 传播给调用脚本，可捕获的 kind 仍可正常捕获。
 
-子 VM 因执行预算耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的执行预算错误仍不可捕获。文件数、单文件大小或文件存储约束拒绝变更时使用普通、可捕获的 `file_limit_error`，与执行账户耗尽无关，也不终止执行会话。脚本可见的完整规则见[语言参考](language-reference.zh-CN.md)第 5 节。
+子 VM 因执行预算耗尽进入 `resource_exhausted` 终态后，父 VM 可以捕获该错误；父 VM 自身或祖先的执行预算错误仍不可捕获。文件操作约束使用另一套可恢复的错误语义，见下文第 5 节。
 
 终态 VM 仍可被操作，但两类方法的行为不同：
 
@@ -155,7 +155,11 @@ writer：
 
 `max_string_bytes` 因历史原因以此命名，但实际按单字符串的字符数计算；单文件和输出配额按 UTF-8 字节计算，文件总存储量沿用内存模型的近似字节口径。
 
-三个文件字段都是 **VM 对文件操作的约束**，不是 VFS 持有的账户。约束拒绝变更时使用普通、可捕获的 `file_limit_error`，不终止 VM；已有世界即使超过当前 VM 的限制，也可读取、删除、重命名或进行不扩大规模的覆盖，但不能继续增长。失败操作不留下部分修改，失败与重试仍纳入正常计量。
+三个文件字段都是 **VM 对文件操作的约束**，不是 VFS 持有的账户：
+
+- 当前 VM 与实际调用链上的限制共同收紧。约束拒绝变更时使用普通、可捕获的 `file_limit_error`，不终止执行会话。
+- 每项约束分别比较操作前后的对应当前用量。既有世界已经超限时，仍可读取、收缩或执行不使该项用量进一步扩张的操作；新增文件、扩大文件以及会增加路径或目录元数据的重命名，仍须通过相应检查。
+- 变更在提交前完成路径与资源检查，失败不留下部分修改；失败与重试仍纳入正常计量。
 
 只有累计字段 `max_instructions`、`max_output_bytes`、`max_total_bytes` 接受用 `-1` 表示不设上限。包括存活数量字段 `max_total_vms`、`max_descendant_vms` 在内的其余字段都是结构性配额，必须是非负有限整数；所有字段都拒绝其他负数和非整数值。
 

@@ -71,7 +71,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - c. `internal_error` is always uncatchable.
   - d. A cross-VM resource error internally records the VM that owns the actually exhausted account on the causal route, and that identifier must never enter script-visible values.
   - e. File-count, per-file, and file-storage constraints are VM limits on the current VFS operation, not VFS accounts. Rejection uses the ordinary, catchable `file_limit_error`, is unrelated to execution-account exhaustion, and terminates neither caller nor target; failed attempts and retries still use the same metering route.
-11. The VM-handle method whitelist has exactly one source (defined on the compiler side); the engine references it, and the two sides must not diverge.
+11. The VM/VFS handle-method whitelists each have exactly one source (defined on the compiler side); the engine references them, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict/tuple, recursive): handles, functions, records/schemas, and host-native objects must never cross.
   - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 5.3.
@@ -96,12 +96,12 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - b. A module enters the success cache only after its frame completes. Exception unwinding or `exec()` discarding unfinished execution must clear the corresponding loading state, leaving no partial module to contaminate later imports.
 19.
   - a. A VFS is attached to at most one VM at a time; detached handles operate only while unattached and unconsumed. `fs=` consumes the handle and commits attachment only after VM creation fully succeeds, never losing the workspace on failure.
-  - b. `take_fs()` requires a terminal state and revokes access through the old VM, old home functions, old bound natives, and old VFS handles via dynamic ownership checks. The detached VM accepts no further `exec()`. Failure leaves ownership unchanged.
+  - b. `take_fs()` requires a terminal state. Every file access through the old VM, old home functions, old bound natives, and old VFS handles must check the current attachment and must stop working after removal. The detached VM accepts no further `exec()`. Failure leaves ownership unchanged.
   - c. A VFS enters neither the VM registry nor resource accounts. Module caches, IO, locals, and function homes do not transfer with it. Script VM handles expose no file proxies; trusted host file management is a separate channel.
 
 ## 4. Script interface
 
-The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM-handle methods and VM states by the [VM reference](vm-reference.md) §§3–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
+The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM/VFS handle methods and VM states by the [VM reference](vm-reference.md) §§2–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
 Error kinds are centrally registered in the `errors` module. The compiler rejects unknown filter names and always-uncatchable kinds; the runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10), while `file_limit_error` is an ordinary catchable error unrelated to execution-account exhaustion. The full kind list is in the [language reference](language-reference.md) §5.
 
@@ -114,7 +114,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
 - Only cumulative quota fields accept `-1` for no local cap; the live-count fields `max_total_vms` and `max_descendant_vms`, like other structural fields, always remain finite.
 - Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any finite ring fails. Unlimited accounts still accumulate their ledgers.
-- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included. `max_fs_storage_bytes` instead compares the file world's current approximate size, allowing shrinkage and non-growth without turning that current size into a cumulative VFS-owned ledger.
+- The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included. `max_fs_storage_bytes` instead compares the file world's current approximate size before and after an operation, allowing shrinkage and operations without further growth without turning that current size into a cumulative VFS-owned ledger.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
 
 ### 5.2 Time costs: prepaid or incremental
