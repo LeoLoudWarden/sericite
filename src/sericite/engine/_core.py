@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import weakref
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 
@@ -71,12 +72,14 @@ class _EngineCore:
         )
         self._next_vm_id = 0
         self._observations: list[SericiteObservation] = []
+        self._pending_events: deque[SericiteEvent] = deque()
         self._next_event_sequence = 0
         self._observation_depth = 0
 
     def observe(self, sink: Callable[[SericiteEvent], object]) -> SericiteObservation:
         self._reject_observation_reentry()
-        observation = SericiteObservation(self, sink)
+        self._flush_pending_events()
+        observation = SericiteObservation(self, sink, self._next_event_sequence)
         self._observations.append(observation)
         return observation
 
@@ -91,21 +94,10 @@ class _EngineCore:
                 kind="runtime_error",
             )
 
-    def _emit_event(
-        self, context: VMContext, kind: str, data: dict[str, object]
-    ) -> None:
-        if not self._observations:
-            return
-        event = SericiteEvent(
-            self._next_event_sequence,
-            kind,
-            context.vm_id,
-            context.parent_id,
-            context.depth,
-            data,
-        )
-        self._next_event_sequence += 1
+    def _dispatch_event(self, event: SericiteEvent) -> None:
         for observation in tuple(self._observations):
+            if event.sequence < observation._start_sequence:
+                continue
             self._observation_depth += 1
             try:
                 observation._sink(event)
@@ -113,6 +105,48 @@ class _EngineCore:
                 observation._fail(exc)
             finally:
                 self._observation_depth -= 1
+
+    def _flush_pending_events(self) -> None:
+        for _ in range(len(self._pending_events)):
+            self._dispatch_event(self._pending_events.popleft())
+
+    def _flush_observation_events(self) -> None:
+        self._reject_observation_reentry()
+        self._flush_pending_events()
+
+    def _queue_gc_event(
+        self, vm_id: int, parent_id: int | None, depth: int, state: str
+    ) -> None:
+        sequence = self._next_event_sequence
+        self._next_event_sequence += 1
+        self._pending_events.append(
+            SericiteEvent(
+                sequence,
+                "vm.disposed",
+                vm_id,
+                parent_id,
+                depth,
+                {"reason": "gc", "state": state},
+            )
+        )
+
+    def _emit_event(
+        self, context: VMContext, kind: str, data: dict[str, object]
+    ) -> None:
+        self._flush_pending_events()
+        if not self._observations:
+            return
+        sequence = self._next_event_sequence
+        self._next_event_sequence += 1
+        event = SericiteEvent(
+            sequence,
+            kind,
+            context.vm_id,
+            context.parent_id,
+            context.depth,
+            data,
+        )
+        self._dispatch_event(event)
 
     @staticmethod
     def _validate_limits(limits: SericiteLimits | None) -> None:
@@ -147,6 +181,7 @@ class _EngineCore:
         entry_file: str | None = None,
     ) -> VMHandle:
         self._reject_observation_reentry()
+        self._flush_pending_events()
         self._validate_program(source, entry_file)
         self._validate_limits(limits)
         if type(buffer_output) is not bool:
@@ -305,6 +340,7 @@ class _EngineCore:
             frames=[Frame(code=code, locals=dict(initial_locals or {}))],
             granted=dict(granted) if granted else {},
             output_writer=output_writer,
+            finalizer_state={"state": "ready", "depth": depth},
         )
         if not any(instr.stmt_start for instr in code.instrs):
             self._set_state(context, "done", reason="create", emit=False)
@@ -324,6 +360,7 @@ class _EngineCore:
             vm_id,
             parent_id,
             context.ancestor_ids,
+            context.finalizer_state,
         )
         if parent_id is not None:
             parent = self._contexts[parent_id]
@@ -352,10 +389,16 @@ class _EngineCore:
         vm_id: int,
         parent_id: int | None,
         ancestor_ids: tuple[int, ...],
+        finalizer_state: dict[str, object],
     ) -> None:
         engine = engine_ref()
         if engine is not None:
-            engine._unregister_vm(vm_id, parent_id, ancestor_ids)
+            engine._unregister_vm(
+                vm_id,
+                parent_id,
+                ancestor_ids,
+                finalizer_state=finalizer_state,
+            )
 
     def _unregister_vm(
         self,
@@ -364,9 +407,11 @@ class _EngineCore:
         ancestor_ids: tuple[int, ...] = (),
         update_ancestors: bool = True,
         notify: bool = False,
+        finalizer_state: dict[str, object] | None = None,
     ) -> None:
         context = self._contexts.pop(vm_id, None)
         if context is not None:
+            previous_state = context.state
             self._set_state(
                 context,
                 "terminated",
@@ -395,6 +440,14 @@ class _EngineCore:
                 "vm.disposed",
                 {"reason": "dispose", "state": context.state},
             )
+        elif not notify and self._observations:
+            if context is None:
+                assert finalizer_state is not None
+                previous_state = finalizer_state["state"]
+                depth = finalizer_state["depth"]
+            else:
+                depth = context.depth
+            self._queue_gc_event(vm_id, parent_id, depth, previous_state)
 
     def _require_live_home(self, home: object) -> None:
         if isinstance(home, VMContext) and self._contexts.get(home.vm_id) is not home:
@@ -410,6 +463,7 @@ class _EngineCore:
 
     def _context(self, handle: VMHandle) -> VMContext:
         self._reject_observation_reentry()
+        self._flush_pending_events()
         if handle._engine is not self:
             raise SericiteError(
                 "VM handle belongs to another engine", kind="internal_error"
@@ -447,6 +501,7 @@ class _EngineCore:
 
     def _dispose(self, handle: VMHandle) -> None:
         self._reject_observation_reentry()
+        self._flush_pending_events()
         if handle._engine is not self:
             raise SericiteError(
                 "VM handle belongs to another engine", kind="internal_error"
@@ -515,6 +570,7 @@ class _EngineCore:
         if old_state == state:
             return
         context.state = state
+        context.finalizer_state["state"] = state
         if emit:
             self._emit_event(
                 context,

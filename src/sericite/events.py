@@ -22,12 +22,16 @@ class SericiteEvent:
 
 class SericiteObservation:
     def __init__(
-        self, engine: SericiteEngine, sink: Callable[[SericiteEvent], object]
+        self,
+        engine: SericiteEngine,
+        sink: Callable[[SericiteEvent], object],
+        start_sequence: int,
     ) -> None:
         if not callable(sink):
             raise SericiteError("observation sink must be callable", kind="type_error")
         self._engine = engine
         self._sink = sink
+        self._start_sequence = start_sequence
         self._closed = False
         self._failure: str | None = None
 
@@ -48,6 +52,9 @@ class SericiteObservation:
             return
         self._closed = True
         self._engine._remove_observation(self)
+
+    def poll(self) -> None:
+        self._engine._flush_observation_events()
 
     def _fail(self, error: Exception) -> None:
         self._failure = f"{type(error).__name__}: {error}"

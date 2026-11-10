@@ -375,6 +375,7 @@ class VMContext:
     meter_stack: list[Meter] = field(default_factory=list)
     meter: Meter | None = None
     finalizer: weakref.finalize | None = None
+    finalizer_state: dict[str, object] = field(default_factory=dict)
 
     @property
     def fs(self) -> VirtualFileSystem | None:
