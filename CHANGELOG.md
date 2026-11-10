@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-11
+
 ### Added
 - 新增固定编译期异常过滤器别名：`file_error` 涵盖 `file_not_found`、`file_exists`、`is_directory`、`not_directory`、`file_limit_error`，`lookup_error` 涵盖 `index_error`、`key_error`；别名可单独使用或与具体 kind 静态混用，不是运行期错误类型，`e.kind` 仍保留实际 kind，动态过滤规则不变。
 
