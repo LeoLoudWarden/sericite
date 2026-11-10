@@ -9,9 +9,11 @@ from ._values import _estimate_size
 
 class _EngineVFS:
     def create_vfs(self) -> VFSHandle:
+        self._reject_observation_reentry()
         return VFSHandle(self, VFSAttachment())
 
     def _vfs_attachment(self, handle: VFSHandle) -> VFSAttachment:
+        self._reject_observation_reentry()
         if not isinstance(handle, VFSHandle):
             raise SericiteError("fs must be a VFS or None", kind="type_error")
         if handle._engine is not self:
