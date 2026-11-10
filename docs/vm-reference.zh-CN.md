@@ -8,7 +8,7 @@
 
 VM 是相互隔离的执行会话：看不到父级的变量、文件和句柄，也不知道自己嵌套在第几层。每段会话有独立的模块作用域与缓存、输入队列、stdout 和累计执行账；它依附的 VFS 是独占的文件世界。隔离承诺见[安全模型](security.zh-CN.md)第 2 节。
 
-VM 不是一次性的：同一段会话可以喂输入、逐语句或逐指令单步、查看快照、通过 `exec()` 接收新源码继续执行，或随时终止。`run()`、`step()` 和多次 `exec()` 不会开始新会话；需要全新变量、模块缓存和执行账时应创建另一台 VM。
+VM 不是一次性的：同一段会话可以喂输入、设置行断点、逐语句或逐指令单步、查看快照、通过 `exec()` 接收新源码继续执行，或随时终止。`run()`、`step()` 和多次 `exec()` 不会开始新会话；需要全新变量、模块缓存和执行账时应创建另一台 VM。
 
 ## 2. 创建 VM 与移交 VFS
 
@@ -29,7 +29,7 @@ sub = VM(entry_file="/project/main.sericite", fs=workspace)
 
 ## 3. 状态与生命周期
 
-VM 状态包括：`ready`、`waiting_input`、`paused`、`done`、`error`、`resource_exhausted`、`terminated`。其中 `paused` 表示语句执行前命中断点，属于可恢复的非终态。
+VM 状态包括：`ready`、`waiting_input`、`paused`、`done`、`error`、`resource_exhausted`、`terminated`。其中 `paused` 是可恢复的非终态：目标命中断点后，在语句执行前进入该状态。
 
 `terminate()` 只把 `ready`、`waiting_input` 或 `paused` 的 VM 标记为 `terminated`；其他状态下是静默空操作。仍依附 VFS 的 `done`/`error` 等终态 VM 可以继续接受 `exec` 投递。
 
@@ -136,17 +136,17 @@ snapshot = sub.snapshot()             # state == "paused"
 sub.run()                             # 执行第 2 行并继续
 ```
 
-`line` 必须是大于 0 的整数；`path` 为 `None` 或经 VFS 规则规范化的逻辑路径。添加和删除都幂等，`breakpoints()` 按添加顺序返回 `{"line": int, "path": str | None}` 纯数据列表。未销毁 VM 在运行、等待、暂停和终态下都可管理断点；数量受 `max_breakpoints` 限制。
+`line` 必须是大于 0 的整数；`path` 为 `None` 或经 VFS 规则规范化的逻辑路径。添加和删除都幂等，`breakpoints()` 按添加顺序返回 `{"line": int, "path": str | None}` 纯数据列表。只要 VM 尚未销毁，就可以管理断点；数量受 `max_breakpoints` 限制。
 
 断点语义如下：
 
+- 只有实际语句入口可断：空行、注释、多行语句的非起始行和不产生指令的 `pass` 不命中；一行多条有指令的语句会分别命中。
 - 在语句第一条指令执行前进入 `paused`，PC、帧、局部变量和 stdout 留在现场；`run()` 正常返回当前 stdout，不抛异常，不触发 `except/finally`，也不计尚未执行的指令。
 - 从 `paused` 调用 `run()`、`step()` 或 `step_instruction()` 会恢复执行，仅当前断点豁免一次；循环之后回到同一位置仍会命中。语句单步仍保持原有边界，但调用内部的另一个断点可以提前暂停。
 - `path=None` 匹配当前主源码及其函数。成功 `exec()` 后按相同行号绑定新主源码，不命中旧投递留下的函数。
 - 显式 `path` 匹配目标 VM 自己的入口文件和 import 模块。其他 VM 授予的函数即使路径和行号相同，也不会命中目标断点。
-- 只有实际语句入口可断：空行、注释、多行语句的非起始行和不产生指令的 `pass` 不命中；一行多条有指令的语句会分别命中。
 - 暂停不沿创建链传播。子 VM 的 `run()` 返回后，直接父 VM 可以检查和恢复它，也可以继续自己的程序；祖先和宿主不会进入全局暂停。
-- 添加新位置使断点数达到 `max_breakpoints` 上限时，抛出普通可捕获的 `breakpoint_limit_error`，不修改断点表，也不终止调用方或目标。调用方可删除旧位置后重试；真正的 caller 指令或内存耗尽仍为 `resource_exhausted`。
+- 当前断点数已达到 `max_breakpoints` 时，再添加新位置会抛出普通可捕获的 `breakpoint_limit_error`，不修改断点表，也不终止调用方或目标。调用方可删除旧位置后重试。
 
 ### 快照
 

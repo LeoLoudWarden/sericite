@@ -68,6 +68,9 @@ For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the 
 The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. A host can also set a breakpoint and resume directly:
 
 ```python
+from sericite import SericiteEngine
+
+engine = SericiteEngine()
 vm = engine.create_root("x = 1\nx += 1\nprint(x)")
 vm.add_breakpoint(2)
 vm.run()
