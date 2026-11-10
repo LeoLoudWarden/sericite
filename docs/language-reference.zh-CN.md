@@ -325,6 +325,7 @@ raise                        # 在 except 块内裸 raise：重新抛出当前�
 - 运算与契约：`zero_division`、`conversion_error`、`index_error`、`key_error`、`value_error`（解构长度不匹配或 `index()` 未找到值）、`attribute_error`（record 缺成员/新增字段）、`contract_error`（构造、注解、wrap 或字段写入的契约检查失败）。
 - 文件与外部函数：`file_not_found`、`file_exists`、`is_directory`、`not_directory`、`ffi_error`。
 - 文件操作约束拒绝：`file_limit_error`，普通且可捕获，处理后可以继续执行。
+- 断点数量约束拒绝：`breakpoint_limit_error`，普通且可捕获；删除旧断点或调整调试策略后可以继续，真正的执行账户耗尽仍使用 `resource_exhausted`。
 - 其他 VM 的资源失败：`resource_exhausted`，仅当错误来自 `VM()` 隔离的另一台已终止 VM 时可捕获；当前 VM 自身的配额耗尽不可捕获。
 
 ```python

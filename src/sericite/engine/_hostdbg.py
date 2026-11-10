@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..accounting import AllocationPermit, Meter
 from ..errors import SericiteError
+from ..vfs import normalize_path
 from ._model import (
     _UNBOUND,
     SericiteFunction,
@@ -25,6 +26,79 @@ class _EngineHostDebug:
             return 0, 0
         return target.live_descendant_count + 1, len(target.ancestor_ids)
 
+    @staticmethod
+    def _breakpoint_key(line: object, path: object) -> tuple[int, str | None]:
+        if type(line) is not int or line <= 0:
+            raise SericiteError(
+                "breakpoint line must be a positive integer", kind="type_error"
+            )
+        if path is not None and not isinstance(path, str):
+            raise SericiteError(
+                "breakpoint path must be a string or None", kind="type_error"
+            )
+        return line, normalize_path(path) if path is not None else None
+
+    def _breakpoint_call(
+        self, args: tuple[object, ...], kwargs: dict[str, object]
+    ) -> tuple[int, str | None]:
+        count = len(args) + len(kwargs)
+        if (
+            not 1 <= count <= 2
+            or len(args) > 2
+            or set(kwargs) - {"line", "path"}
+            or (args and "line" in kwargs)
+            or (len(args) == 2 and "path" in kwargs)
+        ):
+            raise SericiteError("invalid breakpoint arguments", kind="type_error")
+        line = args[0] if args else kwargs.get("line")
+        path = args[1] if len(args) == 2 else kwargs.get("path")
+        return self._breakpoint_key(line, path)
+
+    @staticmethod
+    def _add_breakpoint_key(context: VMContext, key: tuple[int, str | None]) -> None:
+        if key in context.breakpoints:
+            return
+        if len(context.breakpoints) >= context.limits.max_breakpoints:
+            raise SericiteError(
+                "breakpoint limit exceeded", kind="breakpoint_limit_error"
+            )
+        context.breakpoints[key] = None
+
+    def _add_breakpoint(
+        self, context: VMContext, line: object, path: object = None
+    ) -> None:
+        self._add_breakpoint_key(context, self._breakpoint_key(line, path))
+
+    def _remove_breakpoint(
+        self, context: VMContext, line: object, path: object = None
+    ) -> None:
+        context.breakpoints.pop(self._breakpoint_key(line, path), None)
+
+    @staticmethod
+    def _breakpoints(context: VMContext) -> list[dict[str, object]]:
+        return [{"line": line, "path": path} for line, path in context.breakpoints]
+
+    @staticmethod
+    def _breakpoint_at(context: VMContext) -> tuple[int, str | None] | None:
+        if not context.breakpoints:
+            return None
+        frame = context.frames[-1]
+        instr = frame.code.instrs[frame.pc]
+        code = frame.code
+        if not instr.stmt_start or code.origin_vm != context.vm_id:
+            return None
+        key = (instr.line, None)
+        if (
+            code.source_id == context.frames[0].code.source_id
+            and key in context.breakpoints
+        ):
+            return key
+        if code.filename.startswith("/"):
+            key = (instr.line, code.filename)
+            if key in context.breakpoints:
+                return key
+        return None
+
     def _vm_method_work(
         self,
         handle: VMHandle,
@@ -41,6 +115,13 @@ class _EngineHostDebug:
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs", ())
             return len(inputs) if isinstance(inputs, (list, tuple)) else 0
+        if attr in {"add_breakpoint", "remove_breakpoint"}:
+            path = args[1] if len(args) == 2 else kwargs.get("path")
+            if not isinstance(path, str):
+                return 0
+            return len(path) * (2 if attr == "add_breakpoint" else 1)
+        if attr == "breakpoints":
+            return len(self._context(handle).breakpoints)
         if attr in {
             "feed_input",
             "step",
@@ -81,11 +162,23 @@ class _EngineHostDebug:
             value = args[0] if args else kwargs.get("value")
             amount = target.io.input_cost(value)
             return self._meter(context).reserve(target.io, "input", amount)
+        if attr == "add_breakpoint":
+            public_kwargs = {
+                name: value
+                for name, value in kwargs.items()
+                if name not in {"_caller_context", "_caller_meter"}
+            }
+            key = self._breakpoint_call(args, public_kwargs)
+            if key in target.breakpoints:
+                return 0
+            return 64 + (len(key[1]) * 4 if key[1] is not None else 0)
         if attr in {
             "exec",
             "step",
             "step_instruction",
             "snapshot",
+            "remove_breakpoint",
+            "breakpoints",
             "stdout",
             "terminate",
         }:
@@ -136,6 +229,16 @@ class _EngineHostDebug:
             result = self._run(handle)
         elif attr == "exec" and len(args) == 1 and not kwargs:
             result = self._exec_source(handle, args[0])
+        elif attr in {"add_breakpoint", "remove_breakpoint"}:
+            target = self._context(handle)
+            key = self._breakpoint_call(args, kwargs)
+            if attr == "add_breakpoint":
+                self._add_breakpoint_key(target, key)
+            else:
+                target.breakpoints.pop(key, None)
+            result = None
+        elif not args and not kwargs and attr == "breakpoints":
+            result = self._breakpoints(self._context(handle))
         elif not args and not kwargs and attr == "take_fs":
             result = self._take_fs(handle)
         elif not args and not kwargs and attr == "dispose":
@@ -161,7 +264,7 @@ class _EngineHostDebug:
     ) -> dict[str, object]:
         """Script-safe snapshot: never exposes engine-local diagnostic fields."""
         next_line = None
-        if context.state in {"ready", "waiting_input"} and context.frames:
+        if context.state in {"ready", "waiting_input", "paused"} and context.frames:
             frame = context.frames[-1]
             if frame.pc < len(frame.code.instrs):
                 next_line = frame.code.instrs[frame.pc].line
@@ -207,6 +310,10 @@ class _EngineHostDebug:
                     {"function": frame.function, "line": frame.line} for frame in frames
                 ],
             }
+        breakpoint = None
+        if context.state == "paused" and context.paused_breakpoint is not None:
+            line, path = context.paused_breakpoint
+            breakpoint = {"line": line, "path": path}
         return {
             "state": context.state,
             "last_line": context.last_line,
@@ -214,6 +321,7 @@ class _EngineHostDebug:
             "locals": locals_,
             "stdout": context.io.stdout(),
             "error": error,
+            "breakpoint": breakpoint,
             "instruction_count": context.instruction_count,
         }
 

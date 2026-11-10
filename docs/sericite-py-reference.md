@@ -65,7 +65,18 @@ For a trusted, long-running root, cumulative quotas accept `-1` for no cap (the 
 
 ## 4. Driving VMs and managing VFSs
 
-The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. A host can hold and manage a workspace between execution sessions:
+The `VMHandle` driving methods (`run`/`exec`/`step`/snapshots/`take_fs`/`dispose`, …) share their states and contracts with VM values inside scripts; see the [VM reference](vm-reference.md) §§3–4. A host can also set a breakpoint and resume directly:
+
+```python
+vm = engine.create_root("x = 1\nx += 1\nprint(x)")
+vm.add_breakpoint(2)
+vm.run()
+assert vm.snapshot()["state"] == "paused"
+assert vm.snapshot()["locals"]["x"] == 1
+assert vm.run() == "2\n"
+```
+
+A host can hold and manage a workspace between execution sessions:
 
 ```python
 from sericite import SericiteEngine
@@ -98,8 +109,8 @@ Script calls receive only the safe view and cannot see these host fields.
 
 The host side also has one privilege — host management is not script accounting:
 
-- Direct `feed_input()`, file operations through `VMHandle`/`VFSHandle`, stdout access, snapshots, and `dispose()` do not enter the script's memory ledger;
-- Resource-specific limits such as file count, per-file bytes, total file storage, and output bytes still apply;
+- Direct `feed_input()`, breakpoint management, file operations through `VMHandle`/`VFSHandle`, stdout access, snapshots, and `dispose()` do not enter script accounting;
+- Resource-specific limits such as file count, per-file bytes, total file storage, output bytes, and `max_breakpoints` still apply;
 - Instructions and dynamic operations executed by `run()`, `exec()`, `step()`, and `step_instruction()` always remain subject to VM quotas.
 
 This does **not** mean host calls make VM execution free. It means: **management actions are not script-caused work, while actual VM execution is still metered.** See the [architecture notes](architecture.md) §5 for the script accounting model.

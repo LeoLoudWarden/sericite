@@ -98,6 +98,10 @@ Anyone modifying the engine must preserve the following invariants (numbered for
   - a. A VFS is attached to at most one VM at a time; detached handles operate only while unattached and unconsumed. `fs=` consumes the handle and commits attachment only after VM creation fully succeeds, never losing the workspace on failure.
   - b. `take_fs()` requires a terminal state. Every file access through the old VM, old home functions, old bound natives, and old VFS handles must check the current attachment and must stop working after removal. The detached VM accepts no further `exec()`. Failure leaves ownership unchanged.
   - c. A VFS enters neither the VM registry nor resource accounts. Module roots, module caches, IO, locals, and function homes do not transfer with it. Script VM handles expose no file proxies; trusted host file management is a separate channel.
+20.
+  - a. Breakpoint checks live in the unified `_execute_one()` before instruction charging and dispatch, and hit only at `stmt_start`. A hit neither advances the PC nor executes script `except/finally`, and the unexecuted instruction is not charged.
+  - b. Breakpoint locations are constrained by both the target `origin_vm` and source identity. Main-source locations rebind across successful `exec()` using the installed module frame's `source_id`; file locations use the target VM's normalized logical paths. Foreign granted code must never hit accidentally.
+  - c. `paused` is a recoverable nonterminal state. Resume exempts only the current breakpoint once and never propagates to ancestors. Breakpoint tables hold only pure location data, are bounded by `max_breakpoints`, and must not alter VM GC or live-count quotas.
 
 ## 4. Script interface
 
@@ -139,6 +143,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 - VM-method execution is normally jointly constrained by target and caller; result ownership enters only the actual caller's route.
 - Exception: read-only handle operations on a terminal target execute no target code and are charged only to the caller; write and driving operations do not use this exception.
 - `dispose()` is another caller-only management operation: traversal, unregistration, and temporary-container costs are prepaid from the live subtree size, never charged to the target being destroyed. Internal nodes do not each update every ancestor during a cascade; the whole subtree is unregistered first, then external ancestor counts are refunded once.
+- Breakpoint addition, removal, and listing are also caller-only management: path validation, storage, and result construction charge only the controller, never the target's execution accounts. The target's `max_breakpoints` remains a hard structural cap, and duplicate addition allocates no new entry. Reaching this current-count limit fails atomically with ordinary catchable `breakpoint_limit_error`, distinct from `resource_exhausted` in the caller's execution accounts.
 - Calling an escaped function or native whose home has been disposed is rejected with `runtime_error`. A missing accounting ancestor instead means an internal invariant is broken and must raise an explicit `internal_error`; a missing node must never be treated as the end of a route.
 - A child VM created through a granted function is an empty world attached causally under its initiator, with quotas tightened elementwise across home and caller.
 

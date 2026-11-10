@@ -325,6 +325,7 @@ Note: bare `except:` and `except ...` only handle **catchable** errors. The catc
 - Operations and contracts: `zero_division`, `conversion_error`, `index_error`, `key_error`, `value_error` (unpacking length mismatch or no `index()` match), `attribute_error` (missing/forbidden record member), `contract_error` (construction, annotation, wrap, or field-write contract failure).
 - Files and external functions: `file_not_found`, `file_exists`, `is_directory`, `not_directory`, `ffi_error`.
 - File-operation constraint rejection: `file_limit_error`, an ordinary catchable error; the program can handle it and continue.
+- Breakpoint-count constraint rejection: `breakpoint_limit_error`, ordinary and catchable; remove old breakpoints or adjust the debugging strategy and continue, while actual execution-account exhaustion remains `resource_exhausted`.
 - Resource failure in another VM: `resource_exhausted`, catchable only when it comes from another, terminated VM isolated behind `VM()`; exhaustion of the current VM's own quota is uncatchable.
 
 ```python

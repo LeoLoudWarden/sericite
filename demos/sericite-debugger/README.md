@@ -42,6 +42,17 @@ You can also omit `INPUT`. When the target enters `waiting_input`, the outer deb
 
 The target's input channel and the outer debugger's command channel remain distinct.
 
+## Breakpoints
+
+The debugger uses native engine breakpoints to pause before a statement executes. Line numbers follow the displayed source, including the explicitly injected `argv` on line 1:
+
+```bash
+PROGRAM=$'x = 1\nx = 2\nprint(x)'
+uv run sericite demos/sericite-debugger/debugger.sericite "$PROGRAM"
+```
+
+Enter `b 3`, then `c`: the target enters `paused` before `x = 2`, with `x = 1` still in its locals. Enter `b` to list locations, `b off 3` to remove this one, then `c` to finish. `r` ignores watchpoints but still honors breakpoints.
+
 ## Watchpoints and error scenes
 
 This program violates a runtime record contract on its last field write:
@@ -142,10 +153,13 @@ Every target VM receives an isolated copy of the `debugger_lib` helper modules. 
 |---|---|
 | Enter | `step()`—execute one source statement |
 | `i` | `step_instruction()`—execute one internal instruction |
-| `c` | With a watchpoint: continue by instruction until a hit, input wait, or terminal state. Without one: `run()` |
+| `c` | Continue to a breakpoint, watchpoint, input wait, or terminal state; compare by instruction with a watchpoint, otherwise `run()` |
+| `b LINE` | Add a statement-entry breakpoint in the current main source |
+| `b off LINE` | Remove that main-source location; absence is a no-op |
+| `b` | List breakpoints in insertion order |
 | `w NAME` | Watch a current-frame local; pause when it appears, leaves the frame, or changes |
 | `w off` | Disable the watchpoint |
-| `r` | `run()` without checking watchpoints |
+| `r` | `run()` without checking watchpoints; breakpoints remain active |
 | `q` | `terminate()` the target VM |
 | `h` | Show help |
 

@@ -326,7 +326,7 @@ class SnapshotViewTests(unittest.TestCase):
         output = engine.create_root(source).run()
         self.assertEqual(
             output,
-            "7\nFalse\nFalse\nFalse\nFalse\n7\nFalse\nTrue\n",
+            "8\nFalse\nFalse\nFalse\nFalse\n8\nFalse\nTrue\n",
         )
 
     def test_vm_repr_hides_engine_counter(self):
