@@ -9,6 +9,7 @@ from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
 from ..compiler import compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError, SericiteFrame
+from ..events import SericiteEvent, SericiteObservation
 from ..io import InputRequired, OutputLimitExceeded, VirtualIO
 from ..vfs import VFSAttachment, VirtualFileSystem, normalize_path
 from ._format import _format_value
@@ -69,6 +70,49 @@ class _EngineCore:
             weakref.WeakValueDictionary()
         )
         self._next_vm_id = 0
+        self._observations: list[SericiteObservation] = []
+        self._next_event_sequence = 0
+        self._observation_depth = 0
+
+    def observe(self, sink: Callable[[SericiteEvent], object]) -> SericiteObservation:
+        self._reject_observation_reentry()
+        observation = SericiteObservation(self, sink)
+        self._observations.append(observation)
+        return observation
+
+    def _remove_observation(self, observation: SericiteObservation) -> None:
+        if observation in self._observations:
+            self._observations.remove(observation)
+
+    def _reject_observation_reentry(self) -> None:
+        if self._observation_depth:
+            raise SericiteError(
+                "engine operations cannot reenter an observation callback",
+                kind="runtime_error",
+            )
+
+    def _emit_event(
+        self, context: VMContext, kind: str, data: dict[str, object]
+    ) -> None:
+        if not self._observations:
+            return
+        event = SericiteEvent(
+            self._next_event_sequence,
+            kind,
+            context.vm_id,
+            context.parent_id,
+            context.depth,
+            data,
+        )
+        self._next_event_sequence += 1
+        for observation in tuple(self._observations):
+            self._observation_depth += 1
+            try:
+                observation._sink(event)
+            except Exception as exc:  # noqa: BLE001 — observer failure is isolated from the VM
+                observation._fail(exc)
+            finally:
+                self._observation_depth -= 1
 
     @staticmethod
     def _validate_limits(limits: SericiteLimits | None) -> None:
@@ -102,6 +146,7 @@ class _EngineCore:
         fs: VFSHandle | None = None,
         entry_file: str | None = None,
     ) -> VMHandle:
+        self._reject_observation_reentry()
         self._validate_program(source, entry_file)
         self._validate_limits(limits)
         if type(buffer_output) is not bool:
@@ -262,7 +307,7 @@ class _EngineCore:
             output_writer=output_writer,
         )
         if not any(instr.stmt_start for instr in code.instrs):
-            self._set_state(context, "done")
+            self._set_state(context, "done", reason="create", emit=False)
         route = AccountRoute(context, resolve=self._resolve_account)
         context.ancestor_ids = tuple(account.vm_id for account in route.accounts[1:])
         meter = Meter(route)
@@ -289,6 +334,16 @@ class _EngineCore:
         attachment.owner_vm_id = vm_id
         if fs is not None:
             fs._consumed = True
+        self._emit_event(
+            context,
+            "vm.created",
+            {
+                "state": context.state,
+                "filename": context.frames[0].code.filename,
+                "limits": context.limits,
+                "functions": tuple(sorted(context.granted)),
+            },
+        )
         return VMHandle(self, vm_id)
 
     @staticmethod
@@ -308,10 +363,16 @@ class _EngineCore:
         parent_id: int | None = None,
         ancestor_ids: tuple[int, ...] = (),
         update_ancestors: bool = True,
+        notify: bool = False,
     ) -> None:
         context = self._contexts.pop(vm_id, None)
         if context is not None:
-            self._set_state(context, "terminated")
+            self._set_state(
+                context,
+                "terminated",
+                reason="dispose" if notify else "gc",
+                emit=False,
+            )
             context.meter = None
             parent_id = context.parent_id
             ancestor_ids = context.ancestor_ids
@@ -328,6 +389,12 @@ class _EngineCore:
                 ancestor = self._contexts.get(ancestor_id)
                 if ancestor is not None:
                     ancestor.live_descendant_count -= 1
+        if notify and context is not None:
+            self._emit_event(
+                context,
+                "vm.disposed",
+                {"reason": "dispose", "state": context.state},
+            )
 
     def _require_live_home(self, home: object) -> None:
         if isinstance(home, VMContext) and self._contexts.get(home.vm_id) is not home:
@@ -342,6 +409,7 @@ class _EngineCore:
         return context
 
     def _context(self, handle: VMHandle) -> VMContext:
+        self._reject_observation_reentry()
         if handle._engine is not self:
             raise SericiteError(
                 "VM handle belongs to another engine", kind="internal_error"
@@ -378,6 +446,7 @@ class _EngineCore:
         return result
 
     def _dispose(self, handle: VMHandle) -> None:
+        self._reject_observation_reentry()
         if handle._engine is not self:
             raise SericiteError(
                 "VM handle belongs to another engine", kind="internal_error"
@@ -399,12 +468,14 @@ class _EngineCore:
                 if child is not None:
                     pending.append(child)
         for current in contexts:
-            self._set_state(current, "terminated")
+            if current.state not in _TERMINAL_STATES:
+                self._set_state(current, "terminated", reason="dispose")
         for current in reversed(contexts):
             self._unregister_vm(
                 current.vm_id,
                 current.parent_id,
                 update_ancestors=False,
+                notify=True,
             )
         for ancestor_id in context.ancestor_ids:
             ancestor = self._contexts.get(ancestor_id)
@@ -431,15 +502,35 @@ class _EngineCore:
                 if context.meter_stack.pop() is not meter:
                     raise SericiteError("meter stack corrupted", kind="internal_error")
 
-    @staticmethod
-    def _set_state(context: VMContext, state: str) -> None:
-        if context.state != state:
-            context.state = state
+    def _set_state(
+        self,
+        context: VMContext,
+        state: str,
+        *,
+        reason: str,
+        emit: bool = True,
+        **details: object,
+    ) -> None:
+        old_state = context.state
+        if old_state == state:
+            return
+        context.state = state
+        if emit:
+            self._emit_event(
+                context,
+                "vm.state_changed",
+                {
+                    "old_state": old_state,
+                    "new_state": state,
+                    "reason": reason,
+                    **details,
+                },
+            )
 
     def _resume_breakpoint(self, context: VMContext) -> bool:
         if context.state != "paused":
             return False
-        self._set_state(context, "ready")
+        self._set_state(context, "ready", reason="resume")
         context.paused_breakpoint = None
         return True
 
@@ -498,6 +589,7 @@ class _EngineCore:
         self._set_state(
             context,
             "ready" if any(instr.stmt_start for instr in code.instrs) else "done",
+            reason="exec",
         )
         before = len(context.io.stdout())
         self._run(handle)
@@ -581,7 +673,7 @@ class _EngineCore:
                 )
         finally:
             if context.state == "waiting_input":
-                self._set_state(context, "ready")
+                self._set_state(context, "ready", reason="output_writer")
             for discarded in context.frames[frame_depth:]:
                 self._discard_module_frame(discarded)
             del context.frames[frame_depth:]
@@ -605,7 +697,13 @@ class _EngineCore:
             else None
         )
         if breakpoint is not None:
-            self._set_state(context, "paused")
+            line, path = breakpoint
+            self._set_state(
+                context,
+                "paused",
+                reason="breakpoint",
+                breakpoint={"line": line, "path": path},
+            )
             context.paused_breakpoint = breakpoint
             return False
         self._sync_active_errors(frame)
@@ -613,7 +711,7 @@ class _EngineCore:
             self._meter(context).work(1)
             self._dispatch(context, frame, instr)
         except InputRequired:
-            self._set_state(context, "waiting_input")
+            self._set_state(context, "waiting_input", reason="input")
             return False
         except OutputLimitExceeded:
             error = SericiteError("output limit exceeded", kind="resource_exhausted")
@@ -709,6 +807,8 @@ class _EngineCore:
         self._set_state(
             context,
             "resource_exhausted" if error.kind == "resource_exhausted" else "error",
+            reason="error",
+            error_kind=error.kind,
         )
 
     @staticmethod
@@ -1097,7 +1197,7 @@ class _EngineCore:
                         meter=self._meter(context),
                     )
             if len(context.frames) == 1:
-                self._set_state(context, "done")
+                self._set_state(context, "done", reason="return")
             else:
                 context.frames.pop()
                 context.frames[-1].stack.append(value)

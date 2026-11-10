@@ -402,7 +402,7 @@ class VMHandle:
             context = self._engine._context(self)
             context.io.feed_batch_trusted(inputs)
             if context.state == "waiting_input":
-                self._engine._set_state(context, "ready")
+                self._engine._set_state(context, "ready", reason="input")
         return self._engine._run(self)
 
     def exec(self, source: object) -> str:
@@ -414,7 +414,7 @@ class VMHandle:
         context = self._engine._context(self)
         context.io.feed_input_trusted(value)
         if context.state == "waiting_input":
-            self._engine._set_state(context, "ready")
+            self._engine._set_state(context, "ready", reason="input")
 
     def step(self) -> dict[str, object]:
         return self._engine._step(self, host=True)
@@ -440,7 +440,7 @@ class VMHandle:
     def terminate(self) -> None:
         context = self._engine._context(self)
         if context.state in {"ready", "waiting_input", "paused"}:
-            self._engine._set_state(context, "terminated")
+            self._engine._set_state(context, "terminated", reason="terminate")
             context.paused_breakpoint = None
 
     def dispose(self) -> None:

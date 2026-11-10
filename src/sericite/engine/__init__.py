@@ -10,6 +10,7 @@
 """
 
 from ..errors import SericiteError, SericiteFrame
+from ..events import SericiteEvent, SericiteObservation
 from ._builtins import _EngineBuiltins
 from ._core import _EngineCore
 from ._hostdbg import _EngineHostDebug
@@ -34,10 +35,12 @@ __all__ = [
     "Frame",
     "SericiteEngine",
     "SericiteError",
+    "SericiteEvent",
     "SericiteFrame",
     "SericiteFunction",
     "SericiteLimits",
     "SericiteModule",
+    "SericiteObservation",
     "SericiteRecord",
     "SericiteSchema",
     "VFSHandle",
