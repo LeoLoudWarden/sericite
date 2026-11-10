@@ -60,8 +60,12 @@ class SericiteObservation:
         return self._engine._observation_snapshot(self, vm_id)
 
     def _fail(self, error: Exception) -> None:
-        self._failure = f"{type(error).__name__}: {error}"
-        self.close()
+        try:
+            self._failure = f"{type(error).__name__}: {error}"
+        except Exception:  # noqa: BLE001 — exception rendering is untrusted host code
+            self._failure = type(error).__name__
+        finally:
+            self.close()
 
     def __enter__(self) -> Self:
         return self
