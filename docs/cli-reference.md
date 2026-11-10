@@ -156,7 +156,7 @@ A capability file can use `__file__` to locate its resources. It is not a Serici
 > **A capability file has full host privileges. Trust it as you would any Python file you execute.**
 
 - It can import third-party libraries, read environment variables and the real disk, and access the network.
-- Its Python does **not** run inside the Sericite sandbox, and its CPU, memory, and external side effects are not metered by the engine (cost responsibility: [Sericite-PY reference](sericite-py-reference.md) §5.4).
+- Its Python does **not** run inside the Sericite sandbox, and its CPU, memory, and external side effects are not metered by the engine (cost responsibility: [Sericite-PY reference](sericite-py-reference.md) §6.4).
 - Only the operator may select this file; never let a model or Sericite source choose it.
 
 Main and imported sources still run in the same Sericite workspace and gain no host privileges merely because a capability file exists. They can call only explicitly granted functions. `files` initializes only the program's in-memory VFS; it does not map the real disk.
