@@ -87,6 +87,22 @@ class _EngineCore:
         if observation in self._observations:
             self._observations.remove(observation)
 
+    def _observation_snapshot(
+        self, observation: SericiteObservation, vm_id: int
+    ) -> dict[str, object]:
+        if observation._closed:
+            raise SericiteError("observation is closed", kind="runtime_error")
+        if type(vm_id) is not int or vm_id < 0:
+            raise SericiteError(
+                "snapshot VM ID must be a non-negative integer", kind="type_error"
+            )
+        if not self._observation_depth:
+            self._flush_pending_events()
+        context = self._contexts.get(vm_id)
+        if context is None:
+            raise SericiteError("VM has been disposed", kind="runtime_error")
+        return self._host_snapshot(context)
+
     def _reject_observation_reentry(self) -> None:
         if self._observation_depth:
             raise SericiteError(

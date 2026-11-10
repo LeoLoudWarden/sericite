@@ -490,5 +490,107 @@ class ObservationGarbageCollectionTests(unittest.TestCase):
         observation.close()
 
 
+class ObservationSnapshotTests(unittest.TestCase):
+    def test_reads_grandchild_host_snapshot_without_returning_handle(self):
+        engine = SericiteEngine()
+        events = []
+        grandchild_source = "x = 41\nprint(x)"
+        child_source = f"grandchild = VM({grandchild_source!r})\ngrandchild.run()"
+        with engine.observe(events.append) as observation:
+            root = engine.create_root(f"child = VM({child_source!r})\nchild.run()")
+            root.run()
+            snapshot = observation.snapshot(2)
+        self.assertEqual(snapshot["state"], "done")
+        self.assertEqual(snapshot["locals"]["x"], 41)
+        self.assertEqual(snapshot["stdout"], "41\n")
+        self.assertEqual(snapshot["vm_id"], 2)
+        self.assertEqual(snapshot["parent_id"], 1)
+        self.assertEqual(snapshot["depth"], 2)
+
+    def test_reads_paused_breakpoint_scene(self):
+        engine = SericiteEngine()
+        grandchild_source = "x = 1\nx = 2"
+        child_source = (
+            f"grandchild = VM({grandchild_source!r})\n"
+            "grandchild.add_breakpoint(2)\ngrandchild.run()"
+        )
+        with engine.observe(lambda event: None) as observation:
+            root = engine.create_root(f"child = VM({child_source!r})\nchild.run()")
+            root.run()
+            snapshot = observation.snapshot(2)
+        self.assertEqual(snapshot["state"], "paused")
+        self.assertEqual(snapshot["locals"]["x"], 1)
+        self.assertEqual(snapshot["next_line"], 2)
+        self.assertEqual(snapshot["breakpoint"], {"line": 2, "path": None})
+
+    def test_callback_can_read_current_vm_snapshot(self):
+        engine = SericiteEngine()
+        snapshots = []
+        observation = None
+
+        def sink(event):
+            if event.kind == "vm.output":
+                snapshots.append(observation.snapshot(event.vm_id))
+
+        observation = engine.observe(sink)
+        root = engine.create_root("print('live')")
+        self.assertEqual(root.run(), "live\n")
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0]["vm_id"], 0)
+        self.assertEqual(snapshots[0]["stdout"], "live\n")
+        observation.close()
+
+    def test_snapshot_preserves_descendant_error(self):
+        engine = SericiteEngine()
+        with engine.observe(lambda event: None) as observation:
+            root = engine.create_root(
+                "sub = VM(\"raise 'boom'\")\n"
+                "try:\n    sub.run()\nexcept raise_error:\n    pass"
+            )
+            root.run()
+            snapshot = observation.snapshot(1)
+        self.assertEqual(snapshot["state"], "error")
+        self.assertEqual(snapshot["error"]["kind"], "raise_error")
+
+    def test_invalid_unknown_disposed_and_closed_snapshot_requests_fail(self):
+        engine = SericiteEngine()
+        observation = engine.observe(lambda event: None)
+        root = engine.create_root("")
+        for vm_id in (True, -1, 1.0, "0", None):
+            with self.subTest(vm_id=vm_id), self.assertRaises(SericiteError) as caught:
+                observation.snapshot(vm_id)
+            self.assertEqual(caught.exception.kind, "type_error")
+        with self.assertRaises(SericiteError) as caught:
+            observation.snapshot(99)
+        self.assertEqual(caught.exception.kind, "runtime_error")
+        root.dispose()
+        with self.assertRaises(SericiteError) as caught:
+            observation.snapshot(0)
+        self.assertEqual(caught.exception.kind, "runtime_error")
+        observation.close()
+        with self.assertRaises(SericiteError) as caught:
+            observation.snapshot(0)
+        self.assertEqual(caught.exception.kind, "runtime_error")
+
+    def test_snapshot_does_not_retain_collected_vm(self):
+        engine = SericiteEngine()
+        events = []
+        with engine.observe(events.append) as observation:
+            root = engine.create_root("sub = VM('x = 1')")
+            root.run()
+            self.assertEqual(observation.snapshot(1)["locals"], {})
+            root.exec("sub = None")
+            gc.collect()
+            observation.poll()
+            self.assertEqual(set(engine._contexts), {0})
+            with self.assertRaises(SericiteError) as caught:
+                observation.snapshot(1)
+            self.assertEqual(caught.exception.kind, "runtime_error")
+        self.assertEqual(
+            [event.data["reason"] for event in events if event.kind == "vm.disposed"],
+            ["gc"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
