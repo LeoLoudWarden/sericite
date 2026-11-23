@@ -244,15 +244,15 @@ print(reader())             # 2
 
 同一次外层调用创建的闭包共享捕获变量，不同次外层调用的环境彼此独立。`for` 循环不会为每轮迭代创建新变量，因此循环中创建的闭包共享最终绑定；如需定义时快照，可使用 `def read(value=x): ...` 这样的默认参数。
 
-名字在函数内任何位置被赋值，就会在整个函数内作为局部变量。内层赋值因此会遮蔽外层绑定，而不是修改它；不支持 `nonlocal` 和 `global`。模块全局仍从定义方模块解析，不会复制进闭包。
+支持 `nonlocal` 和 `global`。如无标注，名字在函数内任何位置被赋值，就会在整个函数内作为局部变量。内层赋值因此会遮蔽外层绑定，而不是修改它。
 
 函数装饰器遵循 Python 的应用语义：
 
 ```python
 def trace(func):
-    def wrapper(x):
+    def wrapper(*args, **kwargs):
         print("before")
-        result = func(x)
+        result = func(*args, **kwargs)
         print("after")
         return result
     return wrapper
@@ -264,7 +264,7 @@ def double(x):
 
 这等价于先定义 `double`，再执行 `double = trace(double)` 重新绑定。装饰器表达式从上到下求值；堆叠装饰器从下往上应用。
 
-不支持：可变参数（`*args`）、仅关键字参数。
+支持 `*args` 和 `**kwargs`。
 
 参数与实参校验：
 
@@ -647,7 +647,7 @@ from ..util import answer  # 加载 lib.util
 ## 10. 明确不能写（编译期直接拒绝）
 
 - `from x import *`、`del` 与双下划线名称
-- `*args`/`**kwargs`、链式比较与切片赋值
+- 字面量中的 `*`/`**` 展开、链式比较与切片赋值
 - 带星号解构、列表目标、下标/属性解构叶子
 - 集合推导式与生成器表达式
 - class 字段默认值、方法与继承

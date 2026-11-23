@@ -244,15 +244,15 @@ print(reader())             # 2
 
 Closures created by the same outer call share captured variables; separate outer calls have independent environments. A `for` loop does not create a fresh variable per iteration, so closures created in a loop share its final binding. Use a default argument such as `def read(value=x): ...` when a definition-time snapshot is wanted.
 
-Assigning a name anywhere in a function makes it local throughout that function. An inner assignment therefore shadows rather than modifies the outer binding; `nonlocal` and `global` are not supported. Module globals are still resolved from the defining module rather than copied into the closure.
+Supports `nonlocal` and `global`. If not specified, assigning a name anywhere in a function makes it local throughout that function. An inner assignment therefore shadows rather than modifies the outer binding.
 
 Function decorators follow Python's application semantics:
 
 ```python
 def trace(func):
-    def wrapper(x):
+    def wrapper(*args, **kwargs):
         print("before")
-        result = func(x)
+        result = func(*args, **kwargs)
         print("after")
         return result
     return wrapper
@@ -264,7 +264,7 @@ def double(x):
 
 This is equivalent to defining `double`, then rebinding it with `double = trace(double)`. Decorator expressions are evaluated from top to bottom; stacked decorators are applied from bottom to top.
 
-Not supported: variadic arguments (`*args`), keyword-only parameters.
+`*args` and `**kwargs` are supported.
 
 Parameter and argument validation:
 
@@ -647,7 +647,7 @@ Module objects support attribute reads but not attribute writes.
 ## 10. Explicitly not writable (rejected at compile time)
 
 - `from x import *`, `del`, and dunder names
-- `*args`/`**kwargs`, chained comparisons, and slice assignment
+- `*`/`**` unpacking in literals, chained comparisons, and slice assignment
 - starred unpacking, list targets, and subscript/attribute unpacking leaves
 - set comprehensions and generator expressions
 - class field defaults, methods, and inheritance
