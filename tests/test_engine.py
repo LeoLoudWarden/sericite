@@ -671,6 +671,51 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaises(SericiteError):
             engine.create_root('sub = VM("x = 1")\nsub.__class__()\n')
 
+    def test_dunder_parameters_and_exception_aliases_rejected(self):
+        cases = (
+            ("def f(__value):\n    pass\n", "__value"),
+            ("def f(*__args):\n    pass\n", "__args"),
+            ("def f(**__kwargs):\n    pass\n", "__kwargs"),
+            (
+                "try:\n    1 / 0\nexcept zero_division as __error:\n    pass\n",
+                "__error",
+            ),
+        )
+        for source, name in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(SericiteError) as ctx:
+                    SericiteEngine().create_root(source)
+                error = ctx.exception
+                expected_line = next(
+                    index
+                    for index, line in enumerate(source.splitlines(), start=1)
+                    if name in line
+                )
+                self.assertEqual(error.kind, "syntax_error")
+                self.assertEqual(error.message, "dunder names are not available")
+                self.assertEqual(error.line, expected_line)
+                expected_column = (
+                    1
+                    if name == "__error"
+                    else source.splitlines()[expected_line - 1].index(name) + 1
+                )
+                self.assertEqual(error.column, expected_column)
+
+    def test_dunder_keyword_labels_and_data_keys_allowed(self):
+        source = (
+            "def collect(**kwargs):\n"
+            "    return kwargs\n"
+            "values = collect(__hidden=1, **{'__expanded': 2})\n"
+            "print(values)\n"
+            "print({'__dict_key': 3}['__dict_key'])\n"
+            "print('__string__')\n"
+        )
+        vm = SericiteEngine().create_root(source)
+        self.assertEqual(
+            vm.run(),
+            "{'__hidden': 1, '__expanded': 2}\n3\n__string__\n",
+        )
+
     def test_reserved_names_call_only(self):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError):
