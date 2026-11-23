@@ -21,7 +21,7 @@ from ._model import (
 )
 from ._values import (
     _MAX_RENDER_CHARS,
-    _check_grant_name,
+    _check_addon_name,
     _dynamic_name_error,
     _min_limits,
     _StringRenderer,
@@ -313,10 +313,10 @@ class _EngineBuiltins:
         entry_file = config.pop("entry_file", None)
         self._validate_program(source, entry_file)
         fs = config.pop("fs", None)
-        granted = self._validate_child_functions(parent, config.pop("functions", None))
+        addons = self._validate_child_addons(parent, config.pop("addons", None))
         output_writer = config.pop("output_writer", None)
         if output_writer is not None:
-            output_writer = self._validate_child_functions(
+            output_writer = self._validate_child_addons(
                 parent, {"output_writer": output_writer}
             )["output_writer"]
         buffer_output = config.pop("buffer_output", True)
@@ -373,7 +373,7 @@ class _EngineBuiltins:
                 buffer_output=buffer_output,
             ),
             limits=limits,
-            granted=granted,
+            addons=addons,
             output_writer=output_writer,
             fs=fs,
             module_root=module_root,
@@ -381,37 +381,35 @@ class _EngineBuiltins:
         )
         return handle
 
-    def _validate_child_functions(
-        self, parent: VMContext, functions: object
+    def _validate_child_addons(
+        self, parent: VMContext, addons: object
     ) -> dict[str, object]:
-        if functions is None:
+        if addons is None:
             return {}
-        if not isinstance(functions, dict):
-            raise SericiteError("VM option functions must be a dict", kind="type_error")
-        granted: dict[str, object] = {}
-        for name, value in functions.items():
-            _check_grant_name(name)
+        if not isinstance(addons, dict):
+            raise SericiteError("VM option addons must be a dict", kind="type_error")
+        validated: dict[str, object] = {}
+        for name, value in addons.items():
+            _check_addon_name(name)
             if isinstance(value, SericiteFunction):
-                granted[name] = _GrantedSericiteFunction(
+                validated[name] = _GrantedSericiteFunction(
                     name,
                     value.code,
                     value.module_locals,
                     value.closure,
-                    value.granted,
                     value.defaults,
                     value.param_contracts,
                     value.return_contract,
                     value.home,
                 )
             elif isinstance(value, _GrantedHostFunction):
-                granted[name] = _GrantedHostFunction(name, value.callback)
+                validated[name] = _GrantedHostFunction(name, value.callback)
             elif isinstance(value, _GrantedSericiteFunction):
-                granted[name] = _GrantedSericiteFunction(
+                validated[name] = _GrantedSericiteFunction(
                     name,
                     value.code,
                     value.module_locals,
                     value.closure,
-                    value.granted,
                     value.defaults,
                     value.param_contracts,
                     value.return_contract,
@@ -419,10 +417,10 @@ class _EngineBuiltins:
                 )
             else:
                 raise SericiteError(
-                    f"granted value '{name}' is not a function",
+                    f"addon '{name}' is not a function",
                     kind="type_error",
                 )
-        return granted
+        return validated
 
     def _print(
         self,

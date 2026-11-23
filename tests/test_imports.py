@@ -12,11 +12,13 @@ class ImportTests(unittest.TestCase):
         source="",
         files=None,
         *,
-        functions=None,
+        addons=None,
         limits=None,
     ):
+        if addons:
+            source = f"from __addon__ import {', '.join(addons)}\n{source}"
         engine = SericiteEngine()
-        root = engine.create_root(source, functions=functions, limits=limits)
+        root = engine.create_root(source, addons=addons, limits=limits)
         for path, text in (files or {}).items():
             root.write_file(path, text)
         return engine, root
@@ -239,9 +241,9 @@ class ImportTests(unittest.TestCase):
             "    import util\n"
             "    return util.value\n"
             "fs = VFS()\n"
-            "fs.write_file('/caller/main.sericite', 'print(load())\\n')\n"
+            "fs.write_file('/caller/main.sericite', 'from __addon__ import load\\nprint(load())\\n')\n"
             "sub = VM(entry_file='/caller/main.sericite', "
-            "functions={'load': load}, fs=fs)\n"
+            "addons={'load': load}, fs=fs)\n"
             "print(sub.run(), end='')\n",
         )
         root = engine.create_root(entry_file="/home/main.sericite", fs=fs)
@@ -294,7 +296,7 @@ class ImportTests(unittest.TestCase):
             "    return util.value\n"
             "fs = VFS()\n"
             "fs.write_file('/util.sericite', \"value = 'caller'\\n\")\n"
-            "sub = VM('print(load())', functions={'load': load}, fs=fs)\n"
+            "sub = VM('from __addon__ import load\\nprint(load())', addons={'load': load}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {"/util.sericite": "value = 'home'\n"},
         )
@@ -305,7 +307,7 @@ class ImportTests(unittest.TestCase):
             "from util import read_other\n"
             "fs = VFS()\n"
             "fs.write_file('/other.sericite', \"value = 'caller'\\n\")\n"
-            "sub = VM('print(read_other())', functions={'read_other': read_other}, fs=fs)\n"
+            "sub = VM('from __addon__ import read_other\\nprint(read_other())', addons={'read_other': read_other}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {
                 "/util.sericite": (
@@ -321,8 +323,8 @@ class ImportTests(unittest.TestCase):
             "import util\n"
             "def get_module():\n"
             "    return util\n"
-            "sub = VM('m = get_module()\\nprint(m.value)\\nprint(m)', "
-            "functions={'get_module': get_module})\n"
+            "sub = VM('from __addon__ import get_module\\nm = get_module()\\nprint(m.value)\\nprint(m)', "
+            "addons={'get_module': get_module})\n"
             "print(sub.run(), end='')\n",
             {"/util.sericite": "value = 12\n"},
         )
@@ -332,7 +334,7 @@ class ImportTests(unittest.TestCase):
         output = self.run_source(
             "def load():\n"
             "    import private_helper\n"
-            "sub = VM('load()', functions={'load': load})\n"
+            "sub = VM('from __addon__ import load\\nload()', addons={'load': load})\n"
             "try:\n"
             "    sub.run()\n"
             "except import_error as e:\n"
@@ -340,15 +342,37 @@ class ImportTests(unittest.TestCase):
         )
         self.assertEqual(output, "module import failed\n")
 
+    def test_foreign_missing_export_does_not_expose_home_name(self):
+        child = (
+            "from __addon__ import load\n"
+            "try:\n"
+            "    load()\n"
+            "except import_error as e:\n"
+            "    print(e.message)\n"
+        )
+        for import_statement in (
+            "from __addon__ import secret_internal_helper",
+            "from util import secret_internal_helper",
+        ):
+            with self.subTest(import_statement=import_statement):
+                output = self.run_source(
+                    f"def load():\n    {import_statement}\n"
+                    f"sub = VM({child!r}, addons={{'load': load}})\n"
+                    "print(sub.run(), end='')\n",
+                    {"/util.sericite": ""},
+                )
+                self.assertEqual(output, "module import failed\n")
+                self.assertNotIn("secret_internal_helper", output)
+
     def test_module_cannot_cross_host_ffi(self):
         _, root = self.make_root(
             "import util\necho(util)\n",
             {"/util.sericite": "value = 1\n"},
-            functions={"echo": lambda value: value},
+            addons={"echo": lambda value: value},
         )
         with self.assertRaises(SericiteError) as caught:
             root.run()
-        self.assertEqual(caught.exception.kind, "ffi_error")
+        self.assertEqual(caught.exception.kind, "addon_error")
         self.assertIn("module", caught.exception.message)
 
     def test_module_rendering_attribute_errors_and_snapshots_are_safe(self):
@@ -626,7 +650,7 @@ class ImportTests(unittest.TestCase):
             "fs = VFS()\n"
             "fs.write_file('/pkg/__init__.sericite', '')\n"
             "fs.write_file('/pkg/util.sericite', \"value = 'caller'\\n\")\n"
-            "sub = VM('print(load())', functions={'load': load}, fs=fs)\n"
+            "sub = VM('from __addon__ import load\\nprint(load())', addons={'load': load}, fs=fs)\n"
             "print(sub.run(), end='')\n",
             {
                 "/pkg/__init__.sericite": "",
@@ -703,7 +727,7 @@ class ImportTests(unittest.TestCase):
             "def load():\n"
             "    from pkg import child, answer\n"
             "    return child.value + answer\n"
-            "sub = VM('print(load())', functions={'load': load})\n"
+            "sub = VM('from __addon__ import load\\nprint(load())', addons={'load': load})\n"
             "print(sub.run(), end='')\n",
             files,
         )
@@ -715,10 +739,10 @@ class ImportTests(unittest.TestCase):
             "box = []\n"
             "def capture(fn):\n"
             "    box.append(fn)\n"
-            "a = VM('def load():\\n"
+            "a = VM('from __addon__ import capture\\ndef load():\\n"
             "    import util\\n"
             "    return util.value\\n"
-            "capture(load)\\n', functions={'capture': capture})\n"
+            "capture(load)\\n', addons={'capture': capture})\n"
             "a.run()\n"
             "f = box[0]\n"
         )
@@ -729,11 +753,11 @@ class ImportTests(unittest.TestCase):
         a.write_file("/util.sericite", "value = 99\n")
         before = home.alloc_bytes
         output = root.exec(
-            "b = VM('print(f())', functions={'f': f})\nprint(b.run(), end='')\n"
+            "b = VM('from __addon__ import f\\nprint(f())', addons={'f': f})\nprint(b.run(), end='')\n"
         )
         self.assertEqual(output, "99\n")
         self.assertGreater(home.alloc_bytes, before)
-        self.assertEqual(list(home.modules), ["util"])
+        self.assertEqual(list(home.modules), ["__addon__", "util"])
 
     def test_sibling_vm_import_cannot_bypass_exhausted_home_quota(self):
         engine = SericiteEngine()
@@ -741,10 +765,10 @@ class ImportTests(unittest.TestCase):
             "box = []\n"
             "def capture(fn):\n"
             "    box.append(fn)\n"
-            "a = VM('def load():\\n"
+            "a = VM('from __addon__ import capture\\ndef load():\\n"
             "    import util\\n"
             "    return util.value\\n"
-            "capture(load)\\n', functions={'capture': capture}, max_total_bytes=8)\n"
+            "capture(load)\\n', addons={'capture': capture}, max_total_bytes=8)\n"
             "a.run()\n"
             "f = box[0]\n"
         )
@@ -755,16 +779,55 @@ class ImportTests(unittest.TestCase):
         a.write_file("/util.sericite", "value = 99\n")
         before = (home.instruction_count, home.alloc_bytes)
         output = root.exec(
-            "b = VM('try:\\n"
+            "b = VM('from __addon__ import f\\ntry:\\n"
             "    print(f())\\n"
             "except resource_exhausted as e:\\n"
-            "    print(e.kind)', functions={'f': f})\n"
+            "    print(e.kind)', addons={'f': f})\n"
             "print(b.run(), end='')\n"
         )
         self.assertEqual(output, "resource_exhausted\n")
         self.assertGreater(home.instruction_count, before[0])
         self.assertEqual(home.alloc_bytes, before[1])
-        self.assertEqual(home.modules, {})
+        self.assertNotIn("util", home.modules)
+
+    def test_empty_addon_module_and_addons_persist_across_exec(self):
+        _, root = self.make_root(
+            "try:\n"
+            "    from __addon__ import missing\n"
+            "except import_error as e:\n"
+            "    print(e.kind)\n"
+        )
+        self.assertEqual(root.run(), "import_error\n")
+
+        _, root = self.make_root("", addons={"double": lambda x: x * 2})
+        self.assertEqual(
+            root.exec("from __addon__ import double\nprint(double(21))"), "42\n"
+        )
+        self.assertEqual(root.exec("print(double(10))"), "20\n")
+
+    def test_addon_import_is_per_module_and_vfs_cannot_shadow_it(self):
+        _, root = self.make_root(
+            "from __addon__ import double\n"
+            "print(double(2))\n"
+            "import util\n"
+            "try:\n"
+            "    print(util.apply(3))\n"
+            "except name_error:\n"
+            "    print('module must import')\n",
+            {
+                "/__addon__.sericite": "def double(x):\n    return 'file'\n",
+                "/util.sericite": "def apply(x):\n    return double(x)\n",
+                "/util_fixed.sericite": (
+                    "from __addon__ import double\n"
+                    "def apply(x):\n    return double(x)\n"
+                ),
+            },
+            addons={"double": lambda x: x * 2},
+        )
+        self.assertEqual(root.run(), "4\nmodule must import\n")
+        self.assertEqual(
+            root.exec("import util_fixed\nprint(util_fixed.apply(4))"), "8\n"
+        )
 
     def test_invalid_import_bindings_and_wildcard_are_rejected(self):
         cases = (
@@ -775,6 +838,14 @@ class ImportTests(unittest.TestCase):
             "from pkg.__private import value\n",
             "from __private import value\n",
             "from .__private import value\n",
+            "import __addon__\n",
+            "import __addon__ as addons\n",
+            "import __addon__.http\n",
+            "import pkg.__addon__\n",
+            "from .__addon__ import value\n",
+            "from pkg import __addon__\n",
+            "from __addon__ import __hidden\n",
+            "from __future__ import annotations\n",
         )
         for source in cases:
             with self.subTest(source=source):

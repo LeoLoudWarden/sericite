@@ -76,9 +76,12 @@ class ListPopChargeTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             engine.create_root(
-                f"items = {list(range(size))!r}\n"
-                "checkpoint()\nitems.pop(0)\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + f"items = {list(range(size))!r}\n"
+                    "checkpoint()\nitems.pop(0)\ncheckpoint()\n"
+                ),
+                addons={
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(engine._contexts[0].instruction_count)
                     )
@@ -94,9 +97,12 @@ class ListPopChargeTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 engine.create_root(
-                    f"items = {list(range(size))!r}\n"
-                    f"checkpoint()\n{call}\ncheckpoint()\n",
-                    functions={
+                    (
+                        "from __addon__ import checkpoint\n"
+                        + f"items = {list(range(size))!r}\n"
+                        f"checkpoint()\n{call}\ncheckpoint()\n"
+                    ),
+                    addons={
                         "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                             checkpoints.append(engine._contexts[0].instruction_count)
                         )
@@ -108,13 +114,15 @@ class ListPopChargeTests(unittest.TestCase):
     def test_pop_front_enforces_instruction_limit(self):
         engine = SericiteEngine(limits=SericiteLimits(max_instructions=50))
         vm = engine.create_root(
-            "items = make_list()\n"
-            "i = 0\n"
-            "while i < 10:\n"
-            "    items.append(0)\n"
-            "    items.pop(0)\n"
-            "    i = i + 1\n",
-            functions={"make_list": lambda: list(range(100))},
+            (
+                "from __addon__ import make_list\n" + "items = make_list()\n"
+                "i = 0\n"
+                "while i < 10:\n"
+                "    items.append(0)\n"
+                "    items.pop(0)\n"
+                "    i = i + 1\n"
+            ),
+            addons={"make_list": lambda: list(range(100))},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -127,13 +135,14 @@ class ListPopChargeTests(unittest.TestCase):
             "bound = items.pop\n"
             "def leak():\n"
             "    return bound\n"
-            'sub = VM("f = leak()\\nf(0)", functions={"leak": leak}, '
+            'sub = VM("from __addon__ import leak\\nf = leak()\\nf(0)", addons={"leak": leak}, '
             "max_instructions=50)\n"
             "sub.run()\n"
         )
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root(
-                source, functions={"make_list": lambda: list(range(100))}
+                ("from __addon__ import make_list\n" + source),
+                addons={"make_list": lambda: list(range(100))},
             ).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[1].state, "resource_exhausted")
@@ -228,8 +237,11 @@ class DictMethodTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 engine.create_root(
-                    f"d = {data!r}\ncheckpoint()\nx = d.{method}()\ncheckpoint()\n",
-                    functions={
+                    (
+                        "from __addon__ import checkpoint\n"
+                        + f"d = {data!r}\ncheckpoint()\nx = d.{method}()\ncheckpoint()\n"
+                    ),
+                    addons={
                         "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                             checkpoints.append(engine._contexts[0].instruction_count)
                         )
@@ -246,14 +258,18 @@ class DictKeyChargeTests(unittest.TestCase):
         keys = ["x" * size for _ in range(8)]
         checkpoints = []
         engine.create_root(
-            setup + "checkpoint()\n"
-            "i = 0\n"
-            "while i < 8:\n"
-            "    key = fresh()\n"
-            f"{body}\n"
-            "    i = i + 1\n"
-            "checkpoint()\n",
-            functions={
+            (
+                "from __addon__ import initial, fresh, checkpoint\n"
+                + setup
+                + "checkpoint()\n"
+                "i = 0\n"
+                "while i < 8:\n"
+                "    key = fresh()\n"
+                f"{body}\n"
+                "    i = i + 1\n"
+                "checkpoint()\n"
+            ),
+            addons={
                 "initial": lambda size=size: "x" * size,
                 "fresh": keys.pop,
                 "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
@@ -419,8 +435,11 @@ class StringMethodChargeTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         engine.create_root(
-            f"checkpoint()\nresult = {expression}\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + f"checkpoint()\nresult = {expression}\ncheckpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -451,8 +470,11 @@ class StringMethodChargeTests(unittest.TestCase):
         elif value is None:
             value = "a" * size
         engine.create_root(
-            f"value = get()\ncheckpoint()\nresult = {expression}\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import get, checkpoint\n"
+                + f"value = get()\ncheckpoint()\nresult = {expression}\ncheckpoint()\n"
+            ),
+            addons={
                 "get": lambda: value,
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].instruction_count
@@ -485,9 +507,12 @@ class StringMethodChargeTests(unittest.TestCase):
             checkpoints = []
             chars = "a" * (size - 1) + "b"
             engine.create_root(
-                'value = "b"\nchars = get()\ncheckpoint()\n'
-                "result = value.strip(chars)\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import get, checkpoint\n"
+                    + 'value = "b"\nchars = get()\ncheckpoint()\n'
+                    "result = value.strip(chars)\ncheckpoint()\n"
+                ),
+                addons={
                     "get": lambda chars=chars: chars,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(engine._contexts[0].instruction_count)
@@ -526,13 +551,14 @@ class StringMethodChargeTests(unittest.TestCase):
             "bound = text.replace\n"
             "def leak():\n"
             "    return bound\n"
-            "sub = VM(\"f = leak()\\nresult = f('a', 'b')\", "
-            "functions={'leak': leak}, max_instructions=100)\n"
+            "sub = VM(\"from __addon__ import leak\\nf = leak()\\nresult = f('a', 'b')\", "
+            "addons={'leak': leak}, max_instructions=100)\n"
             "sub.run()\n"
         )
         with self.assertRaises(SericiteError) as ctx:
             engine.create_root(
-                source, functions={"get_text": lambda: "a" * 10_000}
+                ("from __addon__ import get_text\n" + source),
+                addons={"get_text": lambda: "a" * 10_000},
             ).run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
         self.assertEqual(engine._contexts[1].state, "resource_exhausted")
@@ -552,8 +578,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             "checkpoint()\n"
         )
         engine.create_root(
-            source,
-            functions={
+            ("from __addon__ import get_text, checkpoint\n" + source),
+            addons={
                 "get_text": lambda: text,
                 "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                     checkpoints.append(engine._contexts[0].alloc_bytes)
@@ -584,8 +610,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
                     "checkpoint()\n"
                 )
                 engine.create_root(
-                    source,
-                    functions={
+                    ("from __addon__ import get_text, checkpoint\n" + source),
+                    addons={
                         "get_text": lambda text=text: text,
                         "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                             checkpoints.append(engine._contexts[0].alloc_bytes)
@@ -598,9 +624,12 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         vm = engine.create_root(
-            'sub = VM("")\nvalues = inputs()\ncheckpoint()\n'
-            "sub.run(values)\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import inputs, checkpoint\n"
+                + 'sub = VM("")\nvalues = inputs()\ncheckpoint()\n'
+                "sub.run(values)\ncheckpoint()\n"
+            ),
+            addons={
                 "inputs": lambda: [""] * 1000,
                 "checkpoint": lambda: checkpoints.append(
                     (
@@ -620,12 +649,14 @@ class VMHandleMethodChargeTests(unittest.TestCase):
     def test_run_inputs_rejects_partial_invalid_batch_atomically(self):
         engine = SericiteEngine()
         vm = engine.create_root(
-            'sub = VM("")\n'
-            "try:\n"
-            "    sub.run(inputs())\n"
-            "except runtime_error:\n"
-            "    pass\n",
-            functions={"inputs": lambda: ["accepted", None]},
+            (
+                "from __addon__ import inputs\n" + 'sub = VM("")\n'
+                "try:\n"
+                "    sub.run(inputs())\n"
+                "except runtime_error:\n"
+                "    pass\n"
+            ),
+            addons={"inputs": lambda: ["accepted", None]},
         )
         vm.run()
         self.assertEqual(engine._contexts[1].io.buffered_input_count, 0)
@@ -633,8 +664,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
     def test_run_empty_inputs_enforce_memory_quota_before_queue_mutation(self):
         engine = SericiteEngine(SericiteLimits(max_total_bytes=1000))
         vm = engine.create_root(
-            'sub = VM("")\nsub.run(inputs())\n',
-            functions={"inputs": lambda: [""] * 100},
+            ("from __addon__ import inputs\n" + 'sub = VM("")\nsub.run(inputs())\n'),
+            addons={"inputs": lambda: [""] * 100},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -644,8 +675,8 @@ class VMHandleMethodChargeTests(unittest.TestCase):
     def test_run_empty_inputs_enforce_instruction_quota_before_queue_mutation(self):
         engine = SericiteEngine(SericiteLimits(max_instructions=150))
         vm = engine.create_root(
-            'sub = VM("")\nsub.run(inputs())\n',
-            functions={"inputs": lambda: [""] * 100},
+            ("from __addon__ import inputs\n" + 'sub = VM("")\nsub.run(inputs())\n'),
+            addons={"inputs": lambda: [""] * 100},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -662,10 +693,13 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             "bound = sub.read_file\n"
             "def leak():\n"
             "    return bound\n"
-            'grand = VM("f = leak()\\ns = f(\'/a.txt\')", functions={"leak": leak})\n'
+            'grand = VM("from __addon__ import leak\\nf = leak()\\ns = f(\'/a.txt\')", addons={"leak": leak})\n'
             "grand.run()\n"
         )
-        engine.create_root(source, functions={"get_text": lambda: text}).run()
+        engine.create_root(
+            ("from __addon__ import get_text\n" + source),
+            addons={"get_text": lambda: text},
+        ).run()
         self.assertGreaterEqual(engine._contexts[1].alloc_bytes, len(text) * 4)
 
     def test_cross_vm_step_charges_target_work_to_caller(self):
@@ -676,7 +710,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             "bound = sub.step\n"
             "def leak():\n"
             "    return bound\n"
-            'grand = VM("f = leak()\\nf()", functions={"leak": leak})\n'
+            'grand = VM("from __addon__ import leak\\nf = leak()\\nf()", addons={"leak": leak})\n'
             "grand.run()\n"
         )
         engine.create_root(source).run()
@@ -693,7 +727,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             "bound = sub.step\n"
             "def leak():\n"
             "    return bound\n"
-            'grand = VM("f = leak()\\nf()", functions={"leak": leak}, '
+            'grand = VM("from __addon__ import leak\\nf = leak()\\nf()", addons={"leak": leak}, '
             "max_instructions=50)\n"
             "grand.run()\n"
         )
@@ -778,13 +812,15 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         engine = SericiteEngine(SericiteLimits(max_fs_files=0))
         checkpoints = []
         vm = engine.create_root(
-            "checkpoint()\n"
-            "try:\n"
-            "    write_file('/x', 'y')\n"
-            "except file_limit_error:\n"
-            "    pass\n"
-            "checkpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n" + "checkpoint()\n"
+                "try:\n"
+                "    write_file('/x', 'y')\n"
+                "except file_limit_error:\n"
+                "    pass\n"
+                "checkpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     (
                         engine._contexts[0].instruction_count,
@@ -802,10 +838,10 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         vm = engine.create_root(
             "def put():\n"
             "    write_file('/from_home', 'x')\n"
-            'sub = VM("try:\\n'
+            'sub = VM("from __addon__ import put\\ntry:\\n'
             "    put()\\n"
             "except file_limit_error:\\n"
-            "    print('caught')\", functions={'put': put}, max_fs_files=0)\n"
+            "    print('caught')\", addons={'put': put}, max_fs_files=0)\n"
             "print(sub.run(), end='')\n"
             "print(path_exists('/from_home'), sub.snapshot()['state'])\n"
         )
@@ -833,6 +869,7 @@ class VMHandleMethodChargeTests(unittest.TestCase):
         engine = SericiteEngine(SericiteLimits(max_instructions=1050))
         long_path = "/" + "x" * 1000
         child_source = (
+            "from __addon__ import long_path\n"
             "fs = VFS()\n"
             "path = long_path()\n"
             "try:\n"
@@ -841,9 +878,11 @@ class VMHandleMethodChargeTests(unittest.TestCase):
             '    print("must not happen")\n'
         )
         vm = engine.create_root(
-            f"sub = VM({child_source!r}, "
-            'functions={"long_path": long_path})\nsub.run()\n',
-            functions={"long_path": lambda: long_path},
+            (
+                "from __addon__ import long_path\n" + f"sub = VM({child_source!r}, "
+                'addons={"long_path": long_path})\nsub.run()\n'
+            ),
+            addons={"long_path": lambda: long_path},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -935,8 +974,11 @@ class VfsChargeTests(unittest.TestCase):
             engine = SericiteEngine(limits)
             checkpoints = []
             vm = engine.create_root(
-                "checkpoint()\nresult = list_dir('/')\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + "checkpoint()\nresult = list_dir('/')\ncheckpoint()\n"
+                ),
+                addons={
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
                             (
@@ -991,8 +1033,8 @@ class VfsChargeTests(unittest.TestCase):
             "bound = target.list_dir\n"
             "def leak():\n"
             "    return bound\n"
-            "attacker = VM(\"f = leak()\\nresult = f('/')\", "
-            "functions={'leak': leak}, max_instructions=100)\n"
+            "attacker = VM(\"from __addon__ import leak\\nf = leak()\\nresult = f('/')\", "
+            "addons={'leak': leak}, max_instructions=100)\n"
             "attacker.run()\n"
         )
         with self.assertRaises(SericiteError) as ctx:
@@ -1004,8 +1046,11 @@ class VfsChargeTests(unittest.TestCase):
         checkpoints = []
         text = "x" * 1000
         vm = engine.create_root(
-            "checkpoint()\ncopy_file('/source.txt', '/copy.txt')\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "checkpoint()\ncopy_file('/source.txt', '/copy.txt')\ncheckpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     (
                         engine._contexts[0].instruction_count,
@@ -1053,8 +1098,11 @@ class VfsChargeTests(unittest.TestCase):
         checkpoints = []
         text = "x" * 1000
         vm = engine.create_root(
-            "checkpoint()\ncopy_dir('/tree', '/copy')\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "checkpoint()\ncopy_dir('/tree', '/copy')\ncheckpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     (
                         engine._contexts[0].instruction_count,
@@ -1104,8 +1152,11 @@ class VfsChargeTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         vm = engine.create_root(
-            "checkpoint()\nmake_dir('/a/empty')\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "checkpoint()\nmake_dir('/a/empty')\ncheckpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -1157,12 +1208,14 @@ class VfsChargeTests(unittest.TestCase):
             )
 
         engine.create_root(
-            "sub = VM(\"inner = VM('')\")\n"
-            "sub.run()\n"
-            "checkpoint()\n"
-            "sub.dispose()\n"
-            "checkpoint()\n",
-            functions={"checkpoint": checkpoint},
+            (
+                "from __addon__ import checkpoint\n" + "sub = VM(\"inner = VM('')\")\n"
+                "sub.run()\n"
+                "checkpoint()\n"
+                "sub.dispose()\n"
+                "checkpoint()\n"
+            ),
+            addons={"checkpoint": checkpoint},
         ).run()
         before, after = checkpoints
         self.assertGreaterEqual(after[0] - before[0], 2 * 2 + 1)
@@ -1175,8 +1228,11 @@ class VfsChargeTests(unittest.TestCase):
         checkpoints = []
         probe = SericiteEngine()
         probe.create_root(
-            "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     probe._contexts[0].instruction_count
                 )
@@ -1186,8 +1242,11 @@ class VfsChargeTests(unittest.TestCase):
         limits = SericiteLimits(max_instructions=checkpoints[0] + 3)
         engine = SericiteEngine(limits)
         root = engine.create_root(
-            "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n",
-            functions={"checkpoint": lambda: None},
+            (
+                "from __addon__ import checkpoint\n"
+                + "sub = VM(\"inner = VM('')\")\nsub.run()\ncheckpoint()\nsub.dispose()\n"
+            ),
+            addons={"checkpoint": lambda: None},
         )
         with self.assertRaises(SericiteError) as ctx:
             root.run()
@@ -1226,11 +1285,14 @@ class CrossVmResultEstimationTests(unittest.TestCase):
         engine = self.make_engine()
         checkpoints = []
         vm = engine.create_root(
-            "target = VFS()\n"
-            "checkpoint()\n"
-            "result = target.list_dir('/')\n"
-            "checkpoint()\n",
-            functions={
+            (
+                "target = VFS()\n"
+                "from __addon__ import checkpoint\n"
+                "checkpoint()\n"
+                "result = target.list_dir('/')\n"
+                "checkpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     (
                         engine._contexts[0].instruction_count,
@@ -1252,8 +1314,10 @@ class CrossVmResultEstimationTests(unittest.TestCase):
         engine = self.make_engine(max_total_bytes=400_000)
         delivered = []
         vm = engine.create_root(
-            "target = VFS()\nresult = target.list_dir('/')\ndelivered()\n",
-            functions={"delivered": lambda: delivered.append(True)},
+            (
+                "target = VFS()\nfrom __addon__ import delivered\nresult = target.list_dir('/')\ndelivered()\n"
+            ),
+            addons={"delivered": lambda: delivered.append(True)},
         )
         self.populate(engine, vm, 20_000)
         with self.assertRaises(SericiteError) as ctx:
@@ -1268,13 +1332,13 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
         target_source = (
             'i = 0\nwhile i < 200:\n    value = i + 1\n    i = i + 1\nraise "boom"\n'
         )
-        attacker_source = "f = leak()\ntry:\n    f()\nexcept raise_error:\n    pass\n"
+        attacker_source = "from __addon__ import leak\nf = leak()\ntry:\n    f()\nexcept raise_error:\n    pass\n"
         source = (
             f"target = VM({target_source!r})\n"
             "bound = target.run\n"
             "def leak():\n"
             "    return bound\n"
-            f"attacker = VM({attacker_source!r}, functions={{'leak': leak}}, "
+            f"attacker = VM({attacker_source!r}, addons={{'leak': leak}}, "
             "max_instructions=300)\n"
             "attacker.run()\n"
         )
@@ -1294,20 +1358,21 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 engine = SericiteEngine()
                 attacker_source = (
+                    "from __addon__ import spawn, get_bad\n"
                     f"bad = get_bad()\ntry:\n    spawn(bad)\nexcept {kind}:\n    pass\n"
                 )
                 source = (
                     "def spawn(s):\n"
                     "    return VM(s)\n"
                     f"attacker = VM({attacker_source!r}, "
-                    "functions={'spawn': spawn, 'get_bad': get_bad}, "
+                    "addons={'spawn': spawn, 'get_bad': get_bad}, "
                     "max_instructions=100)\n"
                     "attacker.run()\n"
                 )
                 with self.assertRaises(SericiteError) as ctx:
                     engine.create_root(
-                        source,
-                        functions={"get_bad": lambda bad_source=bad_source: bad_source},
+                        ("from __addon__ import get_bad\n" + source),
+                        addons={"get_bad": lambda bad_source=bad_source: bad_source},
                     ).run()
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
                 self.assertEqual(engine._contexts[1].state, "resource_exhausted")
@@ -1323,6 +1388,7 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
                 engine = SericiteEngine()
                 text = "x" * 1000
                 attacker_source = (
+                    "from __addon__ import leak, text_fn\n"
                     "b = leak()\n"
                     "s = text_fn()\n"
                     "try:\n"
@@ -1341,13 +1407,14 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
                     "def text_fn():\n"
                     "    return text\n"
                     f"attacker = VM({attacker_source!r}, "
-                    "functions={'leak': leak, 'text_fn': text_fn}, "
+                    "addons={'leak': leak, 'text_fn': text_fn}, "
                     "max_total_bytes=3000)\n"
                     "attacker.run()\n"
                 )
                 with self.assertRaises(SericiteError) as ctx:
                     engine.create_root(
-                        source, functions={"get_text": lambda text=text: text}
+                        ("from __addon__ import get_text\n" + source),
+                        addons={"get_text": lambda text=text: text},
                     ).run()
                 self.assertEqual(ctx.exception.kind, "resource_exhausted")
                 attacker = engine._contexts[2]
@@ -1359,8 +1426,8 @@ class NativeCallExceptionRouteTests(unittest.TestCase):
         source = (
             "def read():\n"
             "    return input()\n"
-            'attacker = VM("value = read()\\nprint(value)", '
-            "functions={'read': read})\n"
+            'attacker = VM("from __addon__ import read\\nvalue = read()\\nprint(value)", '
+            "addons={'read': read})\n"
             "attacker.run()\n"
         )
         root = engine.create_root(source)
@@ -1387,12 +1454,13 @@ class EscapedBoundMethodTests(unittest.TestCase):
             "def leak():\n"
             "    return bound_append\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "f = leak()\n"
             "i = 0\n"
             "while i < 100:\n"
             "    f(0)\n"
             "    i = i + 1\n"
-            '""", functions={"leak": leak}, max_total_bytes=100)\n'
+            '""", addons={"leak": leak}, max_total_bytes=100)\n'
             "sub.run()\n"
         )
         with self.assertRaises(SericiteError) as ctx:
@@ -1416,7 +1484,7 @@ class EscapedBoundMethodTests(unittest.TestCase):
             "bound_keys = d.keys\n"
             "def leak():\n"
             "    return bound_keys\n"
-            'sub = VM("f = leak()\\nr = f()\\nprint(len(r))", functions={"leak": leak})\n'
+            'sub = VM("from __addon__ import leak\\nf = leak()\\nr = f()\\nprint(len(r))", addons={"leak": leak})\n'
             "sub.run()\n"
         )
         engine.create_root(source).run()
@@ -1435,7 +1503,7 @@ class EscapedBoundMethodTests(unittest.TestCase):
             "bound = sub.stdout\n"
             "def leak():\n"
             "    return bound\n"
-            'grand = VM("f = leak()\\ns = f()\\nprint(len(s))", functions={"leak": leak})\n'
+            'grand = VM("from __addon__ import leak\\nf = leak()\\ns = f()\\nprint(len(s))", addons={"leak": leak})\n'
             "grand.run()\n"
         )
         engine.create_root(source).run()

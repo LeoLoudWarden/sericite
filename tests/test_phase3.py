@@ -281,7 +281,7 @@ class TryExceptTests(unittest.TestCase):
             "attribute_error",
             "contract_error",
             "conversion_error",
-            "ffi_error",
+            "addon_error",
             "file_exists",
             "file_limit_error",
             "file_not_found",

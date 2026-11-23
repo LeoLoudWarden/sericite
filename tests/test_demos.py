@@ -47,8 +47,8 @@ class RootAgentDemoTests(unittest.TestCase):
                 "utf8",
                 "-m",
                 "sericite",
-                "--capabilities",
-                str(DEMO_ROOT / "capabilities.py"),
+                "--addons",
+                str(DEMO_ROOT / "addons.py"),
                 str(DEMO_ROOT / "agent.sericite"),
                 *args,
             ],
@@ -139,10 +139,10 @@ class RootAgentDemoTests(unittest.TestCase):
 class TerminalStyleTests(unittest.TestCase):
     def setUp(self):
         spec = importlib.util.spec_from_file_location(
-            "sericite_demo_capabilities", DEMO_ROOT / "capabilities.py"
+            "sericite_demo_addons", DEMO_ROOT / "addons.py"
         )
-        self.capabilities = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.capabilities)
+        self.addons = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.addons)
 
     def test_styles_only_a_tty_and_honors_no_color(self):
         with (
@@ -150,16 +150,16 @@ class TerminalStyleTests(unittest.TestCase):
             mock.patch.object(sys.stdout, "isatty", return_value=True),
         ):
             self.assertEqual(
-                self.capabilities.terminal_style("ROOT", "root"),
+                self.addons.terminal_style("ROOT", "root"),
                 "\x1b[1;94mROOT\x1b[0m",
             )
         with (
             mock.patch.dict(os.environ, {"NO_COLOR": "1"}),
             mock.patch.object(sys.stdout, "isatty", return_value=True),
         ):
-            self.assertEqual(self.capabilities.terminal_style("ROOT", "root"), "ROOT")
+            self.assertEqual(self.addons.terminal_style("ROOT", "root"), "ROOT")
         with mock.patch.object(sys.stdout, "isatty", return_value=False):
-            self.assertEqual(self.capabilities.terminal_style("ROOT", "root"), "ROOT")
+            self.assertEqual(self.addons.terminal_style("ROOT", "root"), "ROOT")
 
     def test_stderr_style_uses_stderr_tty(self):
         stderr = StringIO()
@@ -168,7 +168,7 @@ class TerminalStyleTests(unittest.TestCase):
             mock.patch.object(stderr, "isatty", return_value=True),
         ):
             self.assertEqual(
-                self.capabilities._terminal_style("LLM", "llm", stderr),
+                self.addons._terminal_style("LLM", "llm", stderr),
                 "\x1b[1;91mLLM\x1b[0m",
             )
 
@@ -176,10 +176,10 @@ class TerminalStyleTests(unittest.TestCase):
 class LlmChatLoggingTests(unittest.TestCase):
     def setUp(self):
         spec = importlib.util.spec_from_file_location(
-            "sericite_demo_capabilities", DEMO_ROOT / "capabilities.py"
+            "sericite_demo_addons", DEMO_ROOT / "addons.py"
         )
-        self.capabilities = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.capabilities)
+        self.addons = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.addons)
 
     def run_chat(self) -> str:
         response = mock.Mock(status_code=200)
@@ -188,19 +188,17 @@ class LlmChatLoggingTests(unittest.TestCase):
         }
         stderr = StringIO()
         with (
-            mock.patch.object(
-                self.capabilities.requests, "post", return_value=response
-            ),
+            mock.patch.object(self.addons.requests, "post", return_value=response),
             redirect_stderr(stderr),
         ):
-            chat = self.capabilities.make_llm_chat("http://example.test", "secret", "m")
+            chat = self.addons.make_llm_chat("http://example.test", "secret", "m")
             result = chat({"messages": []})
         self.assertEqual(result["content"], "ok")
         return stderr.getvalue()
 
     def test_full_json_mode(self):
-        self.capabilities.LOG_LLM = True
-        self.capabilities.LOG_LLM_FULL_JSON = True
+        self.addons.LOG_LLM = True
+        self.addons.LOG_LLM_FULL_JSON = True
         output = self.run_chat()
         self.assertIn('"messages": []', output)
         self.assertIn("response metadata", output)
@@ -209,7 +207,7 @@ class LlmChatLoggingTests(unittest.TestCase):
         self.assertNotIn("secret", output)
 
     def test_logging_can_be_disabled(self):
-        self.capabilities.LOG_LLM = False
+        self.addons.LOG_LLM = False
         self.assertEqual(self.run_chat(), "")
 
     def test_slow_request_reports_wait_while_logging_is_disabled(self):
@@ -222,15 +220,13 @@ class LlmChatLoggingTests(unittest.TestCase):
             threading.Event().wait(0.055)
             return response
 
-        self.capabilities.WAIT_LOG_INTERVAL = 0.02
+        self.addons.WAIT_LOG_INTERVAL = 0.02
         stderr = StringIO()
         with (
-            mock.patch.object(
-                self.capabilities.requests, "post", side_effect=slow_post
-            ),
+            mock.patch.object(self.addons.requests, "post", side_effect=slow_post),
             redirect_stderr(stderr),
         ):
-            chat = self.capabilities.make_llm_chat("http://example.test", "secret", "m")
+            chat = self.addons.make_llm_chat("http://example.test", "secret", "m")
             result = chat({"messages": []})
         self.assertEqual(result["content"], "ok")
         self.assertIn("LLM     │ call #1 still waiting · ", stderr.getvalue())
@@ -239,13 +235,13 @@ class LlmChatLoggingTests(unittest.TestCase):
         stderr = StringIO()
         with (
             mock.patch.object(
-                self.capabilities.requests,
+                self.addons.requests,
                 "post",
-                side_effect=self.capabilities.requests.exceptions.ConnectionError(),
+                side_effect=self.addons.requests.exceptions.ConnectionError(),
             ),
             redirect_stderr(stderr),
         ):
-            chat = self.capabilities.make_llm_chat("http://example.test", "secret", "m")
+            chat = self.addons.make_llm_chat("http://example.test", "secret", "m")
             with self.assertRaises(Exception) as caught:
                 chat({"messages": []})
         self.assertEqual(caught.exception.kind, "runtime_error")

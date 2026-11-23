@@ -158,7 +158,6 @@ class _EngineModules:
             module.locals,
             module.locals,
             {},
-            home.granted,
             home=home,
         )
         module_frame.module = module
@@ -186,7 +185,9 @@ class _EngineModules:
         if name in module.locals:
             return module.locals[name], False
         if not module.is_package:
-            raise SericiteError(f"cannot import name '{name}'", kind="import_error")
+            raise self._import_error(
+                module.home, context, f"cannot import name '{name}'"
+            )
         child_name = f"{module.name}.{name}"
         child = self._import_module(context, frame, (child_name, 0), advance=False)
         if child is None:

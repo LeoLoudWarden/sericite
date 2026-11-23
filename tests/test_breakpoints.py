@@ -451,8 +451,8 @@ class BreakpointSourceTests(unittest.TestCase):
     def test_foreign_granted_code_does_not_hit_target_breakpoints(self):
         root = SericiteEngine().create_root(
             "def shared():\n    value = 1\n    return value\n"
-            'sub = VM("x = 1\\n\\nprint(shared())", functions={"shared": shared})\n'
-            "sub.add_breakpoint(2)\n"
+            'sub = VM("from __addon__ import shared\\nx = 1\\n\\nprint(shared())", addons={"shared": shared})\n'
+            "sub.add_breakpoint(3)\n"
             "print(sub.run())\n"
         )
         self.assertEqual(root.run(), "1\n\n")
@@ -466,9 +466,9 @@ class BreakpointSourceTests(unittest.TestCase):
             "    value = 1\n"
             "    return value\n"
             "child_fs = VFS()\n"
-            "child_fs.write_file('/main.sericite', 'print(f())')\n"
-            "sub = VM(entry_file='/main.sericite', fs=child_fs, functions={'f': f})\n"
-            "sub.add_breakpoint(2, '/main.sericite')\n"
+            "child_fs.write_file('/main.sericite', 'from __addon__ import f\\nprint(f())')\n"
+            "sub = VM(entry_file='/main.sericite', fs=child_fs, addons={'f': f})\n"
+            "sub.add_breakpoint(3, '/main.sericite')\n"
             "sub.run()\n"
             "print(sub.snapshot()['state'])",
         )

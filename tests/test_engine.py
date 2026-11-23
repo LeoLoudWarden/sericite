@@ -138,10 +138,12 @@ class RootVMTests(unittest.TestCase):
                 engine.create_root("", argv=value)
             self.assertEqual(ctx.exception.kind, "type_error")
 
-    def test_root_argv_cannot_be_shadowed_by_a_host_function(self):
-        with self.assertRaises(SericiteError) as ctx:
-            SericiteEngine().create_root("", functions={"argv": list})
-        self.assertEqual(ctx.exception.kind, "type_error")
+    def test_root_argv_can_be_an_addon_with_an_import_alias(self):
+        vm = SericiteEngine().create_root(
+            "from __addon__ import argv as host_argv\nprint(host_argv('ab'))",
+            addons={"argv": list},
+        )
+        self.assertEqual(vm.run(), "['a', 'b']\n")
 
     def test_engine_and_root_limits_require_sericite_limits(self):
         for value in (1, {}):
@@ -165,13 +167,17 @@ class RootVMTests(unittest.TestCase):
                 self.assertEqual(raised.exception.kind, "type_error")
                 self.assertIn("source", raised.exception.message)
 
-    def test_root_functions_require_a_dict(self):
+    def test_root_addons_require_a_dict(self):
         for value in ([1], 1):
             with self.subTest(value=value):
                 with self.assertRaises(SericiteError) as raised:
-                    SericiteEngine().create_root("", functions=value)
+                    SericiteEngine().create_root("", addons=value)
                 self.assertEqual(raised.exception.kind, "type_error")
-                self.assertIn("functions", raised.exception.message)
+                self.assertIn("addons", raised.exception.message)
+
+    def test_old_functions_root_option_is_removed(self):
+        with self.assertRaises(TypeError):
+            SericiteEngine().create_root("", functions={})
 
     def test_root_io_callbacks_must_be_callable(self):
         for parameter in ("input_provider", "output_writer"):
@@ -197,8 +203,8 @@ class RootVMTests(unittest.TestCase):
         cases = (
             {"source": None},
             {"limits": 1},
-            {"functions": [1]},
-            {"functions": {"f": 42}},
+            {"addons": [1]},
+            {"addons": {"f": 42}},
             {"inputs": 1},
             {"input_provider": 1},
             {"output_writer": 1},
@@ -488,24 +494,30 @@ class SnapshotViewTests(unittest.TestCase):
             raise ValueError("secret")
 
         cases = {
-            "native": (SericiteEngine().create_root("value = len(\n    1,\n)\n"), None),
+            "native": (
+                SericiteEngine().create_root("value = len(\n    1,\n)\n"),
+                None,
+                1,
+            ),
             "host": (
                 SericiteEngine().create_root(
-                    "value = boom(\n)\n", functions={"boom": boom}
+                    "from __addon__ import boom\nvalue = boom(\n)\n",
+                    addons={"boom": boom},
                 ),
                 "host_error",
+                2,
             ),
         }
-        for name, (vm, kind) in cases.items():
+        for name, (vm, kind, expected_line) in cases.items():
             with self.subTest(name=name):
                 with self.assertRaises(SericiteError) as ctx:
                     vm.run()
                 if kind is not None:
                     self.assertEqual(ctx.exception.kind, kind)
-                self.assertEqual(ctx.exception.line, 1)
+                self.assertEqual(ctx.exception.line, expected_line)
                 self.assertEqual(
                     [(frame.function, frame.line) for frame in ctx.exception.frames],
-                    [("<module>", 1)],
+                    [("<module>", expected_line)],
                 )
 
     def test_native_argument_errors_remain_catchable(self):
@@ -715,6 +727,13 @@ class ValidationTests(unittest.TestCase):
             vm.run(),
             "{'__hidden': 1, '__expanded': 2}\n3\n__string__\n",
         )
+
+    def test_old_ffi_error_kind_is_rejected(self):
+        with self.assertRaises(SericiteError) as ctx:
+            SericiteEngine().create_root(
+                "try:\n    pass\nexcept ffi_error:\n    pass\n"
+            )
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
     def test_reserved_names_call_only(self):
         engine = SericiteEngine()
@@ -1042,7 +1061,7 @@ class UnlimitedLimitTests(unittest.TestCase):
         vm = engine.create_root(
             "def spawn():\n"
             "    return VM('', max_instructions=-1)\n"
-            "sub = VM('grandchild = spawn()', functions={'spawn': spawn}, "
+            "sub = VM('from __addon__ import spawn\\ngrandchild = spawn()', addons={'spawn': spawn}, "
             "max_instructions=100)\n"
             "sub.run()"
         )
@@ -1153,12 +1172,13 @@ class DisposeTests(unittest.TestCase):
             "def get_vm():\n"
             "    return sub\n"
             "sub = VM(\n"
+            "    'from __addon__ import get_vm\\n'\n"
             "    'me = get_vm()\\n'\n"
             "    'try:\\n'\n"
             "    '    me.dispose()\\n'\n"
             "    'finally:\\n'\n"
             "    '    print(\"finally\")\\n',\n"
-            "    functions={'get_vm': get_vm},\n"
+            "    addons={'get_vm': get_vm},\n"
             ")\n"
             "sub.run()\n"
             "print(sub)"
@@ -1181,7 +1201,7 @@ class DisposeTests(unittest.TestCase):
         root = engine.create_root(
             "def get_vm():\n"
             "    return vm_a\n"
-            "vm_a = VM('self = get_vm()', functions={'get_vm': get_vm})\n"
+            "vm_a = VM('from __addon__ import get_vm\\nself = get_vm()', addons={'get_vm': get_vm})\n"
             "vm_a.run()"
         )
         root.run()
@@ -1202,8 +1222,8 @@ class DisposeTests(unittest.TestCase):
             "    return a\n"
             "def get_b():\n"
             "    return b\n"
-            "a = VM('b = get_b()', functions={'get_b': get_b})\n"
-            "b = VM('a = get_a()', functions={'get_a': get_a})\n"
+            "a = VM('from __addon__ import get_b\\nb = get_b()', addons={'get_b': get_b})\n"
+            "b = VM('from __addon__ import get_a\\na = get_a()', addons={'get_a': get_a})\n"
             "a.run()\n"
             "b.run()"
         )
@@ -1222,8 +1242,8 @@ class DisposeTests(unittest.TestCase):
             "    def get_middle():\n"
             "        return middle\n"
             "    middle = VM(\n"
-            "        'self = get_middle()\\nchild = VM(\"\")',\n"
-            "        functions={'get_middle': get_middle},\n"
+            "        'from __addon__ import get_middle\\nself = get_middle()\\nchild = VM(\"\")',\n"
+            "        addons={'get_middle': get_middle},\n"
             "    )\n"
             "    middle.run()\n"
             "make()"
@@ -1235,12 +1255,13 @@ class DisposeTests(unittest.TestCase):
         self.assertEqual(engine._contexts[0].live_descendant_count, 0)
 
     def test_running_descendant_can_dispose_its_ancestor(self):
-        inner_source = "parent = get_parent()\nparent.dispose()\nprint('inner after')"
+        inner_source = "from __addon__ import get_parent\nparent = get_parent()\nparent.dispose()\nprint('inner after')"
         middle_source = (
+            "from __addon__ import get_middle\n"
             "middle_handle = get_middle()\n"
             "def get_parent():\n"
             "    return middle_handle\n"
-            f"inner = VM({inner_source!r}, functions={{'get_parent': get_parent}})\n"
+            f"inner = VM({inner_source!r}, addons={{'get_parent': get_parent}})\n"
             "inner.run()\n"
             "print('middle after')"
         )
@@ -1248,7 +1269,7 @@ class DisposeTests(unittest.TestCase):
         root = engine.create_root(
             "def get_middle():\n"
             "    return middle\n"
-            f"middle = VM({middle_source!r}, functions={{'get_middle': get_middle}})\n"
+            f"middle = VM({middle_source!r}, addons={{'get_middle': get_middle}})\n"
             "middle.run()\n"
             "print(middle)\n"
             "print('outer after')"
@@ -1300,19 +1321,22 @@ class DisposeTests(unittest.TestCase):
         self.assertEqual(replacement.snapshot()["vm_id"], 6)
 
     def test_escaped_function_with_disposed_home_fails_cleanly(self):
-        child_source = "def f():\n    print('from f')\ncapture(f)"
+        child_source = (
+            "from __addon__ import capture\ndef f():\n    print('from f')\ncapture(f)"
+        )
         parent_source = (
-            f"child = VM({child_source!r}, functions={{'capture': capture}})\n"
+            "from __addon__ import capture\n"
+            f"child = VM({child_source!r}, addons={{'capture': capture}})\n"
             "child.run()"
         )
         root_source = f"""
 box = []
 def capture(value):
     box.append(value)
-parent = VM({parent_source!r}, functions={{"capture": capture}})
+parent = VM({parent_source!r}, addons={{"capture": capture}})
 parent.run()
 parent.dispose()
-other = VM("f()", functions={{"f": box[0]}})
+other = VM("from __addon__ import f\\nf()", addons={{"f": box[0]}})
 try:
     other.run()
 except runtime_error as e:

@@ -1,4 +1,4 @@
-# A parent VM grants functions to a child VM: capabilities travel explicitly along the creation chain
+# A parent VM grants addons to a child VM: addons travel explicitly along the creation chain
 
 base_url = "https://api.example.com"
 
@@ -10,6 +10,7 @@ def fake_http_get(url):
     return {"status": 200, "url": url, "body": "payload of " + url}
 
 child_source = """
+from __addon__ import endpoint, fake_http_get
 resp = fake_http_get(endpoint("users"))
 print("status:", resp["status"])
 print("url:", resp["url"])
@@ -17,5 +18,5 @@ if "body" in resp:
     print("body:", resp["body"])
 """
 
-sub = VM(child_source, functions={"endpoint": endpoint, "fake_http_get": fake_http_get})
+sub = VM(child_source, addons={"endpoint": endpoint, "fake_http_get": fake_http_get})
 print(sub.run())

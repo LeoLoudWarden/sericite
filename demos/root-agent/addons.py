@@ -1,4 +1,4 @@
-"""Trusted host capabilities for the root-driven LLM agent demo."""
+"""Trusted host addons for the root-driven LLM agent demo."""
 
 from __future__ import annotations
 
@@ -229,7 +229,7 @@ def configure():
         )
     return {
         "limits": SericiteLimits(max_instructions=100_000_000),
-        "functions": {
+        "addons": {
             "llm_chat": make_llm_chat(_normalize_api_url(api_url), api_key, model),
             "http_get": make_http_get(),
             "terminal_style": terminal_style,

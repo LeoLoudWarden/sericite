@@ -23,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
             "  sericite\n"
             "  sericite app.sericite first second\n"
             "  sericite -c 'print(argv)' first second\n"
-            "  sericite --capabilities caps.py app.sericite"
+            "  sericite --addons addons.py app.sericite"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -34,7 +34,7 @@ def _parser() -> argparse.ArgumentParser:
         "-c", "--command", help="execute SOURCE as a Sericite command", metavar="SOURCE"
     )
     parser.add_argument(
-        "--capabilities",
+        "--addons",
         metavar="FILE",
         help="trusted Python file defining configure() for the root VM",
     )
@@ -66,7 +66,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             cli_args.append(value)
             items = values[index + 1 :]
             break
-        if value == "--capabilities":
+        if value == "--addons":
             cli_args.extend(values[index : index + 2])
             index += 2
             continue

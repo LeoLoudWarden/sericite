@@ -89,8 +89,11 @@ class StringRepetitionAccountingTests(unittest.TestCase):
             checkpoints = []
             text = "x" * size
             vm = engine.create_root(
-                "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()",
-                functions={
+                (
+                    "from __addon__ import make_value, checkpoint\n"
+                    + "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()"
+                ),
+                addons={
                     "make_value": lambda text=text: text,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
@@ -168,8 +171,11 @@ class ListRepetitionTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             vm = engine.create_root(
-                "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()",
-                functions={
+                (
+                    "from __addon__ import make_value, checkpoint\n"
+                    + "value = make_value()\ncheckpoint()\nresult = value * 3\ncheckpoint()"
+                ),
+                addons={
                     "make_value": lambda size=size: list(range(size)),
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
@@ -242,8 +248,11 @@ class PowerTests(unittest.TestCase):
             engine = SericiteEngine(SericiteLimits(max_int_bits=20_000))
             checkpoints = []
             vm = engine.create_root(
-                f"checkpoint()\nresult = 2 ** {exponent}\ncheckpoint()",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + f"checkpoint()\nresult = 2 ** {exponent}\ncheckpoint()"
+                ),
+                addons={
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(engine._contexts[0].instruction_count)
                     )
@@ -403,9 +412,12 @@ class AugmentedAssignmentTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         engine.create_root(
-            'text = "a"\nvalues = [1]\ncheckpoint()\n'
-            'text += "bc"\nvalues += [2, 3]\ncheckpoint()\n',
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + 'text = "a"\nvalues = [1]\ncheckpoint()\n'
+                'text += "bc"\nvalues += [2, 3]\ncheckpoint()\n'
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -423,9 +435,12 @@ class AugmentedAssignmentTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             engine.create_root(
-                f"values = {list(range(size - 1))!r}\n"
-                "checkpoint()\nvalues += [99]\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + f"values = {list(range(size - 1))!r}\n"
+                    "checkpoint()\nvalues += [99]\ncheckpoint()\n"
+                ),
+                addons={
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(engine._contexts[0].instruction_count)
                     )
@@ -693,9 +708,12 @@ class SliceTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         engine.create_root(
-            'text = "abcdef"\nvalues = [0, 1, 2, 3]\ncheckpoint()\n'
-            "a = text[1:5]\nb = values[1:3]\ncheckpoint()\n",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + 'text = "abcdef"\nvalues = [0, 1, 2, 3]\ncheckpoint()\n'
+                "a = text[1:5]\nb = values[1:3]\ncheckpoint()\n"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -714,8 +732,11 @@ class SliceTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 engine.create_root(
-                    "value = get()\ncheckpoint()\nresult = value[:]\ncheckpoint()\n",
-                    functions={
+                    (
+                        "from __addon__ import get, checkpoint\n"
+                        + "value = get()\ncheckpoint()\nresult = value[:]\ncheckpoint()\n"
+                    ),
+                    addons={
                         "get": lambda kind=kind, size=size: (
                             "x" * size if kind == "str" else [0] * size
                         ),
@@ -837,8 +858,11 @@ class BuiltinTests(unittest.TestCase):
             checkpoints = []
             text = "\n" * size
             vm = engine.create_root(
-                f"value = {text!r}\ncheckpoint()\nresult = repr(value)\ncheckpoint()",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + f"value = {text!r}\ncheckpoint()\nresult = repr(value)\ncheckpoint()"
+                ),
+                addons={
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
                             (

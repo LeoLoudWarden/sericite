@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from ..compiler import INTRINSIC_MODULES
+
 
 def _module_package(path: str) -> str:
     parts = path.strip("/").split("/")
@@ -84,10 +86,11 @@ class _ProjectLoader:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    self.load_module_chain(alias.name)
+                    if alias.name not in INTRINSIC_MODULES:
+                        self.load_module_chain(alias.name)
             elif isinstance(node, ast.ImportFrom):
                 name = self.resolve_from(node.module, node.level, package)
-                if not name:
+                if not name or name in INTRINSIC_MODULES:
                     continue
                 self.load_module_chain(name)
                 for alias in node.names:

@@ -274,11 +274,14 @@ class FStringAccountingTests(unittest.TestCase):
             checkpoints = []
             text = "x" * size
             vm = engine.create_root(
-                "value = make_value()\n"
-                "checkpoint()\n"
-                'result = f"pre{value}post"\n'
-                "checkpoint()",
-                functions={
+                (
+                    "from __addon__ import make_value, checkpoint\n"
+                    + "value = make_value()\n"
+                    "checkpoint()\n"
+                    'result = f"pre{value}post"\n'
+                    "checkpoint()"
+                ),
+                addons={
                     "make_value": lambda text=text: text,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
@@ -315,11 +318,14 @@ class FStringAccountingTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         vm = engine.create_root(
-            "value = make_value()\n"
-            "checkpoint()\n"
-            'result = f"pre{value!a}post"\n'
-            "checkpoint()",
-            functions={
+            (
+                "from __addon__ import make_value, checkpoint\n"
+                + "value = make_value()\n"
+                "checkpoint()\n"
+                'result = f"pre{value!a}post"\n'
+                "checkpoint()"
+            ),
+            addons={
                 "make_value": lambda: "é",
                 "checkpoint": lambda: checkpoints.append(
                     (
@@ -385,11 +391,14 @@ class FStringAccountingTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             vm = engine.create_root(
-                "value = make_value()\n"
-                "checkpoint()\n"
-                f'result = f"{{value:{width}d}}"\n'
-                "checkpoint()",
-                functions={
+                (
+                    "from __addon__ import make_value, checkpoint\n"
+                    + "value = make_value()\n"
+                    "checkpoint()\n"
+                    f'result = f"{{value:{width}d}}"\n'
+                    "checkpoint()"
+                ),
+                addons={
                     "make_value": lambda: 255,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(
@@ -416,12 +425,15 @@ class FStringAccountingTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             vm = engine.create_root(
-                "value = make_value()\n"
-                "width = make_width()\n"
-                "checkpoint()\n"
-                'result = f"{value:{width}d}"\n'
-                "checkpoint()",
-                functions={
+                (
+                    "from __addon__ import make_value, make_width, checkpoint\n"
+                    + "value = make_value()\n"
+                    "width = make_width()\n"
+                    "checkpoint()\n"
+                    'result = f"{value:{width}d}"\n'
+                    "checkpoint()"
+                ),
+                addons={
                     "make_value": lambda: 255,
                     "make_width": lambda width=width: width,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (

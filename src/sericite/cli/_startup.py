@@ -37,39 +37,39 @@ def _load_source(
     return _CombinedSource(parts)
 
 
-def _load_capabilities(path: str) -> dict:
+def _load_addons(path: str) -> dict:
     try:
         namespace = runpy.run_path(path)
     except Exception as exc:
         raise _CliError(
-            f"unable to load capabilities '{path}': {type(exc).__name__}: {exc}"
+            f"unable to load addons '{path}': {type(exc).__name__}: {exc}"
         ) from exc
     configure = namespace.get("configure")
     if not callable(configure):
-        raise _CliError(f"capabilities '{path}' must define configure()")
+        raise _CliError(f"addons '{path}' must define configure()")
     try:
         config = configure()
     except Exception as exc:
         raise _CliError(
-            f"capabilities configure() failed: {type(exc).__name__}: {exc}"
+            f"addons configure() failed: {type(exc).__name__}: {exc}"
         ) from exc
     if not isinstance(config, dict):
-        raise _CliError("capabilities configure() must return a dict")
-    unknown = set(config) - {"functions", "limits", "files"}
+        raise _CliError("addons configure() must return a dict")
+    unknown = set(config) - {"addons", "limits", "files"}
     if unknown:
-        raise _CliError(f"unknown capabilities key(s): {sorted(map(repr, unknown))!r}")
-    functions = config.get("functions")
-    if functions is not None and (
-        not isinstance(functions, dict)
+        raise _CliError(f"unknown addons key(s): {sorted(map(repr, unknown))!r}")
+    addons = config.get("addons")
+    if addons is not None and (
+        not isinstance(addons, dict)
         or not all(
             isinstance(name, str) and callable(callback)
-            for name, callback in functions.items()
+            for name, callback in addons.items()
         )
     ):
-        raise _CliError("capabilities functions must be a dict of callables")
+        raise _CliError("addons must be a dict of callables")
     limits = config.get("limits")
     if limits is not None and not isinstance(limits, SericiteLimits):
-        raise _CliError("capabilities limits must be a SericiteLimits")
+        raise _CliError("addons limits must be a SericiteLimits")
     files = config.get("files")
     if files is not None and (
         not isinstance(files, dict)
@@ -78,5 +78,5 @@ def _load_capabilities(path: str) -> dict:
             for vfs_path, text in files.items()
         )
     ):
-        raise _CliError("capabilities files must be a dict of string paths and text")
+        raise _CliError("addons files must be a dict of string paths and text")
     return config

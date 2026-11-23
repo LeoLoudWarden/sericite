@@ -5,9 +5,11 @@ from sericite import SericiteEngine, SericiteLimits
 from sericite.errors import SericiteError
 
 
-def run(source, *, limits=None, functions=None):
+def run(source, *, limits=None, addons=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    return engine.create_root(source, functions=functions).run()
+    return engine.create_root(source, addons=addons).run()
 
 
 def run_error(source, *, limits=None):
@@ -171,7 +173,7 @@ class CallExpansionTests(unittest.TestCase):
             return [list(args), kwargs]
 
         self.assertEqual(
-            run("print(f(*[1, 2], **{'x': 3}))\n", functions={"f": collect}),
+            run("print(f(*[1, 2], **{'x': 3}))\n", addons={"f": collect}),
             "[[1, 2], {'x': 3}]\n",
         )
 
@@ -179,7 +181,7 @@ class CallExpansionTests(unittest.TestCase):
         source = (
             "def f(a, *args, **kwargs):\n"
             "    return [a, args, kwargs]\n"
-            "sub = VM(\"print(f(*[1, 2], **{'x': 3}))\\n\", functions={'f': f})\n"
+            "sub = VM(\"from __addon__ import f\\nprint(f(*[1, 2], **{'x': 3}))\\n\", addons={'f': f})\n"
             "print(sub.run(), end='')\n"
         )
         self.assertEqual(run(source), "[1, (2,), {'x': 3}]\n")
@@ -287,8 +289,8 @@ class VariadicAccountingTests(unittest.TestCase):
             "checkpoint()\n"
         )
         engine.create_root(
-            source,
-            functions={
+            ("from __addon__ import checkpoint\n" + source),
+            addons={
                 "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                     checkpoints.append(engine._contexts[0].alloc_bytes)
                 )
@@ -319,12 +321,14 @@ class VariadicAccountingTests(unittest.TestCase):
             )
 
         vm = engine.create_root(
-            "def f(**kwargs):\n"
-            "    pass\n"
-            "options = {'x': 1, 'y': 2}\n"
-            "prepare()\n"
-            "f(**options)\n",
-            functions={"prepare": prepare},
+            (
+                "from __addon__ import prepare\n" + "def f(**kwargs):\n"
+                "    pass\n"
+                "options = {'x': 1, 'y': 2}\n"
+                "prepare()\n"
+                "f(**options)\n"
+            ),
+            addons={"prepare": prepare},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -377,8 +381,8 @@ class DynamicKeyDiagnosticTests(unittest.TestCase):
             "checkpoint()\n"
         )
         vm = engine.create_root(
-            source,
-            functions={
+            ("from __addon__ import make_options, checkpoint\n" + source),
+            addons={
                 "make_options": lambda: {"k" * key_size: 1},
                 "checkpoint": lambda: checkpoints.append(
                     (

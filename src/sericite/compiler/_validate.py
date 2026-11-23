@@ -8,7 +8,7 @@ from ..errors import (
     UNCATCHABLE_ERROR_KINDS,
     SericiteError,
 )
-from ._rules import _ALLOWED_NODES, _CONTRACT_ONLY_NAMES, RESERVED_NAMES
+from ._rules import _ALLOWED_NODES, _CONTRACT_ONLY_NAMES, ADDON_MODULE, RESERVED_NAMES
 
 _UNSUPPORTED_MESSAGES = {
     ast.MatMult: "`@` is not supported",
@@ -71,7 +71,12 @@ def _validate(tree: ast.Module, filename: str) -> None:
         module_paths = [alias.name for alias in node.names]
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             module_paths.append(node.module)
-        if any(
+        is_addon_import = (
+            isinstance(node, ast.ImportFrom)
+            and node.level == 0
+            and node.module == ADDON_MODULE
+        )
+        if not is_addon_import and any(
             segment.startswith("__")
             for module_path in module_paths
             for segment in module_path.split(".")

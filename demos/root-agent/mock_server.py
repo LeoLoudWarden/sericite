@@ -42,7 +42,8 @@ print("准备触发失败")
 missing()
 """
 
-CHILD_AGENT_CODE = """prompt_inner = read_file("/prompt_inner.txt")
+CHILD_AGENT_CODE = """from __addon__ import llm_chat
+prompt_inner = read_file("/prompt_inner.txt")
 doc = read_file("/sericite语言特性速览.md")
 
 tools = [

@@ -3,9 +3,11 @@ import unittest
 from sericite import SericiteEngine, SericiteError, SericiteLimits
 
 
-def run(source, inputs=None, limits=None, functions=None):
+def run(source, inputs=None, limits=None, addons=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    vm = engine.create_root(source, functions=functions)
+    vm = engine.create_root(source, addons=addons)
     return vm.run(inputs)
 
 
@@ -117,7 +119,7 @@ class DictTests(unittest.TestCase):
 class HostFunctionTests(unittest.TestCase):
     def test_basic_roundtrip(self):
         self.assertEqual(
-            run("print(add(2, 3))\n", functions={"add": lambda a, b: a + b}),
+            run("print(add(2, 3))\n", addons={"add": lambda a, b: a + b}),
             "5\n",
         )
 
@@ -129,7 +131,7 @@ class HostFunctionTests(unittest.TestCase):
             'r = http_get("example.com")\nprint(r["status"], r["body"], r["tags"][1])\n'
         )
         self.assertEqual(
-            run(source, functions={"http_get": http_get}),
+            run(source, addons={"http_get": http_get}),
             "200 hello example.com y\n",
         )
 
@@ -140,7 +142,7 @@ class HostFunctionTests(unittest.TestCase):
             return shared
 
         source = 'a = give()\na["items"][0] = 99\nb = give()\nprint(b["items"][0])\n'
-        self.assertEqual(run(source, functions={"give": give}), "1\n")
+        self.assertEqual(run(source, addons={"give": give}), "1\n")
         self.assertEqual(shared, {"items": [1, 2]})
 
     def test_argument_is_deep_copied(self):
@@ -151,7 +153,7 @@ class HostFunctionTests(unittest.TestCase):
             value[0] = -1
 
         source = "a = [1, 2]\ntake(a)\nprint(a[0])\n"
-        self.assertEqual(run(source, functions={"take": take}), "1\n")
+        self.assertEqual(run(source, addons={"take": take}), "1\n")
         self.assertEqual(seen, [[1, 2]])
 
     def test_handle_cannot_cross_boundary(self):
@@ -159,16 +161,14 @@ class HostFunctionTests(unittest.TestCase):
             'sub = VM("")\n'
             "try:\n"
             "    probe(sub)\n"
-            "except ffi_error:\n"
+            "except addon_error:\n"
             '    print("blocked")\n'
         )
-        self.assertEqual(
-            run(source, functions={"probe": lambda value: None}), "blocked\n"
-        )
+        self.assertEqual(run(source, addons={"probe": lambda value: None}), "blocked\n")
 
     def test_alien_result_rejected(self):
-        source = 'try:\n    bad()\nexcept ffi_error as e:\n    print("rejected")\n'
-        self.assertEqual(run(source, functions={"bad": lambda: object()}), "rejected\n")
+        source = 'try:\n    bad()\nexcept addon_error as e:\n    print("rejected")\n'
+        self.assertEqual(run(source, addons={"bad": lambda: object()}), "rejected\n")
 
     def test_uncontracted_host_exception_kills_vm_with_host_error(self):
         def boom():
@@ -178,7 +178,8 @@ class HostFunctionTests(unittest.TestCase):
         # sanitized message (type name only) reaches the host
         engine = SericiteEngine()
         vm = engine.create_root(
-            "try:\n    boom()\nexcept:\n    pass\n", functions={"boom": boom}
+            "from __addon__ import boom\ntry:\n    boom()\nexcept:\n    pass\n",
+            addons={"boom": boom},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -194,7 +195,9 @@ class HostFunctionTests(unittest.TestCase):
             raise SystemExit(42)
 
         engine = SericiteEngine()
-        vm = engine.create_root("exits()\n", functions={"exits": exits})
+        vm = engine.create_root(
+            "from __addon__ import exits\nexits()\n", addons={"exits": exits}
+        )
         with self.assertRaises(SystemExit):
             vm.run()
 
@@ -203,7 +206,10 @@ class HostFunctionTests(unittest.TestCase):
             raise KeyboardInterrupt
 
         engine = SericiteEngine()
-        vm = engine.create_root("interrupts()\n", functions={"interrupts": interrupts})
+        vm = engine.create_root(
+            "from __addon__ import interrupts\ninterrupts()\n",
+            addons={"interrupts": interrupts},
+        )
         with self.assertRaises(KeyboardInterrupt):
             vm.run()
 
@@ -214,32 +220,38 @@ class HostFunctionTests(unittest.TestCase):
         source = (
             'try:\n    picky(1)\nexcept file_not_found:\n    print("precise kind")\n'
         )
-        self.assertEqual(run(source, functions={"picky": picky}), "precise kind\n")
+        self.assertEqual(run(source, addons={"picky": picky}), "precise kind\n")
 
-    def test_grant_name_conflicts_with_builtin(self):
+    def test_addon_name_matching_builtin_requires_import_alias(self):
         engine = SericiteEngine()
+        vm = engine.create_root(
+            "from __addon__ import len as host_len\nprint(host_len([1, 2]))\n",
+            addons={"len": len},
+        )
+        self.assertEqual(vm.run(), "2\n")
         with self.assertRaises(SericiteError) as ctx:
-            engine.create_root("print(1)\n", functions={"len": lambda x: 0})
-        self.assertEqual(ctx.exception.kind, "type_error")
+            engine.create_root("from __addon__ import len\n", addons={"len": len})
+        self.assertEqual(ctx.exception.kind, "syntax_error")
 
-    def test_grant_name_must_be_identifier(self):
+    def test_addon_name_must_be_identifier(self):
         engine = SericiteEngine()
-        with self.assertRaises(SericiteError) as ctx:
-            engine.create_root("print(1)\n", functions={"not a name": lambda: 0})
-        self.assertEqual(ctx.exception.kind, "type_error")
+        for name in ("not a name", "__hidden"):
+            with self.subTest(name=name), self.assertRaises(SericiteError) as ctx:
+                engine.create_root("print(1)\n", addons={name: lambda: 0})
+            self.assertEqual(ctx.exception.kind, "type_error")
 
     def test_grant_must_be_callable(self):
         engine = SericiteEngine()
         with self.assertRaises(SericiteError) as ctx:
-            engine.create_root("print(1)\n", functions={"f": 42})
+            engine.create_root("print(1)\n", addons={"f": 42})
         self.assertEqual(ctx.exception.kind, "type_error")
 
     def test_granted_function_respects_output_quota(self):
         limits = SericiteLimits(max_output_bytes=4)
         engine = SericiteEngine(limits=limits)
         vm = engine.create_root(
-            'print(shout("hello world"))\n',
-            functions={"shout": lambda text: text.upper()},
+            'from __addon__ import shout\nprint(shout("hello world"))\n',
+            addons={"shout": lambda text: text.upper()},
         )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
@@ -251,17 +263,29 @@ class ChildGrantTests(unittest.TestCase):
         source = (
             "def double(x):\n"
             "    return x * 2\n"
-            'sub = VM("print(double(21))\\n", functions={"double": double})\n'
+            'sub = VM("from __addon__ import double\\nprint(double(21))\\n", addons={"double": double})\n'
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "42\n\n")
+
+    def test_addon_does_not_enter_global_namespace(self):
+        source = (
+            "def double(x):\n"
+            "    return x * 2\n"
+            'sub = VM("try:\\n'
+            "    print(double(21))\\n"
+            "except name_error:\\n"
+            "    print('not global')\", addons={'double': double})\n"
+            "print(sub.run(), end='')\n"
+        )
+        self.assertEqual(run(source), "not global\n")
 
     def test_granted_function_sees_parent_globals(self):
         source = (
             "base = 100\n"
             "def add_base(x):\n"
             "    return x + base\n"
-            'sub = VM("print(add_base(1))\\n", functions={"add_base": add_base})\n'
+            'sub = VM("from __addon__ import add_base\\nprint(add_base(1))\\n", addons={"add_base": add_base})\n'
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "101\n\n")
@@ -272,34 +296,36 @@ class ChildGrantTests(unittest.TestCase):
             "    return x + 1\n"
             "def outer(x):\n"
             "    return helper(x) * 10\n"
-            'sub = VM("print(outer(2))\\n", functions={"outer": outer})\n'
+            'sub = VM("from __addon__ import outer\\nprint(outer(2))\\n", addons={"outer": outer})\n'
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "30\n\n")
 
     def test_granted_function_keeps_definition_granted_environment(self):
         child = (
+            "from __addon__ import f\n"
             "def helper():\n"
             "    return 'child'\n"
-            'grandchild = VM("print(f())\\n", '
-            "functions={'f': f, 'helper': helper})\n"
+            'grandchild = VM("from __addon__ import f\\nprint(f())\\n", '
+            "addons={'f': f, 'helper': helper})\n"
             "print(grandchild.run())\n"
         )
         source = (
             "def f():\n"
             "    return helper()\n"
-            "sub = VM(" + repr(child) + ", functions={'f': f})\n"
+            "sub = VM(" + repr(child) + ", addons={'f': f})\n"
             "print(sub.run())\n"
         )
-        output = run(source, functions={"helper": lambda: "parent"})
+        output = run(source, addons={"helper": lambda: "parent"})
         self.assertEqual(output, "parent\n\n\n")
 
     def test_caller_granted_name_cannot_shadow_missing_definition_name(self):
         child = (
+            "from __addon__ import f\n"
             "def helper():\n"
             "    return 'child'\n"
-            'grandchild = VM("print(f())\\n", '
-            "functions={'f': f, 'helper': helper})\n"
+            'grandchild = VM("from __addon__ import f\\nprint(f())\\n", '
+            "addons={'f': f, 'helper': helper})\n"
             "print(grandchild.run())\n"
         )
         source = (
@@ -308,13 +334,14 @@ class ChildGrantTests(unittest.TestCase):
             "        return helper()\n"
             "    except name_error:\n"
             "        return 'safe'\n"
-            "sub = VM(" + repr(child) + ", functions={'f': f})\n"
+            "sub = VM(" + repr(child) + ", addons={'f': f})\n"
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "safe\n\n\n")
 
     def test_child_globals_not_visible_to_granted_function(self):
         child = (
+            "from __addon__ import read_base\n"
             "base = 5\n"
             "try:\n"
             "    print(read_base())\n"
@@ -324,42 +351,51 @@ class ChildGrantTests(unittest.TestCase):
         source = (
             "def read_base():\n"
             "    return base\n"
-            "sub = VM(" + repr(child) + ", functions={'read_base': read_base})\n"
+            "sub = VM(" + repr(child) + ", addons={'read_base': read_base})\n"
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "no base\n\n")
 
     def test_regrant_host_function_to_child(self):
         source = (
-            'sub = VM("print(host_add(3, 4))\\n", '
-            'functions={"host_add": host_add})\n'
+            'sub = VM("from __addon__ import host_add\\nprint(host_add(3, 4))\\n", '
+            'addons={"host_add": host_add})\n'
             "print(sub.run())\n"
         )
-        output = run(source, functions={"host_add": lambda a, b: a + b})
+        output = run(source, addons={"host_add": lambda a, b: a + b})
         self.assertEqual(output, "7\n\n")
 
     def test_regrant_across_two_levels(self):
-        source = (
-            'mid = VM("sub = VM(\\"print(host_add(1, 2))\\\\n\\", '
-            'functions={\\"host_add\\": host_add})\\nprint(sub.run())\\n", '
-            'functions={"host_add": host_add})\n'
-            "print(mid.run())\n"
+        grandchild = "from __addon__ import host_add\nprint(host_add(1, 2))\n"
+        child = (
+            "from __addon__ import host_add\n"
+            f"sub = VM({grandchild!r}, addons={{'host_add': host_add}})\n"
+            "print(sub.run())\n"
         )
-        output = run(source, functions={"host_add": lambda a, b: a + b})
+        source = (
+            f"mid = VM({child!r}, addons={{'host_add': host_add}})\nprint(mid.run())\n"
+        )
+        output = run(source, addons={"host_add": lambda a, b: a + b})
         self.assertEqual(output, "3\n\n\n")
 
-    def test_functions_option_must_be_dict(self):
-        source = 'sub = VM("", functions=[1, 2])\n'
+    def test_addons_option_must_be_dict(self):
+        source = 'sub = VM("", addons=[1, 2])\n'
         engine = SericiteEngine()
         vm = engine.create_root(source)
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
         self.assertEqual(ctx.exception.kind, "type_error")
 
-    def test_functions_option_rejects_non_function(self):
-        source = 'sub = VM("", functions={"f": 42})\n'
+    def test_addons_option_rejects_non_function(self):
+        source = 'sub = VM("", addons={"f": 42})\n'
         engine = SericiteEngine()
         vm = engine.create_root(source)
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_old_functions_option_is_removed(self):
+        vm = SericiteEngine().create_root('sub = VM("", functions={})\n')
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
         self.assertEqual(ctx.exception.kind, "type_error")
@@ -371,8 +407,8 @@ class ChildGrantTests(unittest.TestCase):
             "    while i < n:\n"
             "        i = i + 1\n"
             "    return i\n"
-            'sub = VM("print(spin(100000))\\n", '
-            'functions={"spin": spin}, max_instructions=200)\n'
+            'sub = VM("from __addon__ import spin\\nprint(spin(100000))\\n", '
+            'addons={"spin": spin}, max_instructions=200)\n'
             "sub.run()\n"
         )
         engine = SericiteEngine()
@@ -386,7 +422,7 @@ class ChildGrantTests(unittest.TestCase):
         vm = engine.create_root(
             "def f(x):\n"
             "    return x + 1\n"
-            'sub = VM("y = f(1)\\nprint(y)\\n", functions={"f": f})\n'
+            'sub = VM("from __addon__ import f\\ny = f(1)\\nprint(y)\\n", addons={"f": f})\n'
             "print(sub.run())\n"
         )
         self.assertEqual(vm.run(), "2\n\n")

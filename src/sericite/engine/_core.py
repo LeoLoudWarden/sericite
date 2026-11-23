@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from .. import isa
 from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
-from ..compiler import compile_source
+from ..compiler import ADDON_MODULE, compile_source
 from ..errors import UNCATCHABLE_ERROR_KINDS as _UNCATCHABLE_KINDS
 from ..errors import SericiteError, SericiteFrame
 from ..events import SericiteEvent, SericiteObservation
@@ -22,6 +22,7 @@ from ._model import (
     Frame,
     SericiteFunction,
     SericiteLimits,
+    SericiteModule,
     SericiteRecord,
     SericiteSchema,
     VFSHandle,
@@ -33,7 +34,7 @@ from ._model import (
     _NativeFunction,
 )
 from ._values import (
-    _check_grant_name,
+    _check_addon_name,
     _const_bytes,
     _contract_cost,
     _contract_holds,
@@ -200,7 +201,7 @@ class _EngineCore:
         inputs: Iterable[str] | None = None,
         input_provider: Callable[[], str | None] | None = None,
         limits: SericiteLimits | None = None,
-        functions: dict[str, Callable[..., object]] | None = None,
+        addons: dict[str, Callable[..., object]] | None = None,
         output_writer: Callable[[str], object] | None = None,
         buffer_output: bool = True,
         argv: Iterable[str] | None = None,
@@ -213,10 +214,8 @@ class _EngineCore:
         self._validate_limits(limits)
         if type(buffer_output) is not bool:
             raise SericiteError("buffer_output must be a bool", kind="type_error")
-        if functions is not None and not isinstance(functions, dict):
-            raise SericiteError(
-                "functions must be a dict of callables", kind="type_error"
-            )
+        if addons is not None and not isinstance(addons, dict):
+            raise SericiteError("addons must be a dict of callables", kind="type_error")
         if input_provider is not None and not callable(input_provider):
             raise SericiteError(
                 "input_provider must be callable or None", kind="type_error"
@@ -237,12 +236,7 @@ class _EngineCore:
             else self._copy_string_iterable(inputs, "root inputs")
         )
         effective = self._limits if limits is None else limits
-        if functions is not None and "argv" in functions:
-            raise SericiteError(
-                "granted function name 'argv' conflicts with a root initial value",
-                kind="type_error",
-            )
-        granted = self._validate_host_functions(functions)
+        validated_addons = self._validate_host_addons(addons)
         io = VirtualIO(
             inputs=root_inputs,
             input_provider=input_provider,
@@ -264,7 +258,7 @@ class _EngineCore:
             depth=0,
             io=io,
             limits=effective,
-            granted=granted,
+            addons=validated_addons,
             initial_locals={"argv": root_argv},
             fs=fs,
             module_root=module_root,
@@ -294,21 +288,21 @@ class _EngineCore:
         module_root = filename.rpartition("/")[0] or "/"
         return source, module_root, filename
 
-    def _validate_host_functions(
-        self, functions: dict[str, Callable[..., object]] | None
+    def _validate_host_addons(
+        self, addons: dict[str, Callable[..., object]] | None
     ) -> dict[str, object]:
-        granted: dict[str, object] = {}
-        if not functions:
-            return granted
-        for name, callback in functions.items():
-            _check_grant_name(name)
+        validated: dict[str, object] = {}
+        if not addons:
+            return validated
+        for name, callback in addons.items():
+            _check_addon_name(name)
             if not callable(callback):
                 raise SericiteError(
-                    f"granted function '{name}' is not callable",
+                    f"addon '{name}' is not callable",
                     kind="type_error",
                 )
-            granted[name] = _GrantedHostFunction(name, callback)
-        return granted
+            validated[name] = _GrantedHostFunction(name, callback)
+        return validated
 
     def _create_vm(
         self,
@@ -318,7 +312,7 @@ class _EngineCore:
         depth: int,
         io: VirtualIO,
         limits: SericiteLimits,
-        granted: dict[str, object] | None = None,
+        addons: dict[str, object] | None = None,
         output_writer: object = None,
         initial_locals: dict[str, object] | None = None,
         fs: VFSHandle | None = None,
@@ -365,9 +359,15 @@ class _EngineCore:
             limits=limits,
             module_root=module_root,
             frames=[Frame(code=code, locals=dict(initial_locals or {}))],
-            granted=dict(granted) if granted else {},
+            addons=dict(addons) if addons else {},
             output_writer=output_writer,
             finalizer_state={"state": "ready", "depth": depth},
+        )
+        context.modules[ADDON_MODULE] = SericiteModule(
+            ADDON_MODULE,
+            "<addon>",
+            context.addons,
+            context,
         )
         if not any(instr.stmt_start for instr in code.instrs):
             self._set_state(context, "done", reason="create", emit=False)
@@ -405,7 +405,7 @@ class _EngineCore:
                 "state": context.state,
                 "filename": context.frames[0].code.filename,
                 "limits": context.limits,
-                "functions": tuple(sorted(context.granted)),
+                "addons": tuple(sorted(context.addons)),
             },
         )
         return VMHandle(self, vm_id)
@@ -638,7 +638,7 @@ class _EngineCore:
     def _exec_source(self, handle: VMHandle, source: object) -> str:
         # Deliver new source to an existing VM: the fresh module frame reuses the
         # previous module locals, so module-level names (and the world: VFS, IO,
-        # granted functions, quotas) persist across deliveries. Any pending program
+        # addons, quotas) persist across deliveries. Any pending program
         # and the old debugging frames are discarded; breakpoint locations persist.
         context = self._context(handle)
         if not isinstance(source, str):
@@ -1203,7 +1203,6 @@ class _EngineCore:
                 if frame.module_locals is not None
                 else context.frames[0].locals
             )
-            granted = frame.granted if frame.granted is not None else context.granted
             if closure:
                 self._meter(context).allocate(64 + len(closure) * 8)
             stack.append(
@@ -1212,7 +1211,6 @@ class _EngineCore:
                     defaults,
                     closure,
                     module_locals,
-                    granted,
                     param_contracts,
                     return_contract,
                     frame.home or context,
@@ -1436,7 +1434,6 @@ class _EngineCore:
                     locals_,
                     function.module_locals,
                     function.closure,
-                    function.granted,
                     function.return_contract,
                     code.return_label if visible else None,
                     None if visible else "function",
@@ -1524,7 +1521,7 @@ class _EngineCore:
                 raise
             except Exception as exc:  # noqa: BLE001 — uncontracted host failure kills the VM with uncatchable host_error; BaseExceptions (SystemExit, KeyboardInterrupt) propagate to the host
                 raise SericiteError(
-                    f"host function '{function.name}' failed with {type(exc).__name__}",
+                    f"host addon '{function.name}' failed with {type(exc).__name__}",
                     kind="host_error",
                 ) from None
             result_budget = [
@@ -1566,7 +1563,6 @@ class _EngineCore:
                     locals_,
                     function.module_locals,
                     function.closure,
-                    function.granted,
                     function.return_contract,
                     None,
                     function.name,
@@ -1583,7 +1579,6 @@ class _EngineCore:
         locals_: dict[str, object],
         module_locals: dict[str, object],
         closure: dict[str, _Cell],
-        granted: dict[str, object],
         return_contract: object = None,
         return_label: str | None = None,
         display_name: str | None = None,
@@ -1600,7 +1595,6 @@ class _EngineCore:
             cells=cells,
             closure=closure,
             module_locals=module_locals,
-            granted=granted,
             return_contract=return_contract,
             return_label=return_label,
             display_name=display_name,
@@ -1618,8 +1612,8 @@ class _EngineCore:
             return
         code = function.code
         # Labels and definition-side function names are visible only inside the
-        # code's defining VM; granted functions use the granted name (the name on
-        # the door), foreign nested functions omit the name.
+        # code's defining VM; addons use the granted name (the name on the door),
+        # foreign nested functions omit the name.
         visible = code.origin_vm == context.vm_id
         if isinstance(function, _GrantedSericiteFunction):
             func_name: str | None = function.name
@@ -1879,9 +1873,6 @@ class _EngineCore:
         module_locals = self._module_locals(context, frame)
         if name in module_locals:
             return module_locals[name]
-        granted = frame.granted if frame.granted is not None else context.granted
-        if name in granted:
-            return granted[name]
         # Builtins resolve back to the code's defining VM (home), not the currently executing VM
         builtin = self._builtin(frame.home or context, name, caller=context)
         if builtin is not None:

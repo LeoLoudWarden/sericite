@@ -105,9 +105,9 @@ class VfsTransferTests(unittest.TestCase):
             "    saved.append(fn)\n"
             "fs = VFS()\n"
             "fs.write_file('/secret', 'home')\n"
-            'run = VM("def read_secret():\\n'
+            'run = VM("from __addon__ import capture\\ndef read_secret():\\n'
             "    return read_file('/secret')\\n"
-            "capture(read_secret)\", fs=fs, functions={'capture': capture})\n"
+            "capture(read_secret)\", fs=fs, addons={'capture': capture})\n"
             "run.run()\n"
             "fs = run.take_fs()\n"
             "try:\n"
@@ -139,14 +139,14 @@ class VfsTransferTests(unittest.TestCase):
     def test_vfs_value_is_safe_and_cannot_cross_ffi(self):
         engine = SericiteEngine()
         root = engine.create_root(
-            "fs = VFS()\nprint(fs)\n",
-            functions={"echo": lambda value: value},
+            ("from __addon__ import echo\n" + "fs = VFS()\nprint(fs)\n"),
+            addons={"echo": lambda value: value},
         )
         self.assertEqual(root.run(), "<VFS>\n")
         self.assertEqual(root.snapshot()["locals"]["fs"], "<VFS>")
         with self.assertRaises(SericiteError) as ctx:
             root.exec("echo(fs)")
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_detached_list_dir_enforces_result_list_limit(self):
         engine = SericiteEngine(SericiteLimits(max_list_size=1))
@@ -230,13 +230,16 @@ class VfsTransferTests(unittest.TestCase):
         source = "sub = VM(\"write_file('/x', 'safe')\")\nsub.run()\ncheckpoint()\nfs = sub.take_fs()\n"
         probe = SericiteEngine()
         probe.create_root(
-            source,
-            functions={
+            ("from __addon__ import checkpoint\n" + source),
+            addons={
                 "checkpoint": lambda: checkpoints.append(probe._contexts[0].alloc_bytes)
             },
         ).run()
         engine = SericiteEngine(SericiteLimits(max_total_bytes=checkpoints[0] + 4))
-        root = engine.create_root(source, functions={"checkpoint": lambda: None})
+        root = engine.create_root(
+            ("from __addon__ import checkpoint\n" + source),
+            addons={"checkpoint": lambda: None},
+        )
         with self.assertRaises(SericiteError) as ctx:
             root.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")

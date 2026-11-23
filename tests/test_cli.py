@@ -121,7 +121,8 @@ class CliTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 result = self.run_cli(flag)
                 self.assertEqual(result.returncode, 0)
-                self.assertIn("--capabilities", result.stdout)
+                self.assertIn("--addons", result.stdout)
+                self.assertNotIn("--capabilities", result.stdout)
                 self.assertNotIn("--include", result.stdout)
                 self.assertIn("--command", result.stdout)
         result = self.run_cli("--version")
@@ -312,7 +313,7 @@ class CliTests(unittest.TestCase):
     def test_repl_traceback_maps_imported_function_to_vfs_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "def configure():\n"
@@ -320,7 +321,7 @@ class CliTests(unittest.TestCase):
                 "'def g():\\n    return 1 / 0\\n'}}\n",
             )
             result = self.run_cli(
-                "--capabilities", capabilities, stdin="from bad_rt import g\ng()\n"
+                "--addons", addons, stdin="from bad_rt import g\ng()\n"
             )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
@@ -361,22 +362,26 @@ class CliTests(unittest.TestCase):
         from sericite.cli import _CombinedSource, _format_error
 
         engine = SericiteEngine()
-        root = engine.create_root("public()\n")
-        donor = engine.create_root("def secret():\n    return missing\n")
-        donor.run()
-        engine._contexts[0].granted["public"] = (
-            engine._contexts[1].frames[0].locals["secret"]
+        root = engine.create_root("from __addon__ import public\npublic()\n")
+        donor = engine.create_root(
+            "def secret():\n"
+            "    return missing\n"
+            "sub = VM('', addons={'public': secret})\n"
         )
+        donor.run()
+        engine._contexts[0].addons["public"] = engine._contexts[2].addons["public"]
         with self.assertRaises(SericiteError) as ctx:
             root.run()
         self.assertEqual(ctx.exception._frame_sources, (0, None))
-        source = _CombinedSource([("<stdin>", "public()")])
+        source = _CombinedSource(
+            [("<stdin>", "from __addon__ import public\npublic()")]
+        )
         self.assertEqual(
             _format_error(ctx.exception, source, source_map={0: (source, 0)}),
             "<sericite>: name_error: name is not defined\n"
             "Traceback (most recent call last):\n"
-            '  File "<stdin>", line 1, in <module>\n'
-            '  File "<sericite>", line ?, in function',
+            '  File "<stdin>", line 2, in <module>\n'
+            '  File "<sericite>", line ?, in public',
         )
 
     def test_error_mapping_uses_unknown_location_for_missing_source(self):
@@ -418,23 +423,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(offset, 0)
         self.assertEqual(source.location(2), ("<stdin>", 2))
 
-    def test_repl_uses_import_capabilities_files_and_empty_argv(self):
+    def test_repl_uses_import_addons_files_and_empty_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "def configure():\n"
                 "    return {\n"
-                "        'functions': {'double': lambda x: x * 2},\n"
+                "        'addons': {'double': lambda x: x * 2},\n"
                 "        'files': {'/base.sericite': 'x = 41\\n', "
                 "'/message.txt': 'from vfs'},\n"
                 "    }\n",
             )
             result = self.run_cli(
-                "--capabilities",
-                capabilities,
+                "--addons",
+                addons,
                 stdin=(
+                    "from __addon__ import double\n"
                     "import base\n"
                     "print(double(base.x + 1))\n"
                     'read_file("/message.txt")\nargv\n'
@@ -444,12 +450,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         self.assertEqual(
             result.stdout,
-            ">>> >>> 84\n>>> 'from vfs'\n>>> []\n>>> ",
+            ">>> >>> >>> 84\n>>> 'from vfs'\n>>> []\n>>> ",
         )
 
     def test_repl_import_syntax_failure_is_recoverable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            capabilities = self.write(
+            addons = self.write(
                 Path(tmp),
                 "caps.py",
                 "def configure():\n"
@@ -457,7 +463,7 @@ class CliTests(unittest.TestCase):
                 "'if True print(\"bad\")\\n'}}\n",
             )
             result = self.run_cli(
-                "--capabilities", capabilities, stdin="import invalid\nprint('alive')\n"
+                "--addons", addons, stdin="import invalid\nprint('alive')\n"
             )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, ">>> >>> alive\n>>> ")
@@ -538,6 +544,29 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "True True\nFalse False\n")
 
+    def test_project_does_not_load_addon_module_from_disk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            self.write(directory, "__addon__.sericite", "invalid syntax (\n")
+            self.write(directory, "__addon__/double.sericite", "invalid syntax (\n")
+            main = self.write(
+                directory,
+                "main.sericite",
+                "from __addon__ import double\n"
+                "print(double(21))\n"
+                "print(path_exists('/__addon__.sericite'), "
+                "path_exists('/__addon__/double.sericite'))\n",
+            )
+            addons = self.write(
+                directory,
+                "addons.py",
+                "def configure():\n"
+                "    return {'addons': {'double': lambda x: x * 2}}\n",
+            )
+            result = self.run_cli("--addons", addons, main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "42\nFalse False\n")
+
     def test_command_does_not_implicitly_load_cwd_modules(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
@@ -546,20 +575,20 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("import_error", result.stderr)
 
-    def test_capabilities_files_override_project_modules(self):
+    def test_addons_files_override_project_modules(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             self.write(directory, "util.sericite", "value = 1\n")
             main = self.write(
                 directory, "main.sericite", "import util\nprint(util.value)\n"
             )
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "def configure():\n"
                 "    return {'files': {'/util.sericite': 'value = 2\\n'}}\n",
             )
-            result = self.run_cli("--capabilities", capabilities, main)
+            result = self.run_cli("--addons", addons, main)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "2\n")
 
@@ -608,14 +637,14 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("RecursionError", result.stderr)
         self.assertNotIn("_project.py", result.stderr)
 
-    def test_project_snapshot_precedes_capabilities_configure(self):
+    def test_project_snapshot_precedes_addons_configure(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             self.write(directory, "util.sericite", "value = 1\n")
             main = self.write(
                 directory, "main.sericite", "import util\nprint(util.value)\n"
             )
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "from pathlib import Path\n"
@@ -624,7 +653,7 @@ class CliTests(unittest.TestCase):
                 "'value = 2\\n', encoding='utf-8')\n"
                 "    return {}\n",
             )
-            result = self.run_cli("--capabilities", capabilities, main)
+            result = self.run_cli("--addons", addons, main)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "1\n")
 
@@ -689,25 +718,25 @@ class CliTests(unittest.TestCase):
             '  File "/runtime.sericite", line 2, in inner\n',
         )
 
-    def test_capabilities_functions_limits_and_files(self):
+    def test_addons_limits_and_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "from sericite import SericiteLimits\n"
                 "def configure():\n"
                 "    return {\n"
-                "        'functions': {'double': lambda x: x * 2},\n"
+                "        'addons': {'double': lambda x: x * 2},\n"
                 "        'limits': SericiteLimits(max_instructions=100000),\n"
                 "        'files': {'/message.txt': 'from vfs'},\n"
                 "    }\n",
             )
             result = self.run_cli(
-                "--capabilities",
-                capabilities,
+                "--addons",
+                addons,
                 "-c",
-                'print(double(21))\nprint(read_file("/message.txt"))',
+                'from __addon__ import double\nprint(double(21))\nprint(read_file("/message.txt"))',
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "42\nfrom vfs\n")
@@ -722,16 +751,14 @@ class CliTests(unittest.TestCase):
                 "def configure():\n"
                 "    return {'limits': SericiteLimits(max_instructions=1)}\n",
             )
-            result = self.run_cli(
-                "--capabilities", limited, "-c", "while True:\n    pass"
-            )
+            result = self.run_cli("--addons", limited, "-c", "while True:\n    pass")
             self.assertEqual(result.returncode, 1)
             self.assertIn("resource_exhausted", result.stderr)
 
-    def test_capabilities_support_long_running_root_limits(self):
+    def test_addons_support_long_running_root_limits(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "unlimited.py",
                 "from sericite import SericiteLimits\n"
@@ -743,8 +770,8 @@ class CliTests(unittest.TestCase):
                 "    )}\n",
             )
             result = self.run_cli(
-                "--capabilities",
-                capabilities,
+                "--addons",
+                addons,
                 "-c",
                 "i = 0\n"
                 "while i < 20:\n"
@@ -760,46 +787,44 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "20\n42\ndone\n")
 
-    def test_invalid_capabilities(self):
+    def test_invalid_addons(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             cases = {
                 "missing.py": "value = 1\n",
                 "return.py": "def configure():\n    return []\n",
-                "unknown.py": "def configure():\n    return {'function': {}}\n",
+                "unknown.py": "def configure():\n    return {'functions': {}}\n",
                 "limits.py": "def configure():\n    return {'limits': {}}\n",
-                "functions.py": "def configure():\n    return {'functions': {'f': 1}}\n",
+                "functions.py": "def configure():\n    return {'addons': {'f': 1}}\n",
                 "files.py": "def configure():\n    return {'files': {'/x': 1}}\n",
                 "raises.py": "def configure():\n    raise ValueError('bad config')\n",
             }
             for name, text in cases.items():
                 with self.subTest(name=name):
                     path = self.write(directory, name, text)
-                    result = self.run_cli("--capabilities", path, "-c", "pass")
+                    result = self.run_cli("--addons", path, "-c", "pass")
                     self.assertEqual(result.returncode, 1)
-                    self.assertIn("capabilities", result.stderr)
+                    self.assertIn("addons", result.stderr)
                     self.assertEqual(result.stdout, "")
-            result = self.run_cli(
-                "--capabilities", directory / "absent.py", "-c", "pass"
-            )
+            result = self.run_cli("--addons", directory / "absent.py", "-c", "pass")
             self.assertEqual(result.returncode, 1)
-            self.assertIn("capabilities", result.stderr)
+            self.assertIn("addons", result.stderr)
 
     def test_host_exception_contract_is_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            capabilities = self.write(
+            addons = self.write(
                 directory,
                 "caps.py",
                 "def fail():\n    raise ValueError('host secret')\n"
                 "def configure():\n"
-                "    return {'functions': {'fail': fail}}\n",
+                "    return {'addons': {'fail': fail}}\n",
             )
             result = self.run_cli(
-                "--capabilities",
-                capabilities,
+                "--addons",
+                addons,
                 "-c",
-                "try:\n    fail()\nexcept:\n    print('caught')",
+                "from __addon__ import fail\ntry:\n    fail()\nexcept:\n    print('caught')",
             )
         self.assertEqual(result.returncode, 1)
         self.assertNotIn("caught", result.stdout)
@@ -904,8 +929,8 @@ class CliStreamingTests(unittest.TestCase):
         self.assertEqual(errors, "")
 
         with tempfile.TemporaryDirectory() as tmp:
-            capabilities = Path(tmp) / "unlimited.py"
-            capabilities.write_text(
+            addons = Path(tmp) / "unlimited.py"
+            addons.write_text(
                 "from sericite import SericiteLimits\n"
                 "def configure():\n"
                 "    return {'limits': SericiteLimits("
@@ -913,7 +938,7 @@ class CliStreamingTests(unittest.TestCase):
                 encoding="utf-8",
             )
             returncode, errors = self.close_stdout_after_output(
-                ["--capabilities", str(capabilities), "-c", source], timeout=2
+                ["--addons", str(addons), "-c", source], timeout=2
             )
         self.assertEqual(returncode, 0, errors)
         self.assertEqual(errors, "")
@@ -934,13 +959,13 @@ class CliStreamingTests(unittest.TestCase):
 
     def test_pipe_closure_skips_remaining_script_and_finally(self):
         with tempfile.TemporaryDirectory() as tmp:
-            capabilities = Path(tmp) / "mark.py"
-            capabilities.write_text(
+            addons = Path(tmp) / "mark.py"
+            addons.write_text(
                 "import sys\n"
                 "def mark(message):\n"
                 "    print(message, file=sys.stderr, flush=True)\n"
                 "def configure():\n"
-                "    return {'functions': {'mark': mark}}\n",
+                "    return {'addons': {'mark': mark}}\n",
                 encoding="utf-8",
             )
             source = (
@@ -954,7 +979,7 @@ class CliStreamingTests(unittest.TestCase):
                 'mark("finished")'
             )
             returncode, errors = self.close_stdout_after_output(
-                ["--capabilities", str(capabilities), "-c", source]
+                ["--addons", str(addons), "-c", source]
             )
         self.assertEqual(returncode, 0, errors)
         self.assertEqual(errors, "")

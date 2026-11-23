@@ -166,8 +166,11 @@ class ScriptOutputWriterTests(unittest.TestCase):
         self.assertEqual(root.run(), "[live] child\n")
 
         root = SericiteEngine().create_root(
-            "sub = VM('print(\"host\")', output_writer=forward)\nsub.run()",
-            functions={"forward": chunks.append},
+            (
+                "from __addon__ import forward\n"
+                + "sub = VM('print(\"host\")', output_writer=forward)\nsub.run()"
+            ),
+            addons={"forward": chunks.append},
         )
         root.run()
         self.assertEqual(chunks, ["host\n"])
