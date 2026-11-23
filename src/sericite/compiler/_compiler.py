@@ -327,15 +327,22 @@ class _Compiler:
             return
         if isinstance(node, ast.FunctionDef):
             analyzed = self._scopes[id(node)].code
+            arguments = [*node.args.args]
+            if node.args.vararg is not None:
+                arguments.append(node.args.vararg)
+            if node.args.kwarg is not None:
+                arguments.append(node.args.kwarg)
             param_labels = tuple(
                 ast.unparse(argument.annotation)
                 if argument.annotation is not None
                 else None
-                for argument in node.args.args
+                for argument in arguments
             )
             child = isa.CodeUnit(
                 name=analyzed.name,
                 params=analyzed.params,
+                vararg=analyzed.vararg,
+                kwarg=analyzed.kwarg,
                 local_names=analyzed.local_names,
                 cell_names=analyzed.cell_names,
                 free_names=analyzed.free_names,
@@ -350,7 +357,7 @@ class _Compiler:
             self._label_stack.append(
                 {
                     argument.arg: self._annotation_label(argument.annotation)
-                    for argument in node.args.args
+                    for argument in arguments
                     if argument.annotation is not None
                 }
             )
@@ -374,7 +381,7 @@ class _Compiler:
                 decorators.append((decorator_name, decorator_line))
             for default in node.args.defaults:
                 self.compile_expression(default, code)
-            for argument in node.args.args:
+            for argument in arguments:
                 if argument.annotation is not None:
                     self.compile_expression(argument.annotation, code)
                 else:
@@ -386,7 +393,7 @@ class _Compiler:
             self.emit(
                 code,
                 isa.MAKE_FUNCTION,
-                (child, len(node.args.defaults), len(node.args.args) + 1),
+                (child, len(node.args.defaults), len(arguments) + 1),
                 line,
             )
             if decorators:
@@ -803,11 +810,29 @@ class _Compiler:
                 else None
             )
             self.compile_expression(node.func, code)
+            expanded = any(isinstance(argument, ast.Starred) for argument in node.args)
+            expanded = expanded or any(keyword.arg is None for keyword in node.keywords)
             for argument in node.args:
-                self.compile_expression(argument, code)
-            if node.keywords:
-                for keyword in node.keywords:
-                    self.compile_expression(keyword.value, code)
+                self.compile_expression(
+                    argument.value if isinstance(argument, ast.Starred) else argument,
+                    code,
+                )
+            for keyword in node.keywords:
+                self.compile_expression(keyword.value, code)
+            if expanded:
+                self.emit(
+                    code,
+                    isa.CALL_EX,
+                    (
+                        tuple(
+                            isinstance(argument, ast.Starred) for argument in node.args
+                        ),
+                        tuple(keyword.arg for keyword in node.keywords),
+                    ),
+                    line,
+                    label=label,
+                )
+            elif node.keywords:
                 self.emit(
                     code,
                     isa.CALL_KW,

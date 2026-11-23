@@ -35,6 +35,7 @@ FOR_ITER = "FOR_ITER"
 RAISE = "RAISE"
 CALL = "CALL"
 CALL_KW = "CALL_KW"
+CALL_EX = "CALL_EX"
 IMPORT = "IMPORT"
 IMPORT_FROM = "IMPORT_FROM"
 IMPORT_ROOT = "IMPORT_ROOT"
@@ -75,6 +76,8 @@ class Handler:
 class CodeUnit:
     name: str
     params: list[str]
+    vararg: str | None = None
+    kwarg: str | None = None
     filename: str = "<sericite>"
     package: str = ""
     local_names: tuple[str, ...] = ()

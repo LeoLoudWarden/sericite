@@ -149,6 +149,10 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         filename,
                         f"builtin '{node.id}' can only be called directly",
                     )
+        if isinstance(node, ast.Starred) and not isinstance(
+            parents.get(node), ast.Call
+        ):
+            _reject(node, filename, "starred arguments are only supported in calls")
         if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
             _reject(node, filename, "dunder attributes are not available")
         if (
@@ -235,8 +239,6 @@ def _validate(tree: ast.Module, filename: str) -> None:
                         f"duplicate keyword argument '{keyword.arg}'",
                     )
                 seen_keywords.add(keyword.arg)
-        if isinstance(node, ast.keyword) and node.arg is None:
-            _reject(node, filename, "** arguments are not supported")
         if isinstance(node, ast.Dict) and any(key is None for key in node.keys):
             _reject(node, filename, "** unpacking is not supported")
         if isinstance(node, ast.ExceptHandler) and node.type is not None:
@@ -293,20 +295,16 @@ def _validate(tree: ast.Module, filename: str) -> None:
                 )
             _reject_none_annotation(node.returns, filename)
             args = node.args
-            if (
-                args.kw_defaults
-                or args.vararg
-                or args.kwarg
-                or args.kwonlyargs
-                or getattr(args, "posonlyargs", [])
-            ):
+            if args.kw_defaults or args.kwonlyargs or getattr(args, "posonlyargs", []):
                 _reject(
                     node,
                     filename,
-                    "only positional parameters with optional defaults are supported",
+                    "keyword-only and positional-only parameters are not supported",
                 )
             seen_params: set[str] = set()
-            for argument in args.args:
+            for argument in (*args.args, args.vararg, args.kwarg):
+                if argument is None:
+                    continue
                 _reject_none_annotation(argument.annotation, filename)
                 if argument.arg in seen_params:
                     _reject(

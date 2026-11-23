@@ -38,6 +38,7 @@ from ._values import (
     _contract_cost,
     _contract_holds,
     _contract_violation,
+    _dynamic_name_error,
     _from_host,
     _make_iterator,
     _min_limits,
@@ -1246,6 +1247,10 @@ class _EngineCore:
             argc, kw_names = arg
             self._call(context, frame, argc, kw_names)
             advance = False
+        elif op == isa.CALL_EX:
+            positional, kw_names = arg
+            self._call(context, frame, positional, kw_names)
+            advance = False
         elif op == isa.IMPORT:
             module = self._import_module(context, frame, arg)
             if module is None:
@@ -1289,19 +1294,108 @@ class _EngineCore:
         if advance and context.state == "ready":
             frame.pc += 1
 
+    def _expand_call_arguments(
+        self,
+        context: VMContext,
+        stack: list[object],
+        base: int,
+        positional: tuple[bool, ...],
+        kw_names: tuple[str | None, ...],
+    ) -> tuple[tuple[object, ...], dict[str, object]]:
+        meter = self._meter(context)
+        args: list[object] = []
+        for index, expanded in enumerate(positional):
+            value = stack[base + index]
+            if not expanded:
+                if len(args) + 1 > context.limits.max_list_size:
+                    raise SericiteError(
+                        "argument list size limit exceeded", kind="resource_exhausted"
+                    )
+                meter.allocate(8)
+                args.append(value)
+                continue
+            if type(value) not in (list, tuple, str, dict):
+                raise SericiteError(
+                    f"'{_type_name(value)}' is not iterable", kind="type_error"
+                )
+            meter.work(len(value))
+            if len(args) + len(value) > context.limits.max_list_size:
+                raise SericiteError(
+                    "argument list size limit exceeded", kind="resource_exhausted"
+                )
+            meter.allocate(len(value) * 8)
+            args.extend(value)
+        kwargs: dict[str, object] = {}
+        for index, name in enumerate(kw_names):
+            value = stack[base + len(positional) + index]
+            if name is not None:
+                if name in kwargs:
+                    raise SericiteError(
+                        f"got multiple values for argument '{name}'",
+                        kind="arity_error",
+                    )
+                if len(kwargs) + 1 > context.limits.max_dict_size:
+                    raise SericiteError(
+                        "argument dict size limit exceeded", kind="resource_exhausted"
+                    )
+                meter.allocate(16)
+                kwargs[name] = value
+                continue
+            if type(value) is not dict:
+                raise SericiteError("** arguments must be a dict", kind="type_error")
+            meter.work(len(value))
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise SericiteError(
+                        "** argument keys must be strings", kind="type_error"
+                    )
+                if key in kwargs:
+                    raise _dynamic_name_error(
+                        "got multiple values for argument '",
+                        key,
+                        "'",
+                        kind="arity_error",
+                        meter=meter,
+                    )
+                if len(kwargs) + 1 > context.limits.max_dict_size:
+                    raise SericiteError(
+                        "argument dict size limit exceeded", kind="resource_exhausted"
+                    )
+                meter.allocate(16)
+                kwargs[key] = item
+        if (
+            len(args) > context.limits.max_list_size
+            or len(kwargs) > context.limits.max_dict_size
+        ):
+            raise SericiteError(
+                "expanded argument size limit exceeded", kind="resource_exhausted"
+            )
+        meter.allocate(len(args) * 8)
+        return tuple(args), kwargs
+
     def _call(
         self,
         context: VMContext,
         frame: Frame,
-        argc: int,
-        kw_names: tuple[str, ...],
+        argc: int | tuple[bool, ...],
+        kw_names: tuple[str | None, ...],
     ) -> None:
         stack = frame.stack
         frame.call_line = frame.code.instrs[frame.pc].line
-        base = len(stack) - argc - len(kw_names)
+        positional_count = len(argc) if isinstance(argc, tuple) else argc
+        base = len(stack) - positional_count - len(kw_names)
         function = stack[base - 1]
-        args = tuple(stack[base : base + argc])
-        kwargs = dict(zip(kw_names, stack[base + argc :]))
+        if isinstance(argc, tuple):
+            args, kwargs = self._expand_call_arguments(
+                context,
+                stack,
+                base,
+                argc,
+                kw_names,
+            )
+        else:
+            args = tuple(stack[base : base + argc])
+            kwargs = dict(zip(kw_names, stack[base + argc :]))
         if isinstance(
             function,
             (SericiteFunction, _GrantedSericiteFunction, _NativeFunction),
@@ -1318,6 +1412,7 @@ class _EngineCore:
                 display_name=None if visible else "function",
                 hide_params=not visible,
                 meter=self._meter(context),
+                limits=context.limits,
             )
             self._check_param_contracts(context, function, locals_)
             if len(context.frames) + 1 > context.limits.max_frames:
@@ -1447,6 +1542,7 @@ class _EngineCore:
                 display_name=function.name,
                 hide_params=True,
                 meter=self._meter(context),
+                limits=context.limits,
             )
             self._check_param_contracts(context, function, locals_)
             if len(context.frames) + 1 > context.limits.max_frames:
@@ -1523,12 +1619,15 @@ class _EngineCore:
             func_name = code.name
         else:
             func_name = None
+        names = [*code.params]
+        if code.vararg is not None:
+            names.append(code.vararg)
+        if code.kwarg is not None:
+            names.append(code.kwarg)
         labels: tuple = code.param_labels
-        if not visible or len(labels) != len(code.params):
-            labels = (None,) * len(code.params)
-        for index, (name, contract, label) in enumerate(
-            zip(code.params, contracts, labels)
-        ):
+        if not visible or len(labels) != len(names):
+            labels = (None,) * len(names)
+        for index, (name, contract, label) in enumerate(zip(names, contracts, labels)):
             if contract is None:
                 continue
             self._meter(context).work(_contract_cost(contract))
@@ -1563,14 +1662,20 @@ class _EngineCore:
             values[name] = value
         for key, value in kwargs.items():
             if key in values:
-                raise SericiteError(
-                    f"{constructor} got multiple values for field '{key}'",
+                raise _dynamic_name_error(
+                    f"{constructor} got multiple values for field '",
+                    key,
+                    "'",
                     kind="contract_error",
+                    meter=self._meter(context),
                 )
             if key not in schema.field_map:
-                raise SericiteError(
-                    f"{constructor} got unexpected field '{key}'",
+                raise _dynamic_name_error(
+                    f"{constructor} got unexpected field '",
+                    key,
+                    "'",
                     kind="contract_error",
+                    meter=self._meter(context),
                 )
             values[key] = value
         missing = [name for name, _ in fields if name not in values]
@@ -1636,6 +1741,7 @@ class _EngineCore:
         display_name: str | None = None,
         hide_params: bool = False,
         meter: Meter | None = None,
+        limits: SericiteLimits | None = None,
     ) -> dict[str, object]:
         # hide_params: when the code does not belong to the current VM, parameter
         # names are definition-side internals — errors use positional indices instead (invariant 16).
@@ -1647,37 +1753,65 @@ class _EngineCore:
                 return name
             return str(params.index(name) + 1)
 
-        if len(args) > len(params):
+        if len(args) > len(params) and code.vararg is None:
             raise SericiteError(
                 f"{fname}() expects {len(params)} argument(s), got {len(args)}",
                 kind="arity_error",
             )
         locals_ = dict(zip(params, args))
+        extra_kw_count = 0
         for key, value in kwargs.items():
             if key in locals_:
                 raise SericiteError(
                     f"{fname}() got multiple values for '{shown(key)}'",
                     kind="arity_error",
                 )
-            if key not in params:
-                raise SericiteError(
-                    f"{fname}() got unexpected argument '{key}'",
+            if key in params:
+                locals_[key] = value
+            elif code.kwarg is not None:
+                extra_kw_count += 1
+            else:
+                raise _dynamic_name_error(
+                    f"{fname}() got unexpected argument '",
+                    key,
+                    "'",
                     kind="arity_error",
+                    meter=meter,
                 )
-            locals_[key] = value
         if defaults:
             default_start = len(params) - len(defaults)
             for offset, name in enumerate(params[default_start:]):
                 if name not in locals_:
                     locals_[name] = defaults[offset]
-        if len(locals_) != len(params):
-            missing = [shown(name) for name in params if name not in locals_]
+        missing = [shown(name) for name in params if name not in locals_]
+        if missing:
             if meter is not None:
                 meter.work(sum(len(name) for name in missing))
             raise SericiteError(
                 f"{fname}() missing argument(s): {', '.join(missing)}",
                 kind="arity_error",
             )
+        if code.vararg is not None:
+            extra_count = max(0, len(args) - len(params))
+            if limits is not None and extra_count > limits.max_list_size:
+                raise SericiteError(
+                    "argument tuple size limit exceeded", kind="resource_exhausted"
+                )
+            if meter is not None:
+                meter.work(extra_count)
+                meter.allocate(extra_count * 8)
+            locals_[code.vararg] = tuple(args[len(params) :])
+        if code.kwarg is not None:
+            if limits is not None and extra_kw_count > limits.max_dict_size:
+                raise SericiteError(
+                    "argument dict size limit exceeded", kind="resource_exhausted"
+                )
+            if meter is not None:
+                meter.work(len(kwargs) + extra_kw_count)
+                meter.allocate(extra_kw_count * 16)
+            locals_[code.kwarg] = {
+                key: value for key, value in kwargs.items() if key not in params
+            }
         return locals_
 
     def _store_local(self, frame: Frame, name: str, value: object) -> None:

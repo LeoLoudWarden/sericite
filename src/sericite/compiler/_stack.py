@@ -70,6 +70,8 @@ def _analyze_stack(code: isa.CodeUnit, filename: str) -> None:
                 delta = -instr.arg
             elif instr.op == isa.CALL_KW:
                 delta = -(instr.arg[0] + len(instr.arg[1]))
+            elif instr.op == isa.CALL_EX:
+                delta = -(len(instr.arg[0]) + len(instr.arg[1]))
             else:
                 delta = _STACK_DELTAS[instr.op]
             successors.append((i + 1, depth + delta))

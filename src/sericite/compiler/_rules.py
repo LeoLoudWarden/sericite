@@ -77,6 +77,7 @@ _ALLOWED_NODES = {
     ast.BoolOp,
     ast.Compare,
     ast.Call,
+    ast.Starred,
     ast.Attribute,
     ast.arguments,
     ast.arg,

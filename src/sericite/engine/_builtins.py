@@ -22,6 +22,7 @@ from ._model import (
 from ._values import (
     _MAX_RENDER_CHARS,
     _check_grant_name,
+    _dynamic_name_error,
     _min_limits,
     _StringRenderer,
     _tighten_limit,
@@ -330,7 +331,13 @@ class _EngineBuiltins:
             overrides: dict[str, int] = {}
             for key, value in config.items():
                 if key not in _VM_OPTIONS:
-                    raise SericiteError(f"unknown VM option: {key}", kind="type_error")
+                    raise _dynamic_name_error(
+                        "unknown VM option: ",
+                        key,
+                        "",
+                        kind="type_error",
+                        meter=self._meter(causal),
+                    )
                 unlimited = key in _CUMULATIVE_VM_OPTIONS and value == UNLIMITED
                 if type(value) is not int or (value < 0 and not unlimited):
                     requirement = (

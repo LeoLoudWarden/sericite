@@ -114,6 +114,20 @@ def _schema_fit(
     return (not missing and not mismatched, missing, mismatched)
 
 
+def _dynamic_name_error(
+    prefix: str,
+    name: str,
+    suffix: str,
+    *,
+    kind: str,
+    meter: Meter | None,
+) -> SericiteError:
+    if meter is not None:
+        meter.work(len(name))
+        meter.allocate((len(prefix) + len(name) + len(suffix)) * 4)
+    return SericiteError(f"{prefix}{name}{suffix}", kind=kind)
+
+
 def _actual_text(value: object, *, meter: Meter | None = None) -> str:
     if isinstance(value, SericiteRecord):
         return _contract_text(value.schema, meter=meter)

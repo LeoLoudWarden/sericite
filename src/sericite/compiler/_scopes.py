@@ -46,21 +46,33 @@ class _ScopeCollector(ast.NodeVisitor):
             self.visit(decorator)
         for default in node.args.defaults:
             self.visit(default)
-        for argument in node.args.args:
-            if argument.annotation is not None:
+        for argument in (
+            *node.args.args,
+            node.args.vararg,
+            node.args.kwarg,
+        ):
+            if argument is not None and argument.annotation is not None:
                 self.visit(argument.annotation)
         if node.returns is not None:
             self.visit(node.returns)
         params = [argument.arg for argument in node.args.args]
+        vararg = node.args.vararg.arg if node.args.vararg is not None else None
+        kwarg = node.args.kwarg.arg if node.args.kwarg is not None else None
         child = _Scope(
             node,
-            isa.CodeUnit(name=node.name, params=params),
+            isa.CodeUnit(
+                name=node.name,
+                params=params,
+                vararg=vararg,
+                kwarg=kwarg,
+            ),
             self.scope,
         )
         self.scope.children.append(child)
         collector = _ScopeCollector(child)
-        for param in params:
-            child.bound[param] = None
+        for param in [*params, vararg, kwarg]:
+            if param is not None:
+                child.bound[param] = None
         for statement in node.body:
             collector.visit(statement)
 
