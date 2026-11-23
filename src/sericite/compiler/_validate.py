@@ -245,6 +245,12 @@ def _validate(tree: ast.Module, filename: str) -> None:
                 seen_keywords.add(keyword.arg)
         if isinstance(node, ast.Dict) and any(key is None for key in node.keys):
             _reject(node, filename, "** unpacking is not supported")
+        if (
+            isinstance(node, ast.ExceptHandler)
+            and node.name is not None
+            and node.name.startswith("__")
+        ):
+            _reject(node, filename, "dunder names are not available")
         if isinstance(node, ast.ExceptHandler) and node.type is not None:
             filter_node = node.type
             if isinstance(filter_node, ast.Constant) and filter_node.value is Ellipsis:
@@ -309,6 +315,8 @@ def _validate(tree: ast.Module, filename: str) -> None:
             for argument in (*args.args, args.vararg, args.kwarg):
                 if argument is None:
                     continue
+                if argument.arg.startswith("__"):
+                    _reject(argument, filename, "dunder names are not available")
                 _reject_none_annotation(argument.annotation, filename)
                 if argument.arg in seen_params:
                     _reject(
