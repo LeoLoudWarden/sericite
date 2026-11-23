@@ -49,6 +49,8 @@ _ALLOWED_NODES = {
     ast.Break,
     ast.Continue,
     ast.FunctionDef,
+    ast.Global,
+    ast.Nonlocal,
     ast.ClassDef,
     ast.Import,
     ast.ImportFrom,

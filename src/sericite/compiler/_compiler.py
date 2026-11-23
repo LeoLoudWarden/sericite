@@ -91,9 +91,24 @@ class _Compiler:
                 return label.text, dict(label.fields).get(attr)
         return None, None
 
+    @staticmethod
+    def _load_name_op(code: isa.CodeUnit, name: str) -> str:
+        if name in code.global_names:
+            return isa.LOAD_GLOBAL
+        if name in code.cell_names or name in code.free_names:
+            return isa.LOAD_DEREF
+        return isa.LOAD_NAME
+
+    @staticmethod
+    def _store_name_op(code: isa.CodeUnit, name: str) -> str:
+        if name in code.global_names:
+            return isa.STORE_GLOBAL
+        if name in code.cell_names or name in code.free_names:
+            return isa.STORE_DEREF
+        return isa.STORE_NAME
+
     def _store_name(self, code: isa.CodeUnit, name: str, line: int) -> None:
-        op = isa.STORE_DEREF if name in code.cell_names else isa.STORE_NAME
-        self.emit(code, op, name, line)
+        self.emit(code, self._store_name_op(code, name), name, line)
 
     def _compile_store_target(
         self, target: ast.AST, code: isa.CodeUnit, line: int
@@ -208,11 +223,7 @@ class _Compiler:
             target = node.target
             op = _BINARY_OPS[type(node.op)]
             if isinstance(target, ast.Name):
-                load_op = (
-                    isa.LOAD_DEREF
-                    if target.id in code.cell_names or target.id in code.free_names
-                    else isa.LOAD_NAME
-                )
+                load_op = self._load_name_op(code, target.id)
                 self.emit(code, load_op, target.id, line)
                 self.compile_expression(node.value, code)
                 self.emit(code, isa.BINARY_OP, op, line)
@@ -316,7 +327,7 @@ class _Compiler:
             self._compile_finally_exits(code, line, self._finally_stack[finally_depth:])
             self.emit(code, isa.JUMP, start, line)
             return
-        if isinstance(node, ast.Pass):
+        if isinstance(node, (ast.Pass, ast.Global, ast.Nonlocal)):
             return
         if isinstance(node, ast.Raise):
             if node.exc is None:
@@ -344,6 +355,7 @@ class _Compiler:
                 vararg=analyzed.vararg,
                 kwarg=analyzed.kwarg,
                 local_names=analyzed.local_names,
+                global_names=analyzed.global_names,
                 cell_names=analyzed.cell_names,
                 free_names=analyzed.free_names,
                 param_labels=param_labels,
@@ -556,6 +568,11 @@ class _Compiler:
                     target=target,
                     kinds=kinds,
                     bind=bind,
+                    bind_op=(
+                        self._store_name_op(code, bind)
+                        if bind is not None
+                        else isa.STORE_NAME
+                    ),
                     body_end=handler_end,
                     exit_ranges=tuple(exit_ranges),
                 )
@@ -601,6 +618,7 @@ class _Compiler:
             name=analyzed.name,
             params=analyzed.params,
             local_names=analyzed.local_names,
+            global_names=analyzed.global_names,
             cell_names=analyzed.cell_names,
             free_names=analyzed.free_names,
         )
@@ -691,12 +709,7 @@ class _Compiler:
             self.emit(code, isa.LOAD_CONST, node.value, line)
             return
         if isinstance(node, ast.Name):
-            op = (
-                isa.LOAD_DEREF
-                if node.id in code.cell_names or node.id in code.free_names
-                else isa.LOAD_NAME
-            )
-            self.emit(code, op, node.id, line)
+            self.emit(code, self._load_name_op(code, node.id), node.id, line)
             return
         if isinstance(node, ast.JoinedStr):
             for value in node.values:

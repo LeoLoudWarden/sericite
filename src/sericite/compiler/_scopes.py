@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 
 from .. import isa
+from ..errors import SericiteError
 
 
 class _Scope:
@@ -13,13 +14,22 @@ class _Scope:
         self.code = code
         self.parent = parent
         self.children: list[_Scope] = []
+        self.params: set[str] = set()
         self.bound: dict[str, None] = {}
+        self.assigned: dict[str, None] = {}
         self.loaded: dict[str, None] = {}
         self.cells: dict[str, None] = {}
         self.free: dict[str, None] = {}
+        self.globals: dict[str, ast.Global] = {}
+        self.nonlocals: dict[str, ast.Nonlocal] = {}
 
     def capture(self, name: str) -> bool:
-        if self.parent is None:
+        if name in self.globals or self.parent is None:
+            return False
+        if name in self.nonlocals:
+            if self.parent.capture(name):
+                self.free[name] = None
+                return True
             return False
         if name in self.bound:
             self.cells[name] = None
@@ -31,17 +41,72 @@ class _Scope:
 
 
 class _ScopeCollector(ast.NodeVisitor):
-    def __init__(self, scope: _Scope) -> None:
+    def __init__(self, scope: _Scope, filename: str) -> None:
         self.scope = scope
+        self.filename = filename
+
+    def _error(self, node: ast.AST, message: str) -> None:
+        raise SericiteError(
+            message,
+            kind="syntax_error",
+            filename=self.filename,
+            line=getattr(node, "lineno", None),
+            column=(node.col_offset + 1 if hasattr(node, "col_offset") else None),
+        )
 
     def visit_Name(self, node: ast.Name) -> None:
-        names = (
-            self.scope.bound if isinstance(node.ctx, ast.Store) else self.scope.loaded
+        if isinstance(node.ctx, ast.Store):
+            self.scope.bound[node.id] = None
+            self.scope.assigned[node.id] = None
+        else:
+            self.scope.loaded[node.id] = None
+
+    def _declare(
+        self,
+        node: ast.Global | ast.Nonlocal,
+        declared: dict[str, ast.Global] | dict[str, ast.Nonlocal],
+        other: dict[str, ast.Global] | dict[str, ast.Nonlocal],
+        kind: str,
+        other_kind: str,
+    ) -> None:
+        for name in node.names:
+            if name in other:
+                self._error(node, f"name '{name}' is {other_kind} and {kind}")
+            if name in self.scope.params:
+                self._error(node, f"name '{name}' is parameter and {kind}")
+            if name in self.scope.assigned:
+                self._error(
+                    node, f"name '{name}' is assigned to before {kind} declaration"
+                )
+            if name in self.scope.loaded:
+                self._error(node, f"name '{name}' is used prior to {kind} declaration")
+            declared[name] = node
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self._declare(
+            node, self.scope.globals, self.scope.nonlocals, "global", "nonlocal"
         )
-        names[node.id] = None
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self._declare(
+            node, self.scope.nonlocals, self.scope.globals, "nonlocal", "global"
+        )
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name):
+            if node.target.id in self.scope.globals:
+                self._error(
+                    node.target, f"annotated name '{node.target.id}' can't be global"
+                )
+            if node.target.id in self.scope.nonlocals:
+                self._error(
+                    node.target, f"annotated name '{node.target.id}' can't be nonlocal"
+                )
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.scope.bound[node.name] = None
+        self.scope.assigned[node.name] = None
         for decorator in node.decorator_list:
             self.visit(decorator)
         for default in node.args.defaults:
@@ -69,9 +134,10 @@ class _ScopeCollector(ast.NodeVisitor):
             self.scope,
         )
         self.scope.children.append(child)
-        collector = _ScopeCollector(child)
+        collector = _ScopeCollector(child, self.filename)
         for param in [*params, vararg, kwarg]:
             if param is not None:
+                child.params.add(param)
                 child.bound[param] = None
         for statement in node.body:
             collector.visit(statement)
@@ -89,7 +155,7 @@ class _ScopeCollector(ast.NodeVisitor):
         )
         self.scope.children.append(child)
         child.bound[input_name] = None
-        collector = _ScopeCollector(child)
+        collector = _ScopeCollector(child, self.filename)
         for index, generator in enumerate(generators):
             collector.visit(generator.target)
             if index > 0:
@@ -121,6 +187,7 @@ class _ScopeCollector(ast.NodeVisitor):
         # The class name binds in the current scope; field names are not scope names —
         # only field contract annotations are evaluated at definition (and may reference outer names).
         self.scope.bound[node.name] = None
+        self.scope.assigned[node.name] = None
         for statement in node.body:
             if isinstance(statement, ast.AnnAssign):
                 self.visit(statement.annotation)
@@ -128,28 +195,58 @@ class _ScopeCollector(ast.NodeVisitor):
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name is not None:
             self.scope.bound[node.name] = None
+            self.scope.assigned[node.name] = None
         for statement in node.body:
             self.visit(statement)
 
 
 def _analyze_scopes(tree: ast.Module, code: isa.CodeUnit) -> dict[int, _Scope]:
     root = _Scope(tree, code, None)
-    _ScopeCollector(root).visit(tree)
+    _ScopeCollector(root, code.filename).visit(tree)
     scopes = [root]
     while scopes:
         scope = scopes.pop()
+        for name, declaration in scope.nonlocals.items():
+            if scope.parent is None:
+                raise SericiteError(
+                    "nonlocal declaration not allowed at module level",
+                    kind="syntax_error",
+                    filename=root.code.filename,
+                    line=declaration.lineno,
+                    column=declaration.col_offset + 1,
+                )
+            if not scope.parent.capture(name):
+                raise SericiteError(
+                    f"no binding for nonlocal '{name}' found",
+                    kind="syntax_error",
+                    filename=root.code.filename,
+                    line=declaration.lineno,
+                    column=declaration.col_offset + 1,
+                )
+            scope.free[name] = None
         if scope.parent is not None:
             for name in scope.loaded:
-                if name not in scope.bound and scope.parent.capture(name):
+                if (
+                    name not in scope.bound
+                    and name not in scope.globals
+                    and name not in scope.nonlocals
+                    and scope.parent.capture(name)
+                ):
                     scope.free[name] = None
         scopes.extend(scope.children)
     scopes = [root]
     result: dict[int, _Scope] = {}
     while scopes:
         scope = scopes.pop()
-        scope.code.local_names = tuple(scope.bound)
+        local_names = tuple(
+            name
+            for name in scope.bound
+            if name not in scope.globals and name not in scope.nonlocals
+        )
+        scope.code.local_names = local_names
+        scope.code.global_names = tuple(scope.globals)
         scope.code.cell_names = tuple(
-            name for name in scope.bound if name in scope.cells
+            name for name in local_names if name in scope.cells
         )
         scope.code.free_names = tuple(scope.free)
         result[id(scope.node)] = scope

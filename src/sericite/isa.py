@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 LOAD_CONST = "LOAD_CONST"
 LOAD_NAME = "LOAD_NAME"
 STORE_NAME = "STORE_NAME"
+LOAD_GLOBAL = "LOAD_GLOBAL"
+STORE_GLOBAL = "STORE_GLOBAL"
 LOAD_DEREF = "LOAD_DEREF"
 STORE_DEREF = "STORE_DEREF"
 DUP = "DUP"
@@ -66,6 +68,7 @@ class Handler:
     target: int
     kinds: tuple[str, ...] | None
     bind: str | None
+    bind_op: str = STORE_NAME
     stack_depth: int = 0
     error_name: str | None = None
     body_end: int = 0
@@ -81,6 +84,7 @@ class CodeUnit:
     filename: str = "<sericite>"
     package: str = ""
     local_names: tuple[str, ...] = ()
+    global_names: tuple[str, ...] = ()
     cell_names: tuple[str, ...] = ()
     free_names: tuple[str, ...] = ()
     param_labels: tuple = ()

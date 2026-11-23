@@ -101,6 +101,10 @@ def _validate(tree: ast.Module, filename: str) -> None:
             _reject_unsupported(node, parents, filename)
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             validate_import(node)
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and any(
+            name.startswith("__") for name in node.names
+        ):
+            _reject(node, filename, "dunder names are not available")
         if (
             isinstance(node, ast.Constant)
             and type(node.value)

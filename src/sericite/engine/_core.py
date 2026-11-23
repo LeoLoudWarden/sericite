@@ -940,8 +940,12 @@ class _EngineCore:
             if handler.error_name is not None:
                 self._store_local(frame, handler.error_name, error)
             if handler.bind is not None:
-                self._store_local(
-                    frame, handler.bind, self._error_record(context, error)
+                self._store_binding(
+                    context,
+                    frame,
+                    handler.bind,
+                    self._error_record(context, error),
+                    handler.bind_op,
                 )
             return True
         return False
@@ -1000,6 +1004,10 @@ class _EngineCore:
             stack.append(self._load_name(context, frame, arg))
         elif op == isa.STORE_NAME:
             frame.locals[arg] = stack.pop()
+        elif op == isa.LOAD_GLOBAL:
+            stack.append(self._load_global(context, frame, arg))
+        elif op == isa.STORE_GLOBAL:
+            self._module_locals(context, frame)[arg] = stack.pop()
         elif op == isa.LOAD_DEREF:
             stack.append(self._load_deref(context, frame, arg))
         elif op == isa.STORE_DEREF:
@@ -1820,6 +1828,21 @@ class _EngineCore:
         else:
             frame.locals[name] = value
 
+    def _store_binding(
+        self,
+        context: VMContext,
+        frame: Frame,
+        name: str,
+        value: object,
+        op: str,
+    ) -> None:
+        if op == isa.STORE_GLOBAL:
+            self._module_locals(context, frame)[name] = value
+        elif op == isa.STORE_DEREF:
+            self._cell(frame, name).value = value
+        else:
+            self._store_local(frame, name, value)
+
     def _cell(self, frame: Frame, name: str) -> _Cell:
         if name in frame.cells:
             return frame.cells[name]
@@ -1844,11 +1867,16 @@ class _EngineCore:
             return frame.locals[name]
         if frame.code.name != "<module>" and name in frame.code.local_names:
             raise self._undefined_name(context, frame, name)
-        module_locals = (
-            frame.module_locals
-            if frame.module_locals is not None
-            else context.frames[0].locals
-        )
+        return self._load_global(context, frame, name)
+
+    @staticmethod
+    def _module_locals(context: VMContext, frame: Frame) -> dict[str, object]:
+        if frame.module_locals is not None:
+            return frame.module_locals
+        return context.frames[0].locals
+
+    def _load_global(self, context: VMContext, frame: Frame, name: str) -> object:
+        module_locals = self._module_locals(context, frame)
         if name in module_locals:
             return module_locals[name]
         granted = frame.granted if frame.granted is not None else context.granted
