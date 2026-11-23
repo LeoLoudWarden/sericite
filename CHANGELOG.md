@@ -7,7 +7,20 @@
 
 ## [Unreleased]
 
+### Added
+- 每台 VM 新增预加载内建模块 `__addon__`，默认没有导出；宿主与父 VM 授予的函数现在经 `from __addon__ import name` 显式导入，支持别名、跨 `exec()` 保留与逐层转授，不对应 VFS 文件。
+
+### Changed
+- **破坏性变更**：能力授予统一命名为 addon。Python 宿主改用 `create_root(addons=...)`，脚本改用 `VM(addons=...)`；addon 不再注入全局命名空间，各源码模块必须自行 import，定义方 home、闭包、IO/VFS 与资源计量语义保持不变。
+- CLI 改用 `--addons FILE`，可信 `configure()` 的函数表键改为 `addons`；`vm.created` 观察事件的授予名字段改为 `addons`。
+- addon 名只要求是合法且不以 `__` 开头的标识符，可与内建或 `argv` 同名；直接导入造成的本地内建重绑定仍被拒绝，可改用 import 别名。
+- 宿主数据边界错误 kind `ffi_error` 更名为 `addon_error`，旧 kind 不再被接受。
+
+### Removed
+- **破坏性变更**：移除 `functions=` 参数、CLI `--capabilities`、观察事件的 `functions` 字段及授予函数的全局名字回退；迁移时需改用 `addons` 并为原直接调用补上 `from __addon__ import ...`。
+
 ### Fixed
+- 跨 VM 执行授予函数时，普通模块或 `__addon__` 缺失导出的 `import_error` 不再向调用方泄露定义方导出名；同 VM 诊断仍保留具体名称。
 - 双下划线名称禁令现在覆盖普通参数、`*args`/`**kwargs` 参数与异常绑定别名，补齐此前只在函数体内读写时才拒绝的校验缺口；显式关键字实参标签、字符串和字典键仍作为数据允许。
 
 ## [0.20.0] - 2026-11-23

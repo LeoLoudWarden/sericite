@@ -4,9 +4,11 @@ import unittest.mock
 from sericite import SericiteEngine, SericiteError, SericiteLimits, VMHandle
 
 
-def run(source, inputs=None, limits=None, functions=None):
+def run(source, inputs=None, limits=None, addons=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    vm = engine.create_root(source, functions=functions)
+    vm = engine.create_root(source, addons=addons)
     return vm.run(inputs)
 
 
@@ -130,8 +132,8 @@ class ErrorRenderMeteringTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         engine.create_root(
-            source,
-            functions={
+            ("from __addon__ import checkpoint\n" + source),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].instruction_count
                 )
@@ -619,6 +621,7 @@ class LabelTests(unittest.TestCase):
             "def invalid():\n"
             '    return SecretOuter({"n": 1})\n'
             "sub = VM(\n"
+            '    "from __addon__ import missing, invalid\\n"\n'
             '    "try:\\n"\n'
             '    "    missing()\\n"\n'
             '    "except contract_error as e:\\n"\n'
@@ -627,7 +630,7 @@ class LabelTests(unittest.TestCase):
             '    "    invalid()\\n"\n'
             '    "except contract_error as e:\\n"\n'
             '    "    print(e.message)",\n'
-            "    functions={'missing': missing, 'invalid': invalid})\n"
+            "    addons={'missing': missing, 'invalid': invalid})\n"
             "print(sub.run(), end='')"
         )
         out = run(source)
@@ -787,6 +790,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "def nested_error():\n"
             "    return nested_helper()\n"
             'sub = VM("""\n'
+            "from __addon__ import module, local, closure, nested\n"
             "for f in [module, local, closure, nested]:\n"
             "    try:\n"
             "        f()\n"
@@ -794,7 +798,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "        print(e.kind, e.message)\n"
             "        for frame in e.frames:\n"
             "            print(frame.function)\n"
-            '""", functions={\n'
+            '""", addons={\n'
             '    "module": module_error,\n'
             '    "local": local_error,\n'
             '    "closure": closure_error,\n'
@@ -833,7 +837,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "    x: int\n"
             "def get_x(p: P) -> int:\n"
             "    return p.x\n"
-            "sub = VM(\"print(f({'x': 1}))\", functions={'f': get_x})\n"
+            "sub = VM(\"from __addon__ import f\\nprint(f({'x': 1}))\", addons={'f': get_x})\n"
             "sub.run()\n"
         )
         exc = run_error(source)
@@ -847,11 +851,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def get_x(p: P) -> int:\n"
             "    return p.x\n"
             "sub = VM(\n"
+            '    "from __addon__ import f\\n"\n'
             '    "try:\\n"\n'
             "    \"    f({'x': 1})\\n\"\n"
             '    "except contract_error as e:\\n"\n'
             '    "    print(e.message)\\n",\n'
-            "    functions={'f': get_x})\n"
+            "    addons={'f': get_x})\n"
             "print(sub.run())\n"
         )
         out = run(source)
@@ -865,11 +870,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def bad() -> int:\n"
             "    return 'oops'\n"
             "sub = VM(\n"
+            '    "from __addon__ import g\\n"\n'
             '    "try:\\n"\n'
             '    "    g()\\n"\n'
             '    "except contract_error as e:\\n"\n'
             '    "    print(e.message)\\n",\n'
-            "    functions={'g': bad})\n"
+            "    addons={'g': bad})\n"
             "print(sub.run())\n"
         )
         out = run(source)
@@ -881,11 +887,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def two_args(a, b):\n"
             "    return a\n"
             "sub = VM(\n"
+            '    "from __addon__ import h\\n"\n'
             '    "try:\\n"\n'
             '    "    h(1)\\n"\n'
             '    "except arity_error as e:\\n"\n'
             '    "    print(e.message)\\n",\n'
-            "    functions={'h': two_args})\n"
+            "    addons={'h': two_args})\n"
             "print(sub.run())\n"
         )
         out = run(source)
@@ -901,13 +908,14 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak(r):\n"
             "    return helper(r)\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "class C:\n"
             "    password: str\n"
             "try:\n"
             "    leak(C('x'))\n"
             "except attribute_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -924,6 +932,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak(r):\n"
             "    return helper(r)\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "class C:\n"
             "    password: str\n"
             "try:\n"
@@ -931,11 +940,11 @@ class ClosureAndVMTests(unittest.TestCase):
             "except attribute_error as e:\n"
             "    for frame in e.frames:\n"
             "        print(frame.function, frame.line)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
-        self.assertEqual(out, "<module> 5\nleak None\nfunction None\n\n")
+        self.assertEqual(out, "<module> 6\nleak None\nfunction None\n\n")
         self.assertNotIn("Secret", out)
         self.assertNotIn("helper", out)
 
@@ -948,10 +957,11 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak(r):\n"
             "    return helper(r)\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "class C:\n"
             "    password: str\n"
             "leak(C('x'))\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "try:\n"
             "    sub.run()\n"
             "except attribute_error:\n"
@@ -961,7 +971,7 @@ class ClosureAndVMTests(unittest.TestCase):
             '        print(frame["function"], frame["line"])\n'
         )
         out = run(source)
-        self.assertEqual(out, "None\n<module> 4\nleak None\nfunction None\n")
+        self.assertEqual(out, "None\n<module> 5\nleak None\nfunction None\n")
         self.assertNotIn("Secret", out)
         self.assertNotIn("helper", out)
 
@@ -972,7 +982,7 @@ class ClosureAndVMTests(unittest.TestCase):
             "    return missing\n\n"
             "def leak():\n"
             "    return helper()\n\n"
-            'sub = VM("leak()", functions={"leak": leak})\n'
+            'sub = VM("from __addon__ import leak\\nleak()", addons={"leak": leak})\n'
             "print(sub.run())\n"
         )
         with self.assertRaises(SericiteError) as ctx:
@@ -993,13 +1003,14 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak(r):\n"
             "    return helper(r)\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "class D:\n"
             "    other: int\n"
             "try:\n"
             "    leak(D(1))\n"
             "except contract_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1017,11 +1028,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak():\n"
             "    return bad_ret()\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "try:\n"
             "    leak()\n"
             "except contract_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1037,11 +1049,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak():\n"
             "    return helper(1)\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "try:\n"
             "    leak()\n"
             "except arity_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1223,11 +1236,12 @@ class ClosureAndVMTests(unittest.TestCase):
             "def leak():\n"
             "    return helper()\n"
             'sub = VM("""\n'
+            "from __addon__ import leak\n"
             "try:\n"
             "    leak()\n"
             "except contract_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'leak\': leak})\n'
+            '""", addons={\'leak\': leak})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1249,7 +1263,7 @@ class HomeVmTests(unittest.TestCase):
             "def writer():\n"
             "    write_file('/log.txt', 'from home')\n"
             "fs = VFS()\n"
-            "sub = VM(\"w()\", functions={'w': writer}, fs=fs)\n"
+            "sub = VM(\"from __addon__ import w\\nw()\", addons={'w': writer}, fs=fs)\n"
             "sub.run()\n"
             "fs = sub.take_fs()\n"
             "print(path_exists('/log.txt'), fs.path_exists('/log.txt'))\n"
@@ -1264,10 +1278,11 @@ class HomeVmTests(unittest.TestCase):
             "def stash(fn):\n"
             "    saved[0] = fn\n"
             'sub = VM("""\n'
+            "from __addon__ import stash\n"
             "def payload():\n"
             "    return read_file('/secret.txt')\n"
             "stash(payload)\n"
-            '""", functions={\'stash\': stash})\n'
+            '""", addons={\'stash\': stash})\n'
             "sub.run()\n"
             "try:\n"
             "    print(saved[0]())\n"
@@ -1280,7 +1295,7 @@ class HomeVmTests(unittest.TestCase):
         source = (
             "def hello():\n"
             "    print('from home')\n"
-            "sub = VM(\"h()\", functions={'h': hello})\n"
+            "sub = VM(\"from __addon__ import h\\nh()\", addons={'h': hello})\n"
             "sub.run()\n"
             "print('child said:', sub.stdout())\n"
         )
@@ -1291,11 +1306,12 @@ class HomeVmTests(unittest.TestCase):
             "def f():\n"
             "    return 1\n"
             'sub = VM("""\n'
+            "from __addon__ import g\n"
             "try:\n"
             "    len(g)\n"
             "except type_error as e:\n"
             "    print(e.message)\n"
-            '""", functions={\'g\': f})\n'
+            '""", addons={\'g\': f})\n'
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1305,12 +1321,12 @@ class HomeVmTests(unittest.TestCase):
     def test_spawned_vm_capped_by_caller_limits(self):
         # a grandchild VM created via a granted function has its quota also capped by the caller:
         # the grandchild can run at most within the caller's budget (caller-quota exhaustion is uncatchable, terminating the chain)
-        child_src = '\nout = spawn("i = 0\\nwhile i < 100000:\\n    i = i + 1")\n'
+        child_src = '\nfrom __addon__ import spawn\nout = spawn("i = 0\\nwhile i < 100000:\\n    i = i + 1")\n'
         source = (
             "def spawn(code):\n"
             "    v = VM(code)\n"
             "    return v.run()\n"
-            f"sub = VM({child_src!r}, functions={{'spawn': spawn}}, "
+            f"sub = VM({child_src!r}, addons={{'spawn': spawn}}, "
             "max_instructions=1000)\n"
             "sub.run()\n"
         )
@@ -1334,11 +1350,12 @@ class HomeVmTests(unittest.TestCase):
             "def peek():\n"
             "    return read_file('/big.txt')\n"
             'sub = VM("""\n'
+            "from __addon__ import peek\n"
             "i = 0\n"
             "while i < 5:\n"
             "    s = peek()\n"
             "    i = i + 1\n"
-            '""", functions={"peek": peek}, max_total_bytes=2000000)\n'
+            '""", addons={"peek": peek}, max_total_bytes=2000000)\n'
             "sub.run()\n"
         )
         try:
@@ -1359,7 +1376,7 @@ class HomeVmTests(unittest.TestCase):
             f"text = {text!r}\n"
             "def parse():\n"
             "    return float(text)\n"
-            'sub = VM("value = parse()", functions={"parse": parse}, '
+            'sub = VM("from __addon__ import parse\\nvalue = parse()", addons={"parse": parse}, '
             "max_instructions=100)\n"
             "sub.run()\n"
         )
@@ -1375,8 +1392,8 @@ class HomeVmTests(unittest.TestCase):
             "    v = VM('i = 0\\nwhile i < 900:\\n    i = i + 1')\n"
             "    return v.run()\n"
             "sub = VM(\n"
-            "    'i = 0\\nwhile i < 200:\\n    spawn()\\n    i = i + 1',\n"
-            "    functions={'spawn': spawn}, max_instructions=3000)\n"
+            "    'from __addon__ import spawn\\ni = 0\\nwhile i < 200:\\n    spawn()\\n    i = i + 1',\n"
+            "    addons={'spawn': spawn}, max_instructions=3000)\n"
             "sub.run()\n"
         )
         try:
@@ -1392,7 +1409,7 @@ class HomeVmTests(unittest.TestCase):
         source = (
             "def spawn():\n"
             "    return VM('x = 1')\n"
-            "sub = VM('g = spawn()\\ng.run()', functions={'spawn': spawn})\n"
+            "sub = VM('from __addon__ import spawn\\ng = spawn()\\ng.run()', addons={'spawn': spawn})\n"
             "sub.run()\n"
         )
         engine.create_root(source).run()
@@ -1409,7 +1426,7 @@ class HomeVmTests(unittest.TestCase):
         source = (
             "def spawn():\n"
             f"    return VM({grandchild_source!r})\n"
-            "sub = VM('g = spawn()', functions={'spawn': spawn})\n"
+            "sub = VM('from __addon__ import spawn\\ng = spawn()', addons={'spawn': spawn})\n"
             "sub.run()\n"
         )
         engine.create_root(source).run()
@@ -1425,8 +1442,8 @@ class HomeVmTests(unittest.TestCase):
             "    return P(1)\n"
             "def bump(p):\n"
             "    p.x = p.x + 1\n"
-            'sub = VM("r = make()\\nbump(r)\\nprint(r.x)", '
-            "functions={'make': make, 'bump': bump})\n"
+            'sub = VM("from __addon__ import make, bump\\nr = make()\\nbump(r)\\nprint(r.x)", '
+            "addons={'make': make, 'bump': bump})\n"
             "print(sub.run())\n"
         )
         out = run(source)
@@ -1438,11 +1455,11 @@ class HomeVmTests(unittest.TestCase):
 
         source = "class P:\n    x: int\nprint(host(P(1)))\n"
         try:
-            run(source, functions={"host": identity})
+            run(source, addons={"host": identity})
         except SericiteError as exc:
-            self.assertEqual(exc.kind, "ffi_error")
+            self.assertEqual(exc.kind, "addon_error")
         else:
-            raise AssertionError("expected ffi_error")
+            raise AssertionError("expected addon_error")
 
 
 class QuotaTests(unittest.TestCase):

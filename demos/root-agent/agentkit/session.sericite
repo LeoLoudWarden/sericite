@@ -1,5 +1,6 @@
 from . import display
 from . import workspace
+from __addon__ import llm_chat
 
 MAX_ROUNDS = 30
 

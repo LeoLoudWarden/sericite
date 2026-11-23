@@ -509,7 +509,7 @@ class ScopeDeclarationValidationTests(unittest.TestCase):
 
 class ClosureGrantTests(unittest.TestCase):
     def test_granted_closure_keeps_definition_environment(self):
-        child = "base = 1000\nx = 1000\nprint(f(2))\n"
+        child = "from __addon__ import f\nbase = 1000\nx = 1000\nprint(f(2))\n"
         source = (
             "base = 10\n"
             "def make(x):\n"
@@ -517,17 +517,18 @@ class ClosureGrantTests(unittest.TestCase):
             "        return base + x + y\n"
             "    return add\n"
             "f = make(5)\n"
-            "sub = VM(" + repr(child) + ", functions={'f': f})\n"
+            "sub = VM(" + repr(child) + ", addons={'f': f})\n"
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "17\n\n")
 
     def test_returned_closure_and_regrant_keep_original_globals(self):
         child = (
+            "from __addon__ import make\n"
             "base = 1000\n"
             "f = make(5)\n"
             "print(f(2))\n"
-            'grandchild = VM("print(f(3))\\n", functions={"f": f})\n'
+            'grandchild = VM("from __addon__ import f\\nprint(f(3))\\n", addons={"f": f})\n'
             "print(grandchild.run())\n"
         )
         source = (
@@ -536,26 +537,26 @@ class ClosureGrantTests(unittest.TestCase):
             "    def add(y):\n"
             "        return base + x + y\n"
             "    return add\n"
-            "sub = VM(" + repr(child) + ", functions={'make': make})\n"
+            "sub = VM(" + repr(child) + ", addons={'make': make})\n"
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "17\n18\n\n\n")
 
     def test_granted_global_writes_definition_module(self):
-        child = "value = 100\nf()\nprint(value)\n"
+        child = "from __addon__ import f\nvalue = 100\nf()\nprint(value)\n"
         source = (
             "value = 1\n"
             "def set_value():\n"
             "    global value\n"
             "    value = 7\n"
-            "sub = VM(" + repr(child) + ", functions={'f': set_value})\n"
+            "sub = VM(" + repr(child) + ", addons={'f': set_value})\n"
             "print(sub.run())\n"
             "print(value)\n"
         )
         self.assertEqual(run(source), "100\n\n7\n")
 
     def test_granted_nonlocal_closures_keep_shared_cells(self):
-        child = "increment()\nincrement()\nprint(read())\n"
+        child = "from __addon__ import increment, read\nincrement()\nincrement()\nprint(read())\n"
         source = (
             "def outer():\n"
             "    value = 0\n"
@@ -568,7 +569,7 @@ class ClosureGrantTests(unittest.TestCase):
             "functions = outer()\n"
             "sub = VM("
             + repr(child)
-            + ", functions={'increment': functions[0], 'read': functions[1]})\n"
+            + ", addons={'increment': functions[0], 'read': functions[1]})\n"
             "print(sub.run())\n"
             "functions[0]()\n"
             "print(functions[1]())\n"
@@ -576,12 +577,12 @@ class ClosureGrantTests(unittest.TestCase):
         self.assertEqual(run(source), "2\n\n3\n")
 
     def test_granted_global_name_error_stays_redacted(self):
-        child = "try:\n    f()\nexcept name_error as error:\n    print(error.message)\n"
+        child = "from __addon__ import f\ntry:\n    f()\nexcept name_error as error:\n    print(error.message)\n"
         source = (
             "def fail():\n"
             "    global definition_only_name\n"
             "    return definition_only_name\n"
-            "sub = VM(" + repr(child) + ", functions={'f': fail})\n"
+            "sub = VM(" + repr(child) + ", addons={'f': fail})\n"
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "name is not defined\n\n")

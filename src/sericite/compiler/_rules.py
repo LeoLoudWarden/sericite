@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import ast
 
+ADDON_MODULE = "__addon__"
+INTRINSIC_MODULES = frozenset({ADDON_MODULE})
+
 RESERVED_NAMES = {
     "input",
     "print",

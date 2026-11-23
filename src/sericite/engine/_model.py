@@ -120,7 +120,6 @@ class Frame:
     cells: dict[str, _Cell] = field(default_factory=dict)
     closure: dict[str, _Cell] = field(default_factory=dict)
     module_locals: dict[str, object] | None = None
-    granted: dict[str, object] | None = None
     active_errors: list[tuple[isa.Handler, SericiteError]] = field(default_factory=list)
     return_contract: object = None
     return_label: str | None = None
@@ -138,7 +137,6 @@ class SericiteFunction:
         defaults: tuple[object, ...],
         closure: dict[str, _Cell],
         module_locals: dict[str, object],
-        granted: dict[str, object],
         param_contracts: tuple[object, ...] = (),
         return_contract: object = None,
         home: object = None,
@@ -147,7 +145,6 @@ class SericiteFunction:
         self.defaults = defaults
         self.closure = closure
         self.module_locals = module_locals
-        self.granted = granted
         self.param_contracts = param_contracts
         self.return_contract = return_contract
         self.home = home
@@ -259,7 +256,7 @@ class _NativeFunction:
 
 @dataclass(frozen=True)
 class _GrantedHostFunction:
-    """A host-injected Python function: deep-copied both ways across the boundary; uncontracted exceptions kill the VM with host_error."""
+    """A Python host addon: deep-copied both ways across the boundary; uncontracted exceptions kill the VM with host_error."""
 
     name: str
     callback: Callable[..., object]
@@ -276,7 +273,6 @@ class _GrantedSericiteFunction:
     code: isa.CodeUnit
     module_locals: dict[str, object]
     closure: dict[str, _Cell]
-    granted: dict[str, object]
     defaults: tuple[object, ...] = ()
     param_contracts: tuple[object, ...] = ()
     return_contract: object = None
@@ -354,7 +350,7 @@ class VMContext:
     module_root: str = "/"
     next_source_id: int = 1
     frames: list[Frame] = field(default_factory=list)
-    granted: dict[str, object] = field(default_factory=dict)
+    addons: dict[str, object] = field(default_factory=dict)
     modules: dict[str, SericiteModule] = field(default_factory=dict)
     loading_modules: dict[str, SericiteModule] = field(default_factory=dict)
     output_writer: object = None

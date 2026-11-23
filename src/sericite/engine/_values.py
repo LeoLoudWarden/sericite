@@ -4,7 +4,6 @@ import dataclasses
 
 from .. import isa
 from ..accounting import UNLIMITED, Meter
-from ..compiler import RESERVED_NAMES
 from ..errors import SericiteError
 from ..io import OutputLimitExceeded
 from ._model import (
@@ -239,16 +238,9 @@ def _stamp_origin(code: isa.CodeUnit, vm_id: int, source_id: int | None = 0) -> 
                 units.append(instr.arg[0])
 
 
-def _check_grant_name(name: object) -> None:
+def _check_addon_name(name: object) -> None:
     if not isinstance(name, str) or not name.isidentifier() or name.startswith("__"):
-        raise SericiteError(
-            f"invalid granted function name: {name!r}", kind="type_error"
-        )
-    if name in RESERVED_NAMES:
-        raise SericiteError(
-            f"granted function name '{name}' conflicts with a builtin",
-            kind="type_error",
-        )
+        raise SericiteError(f"invalid addon name: {name!r}", kind="type_error")
 
 
 def _to_host(
@@ -261,9 +253,11 @@ def _to_host(
     """Deep-copy one bounded node at a time, charging before each node is processed."""
     budget[0] -= 1
     if budget[0] < 0:
-        raise SericiteError("FFI argument structure too large", kind="ffi_error")
+        raise SericiteError(
+            "Host addon argument structure too large", kind="addon_error"
+        )
     if depth > 64:
-        raise SericiteError("FFI argument nested too deeply", kind="ffi_error")
+        raise SericiteError("Host addon argument nested too deeply", kind="addon_error")
     meter.work(1)
     if value is None or type(value) in (str, int, float, bool):
         return value
@@ -282,11 +276,11 @@ def _to_host(
         raise SericiteError(
             f"'{_type_name(value)}' cannot cross the host boundary; "
             "unwrap it to a dict first",
-            kind="ffi_error",
+            kind="addon_error",
         )
     raise SericiteError(
         f"value of type '{_type_name(value)}' cannot cross the host boundary",
-        kind="ffi_error",
+        kind="addon_error",
     )
 
 
@@ -301,24 +295,26 @@ def _from_host(
     """Validate and copy one bounded node at a time, charging work and space upfront."""
     budget[0] -= 1
     if budget[0] < 0:
-        raise SericiteError("FFI result structure too large", kind="ffi_error")
+        raise SericiteError("Host addon result structure too large", kind="addon_error")
     if depth > 64:
-        raise SericiteError("FFI result nested too deeply", kind="ffi_error")
+        raise SericiteError("Host addon result nested too deeply", kind="addon_error")
     meter.work(1)
     if type(value) is int and value.bit_length() > limits.max_int_bits:
-        raise SericiteError("FFI result integer too large", kind="ffi_error")
+        raise SericiteError("Host addon result integer too large", kind="addon_error")
     if value is None or type(value) in (int, float, bool):
         meter.allocate(8)
         return value
     if type(value) is str:
         if len(value) > limits.max_string_bytes:
-            raise SericiteError("FFI result string too large", kind="ffi_error")
+            raise SericiteError(
+                "Host addon result string too large", kind="addon_error"
+            )
         meter.allocate(len(value) * 4)
         return value
     if type(value) in (list, tuple):
         if len(value) > limits.max_list_size:
             raise SericiteError(
-                f"FFI result {_type_name(value)} too large", kind="ffi_error"
+                f"Host addon result {_type_name(value)} too large", kind="addon_error"
             )
         meter.allocate(len(value) * 8)
         result = [
@@ -327,14 +323,14 @@ def _from_host(
         return tuple(result) if type(value) is tuple else result
     if type(value) is dict:
         if len(value) > limits.max_dict_size:
-            raise SericiteError("FFI result dict too large", kind="ffi_error")
+            raise SericiteError("Host addon result dict too large", kind="addon_error")
         meter.allocate(len(value) * 16)
         result: dict[object, object] = {}
         for key, item in value.items():
             if type(key) not in (str, int, float, bool) and key is not None:
                 raise SericiteError(
-                    f"FFI result has unhashable key of type '{type(key).__name__}'",
-                    kind="ffi_error",
+                    f"Host addon result has unhashable key of type '{type(key).__name__}'",
+                    kind="addon_error",
                 )
             copied_key = _from_host(key, budget, limits, depth + 1, meter=meter)
             result[copied_key] = _from_host(
@@ -342,8 +338,8 @@ def _from_host(
             )
         return result
     raise SericiteError(
-        f"host function returned unsupported type '{type(value).__name__}'",
-        kind="ffi_error",
+        f"host addon returned unsupported type '{type(value).__name__}'",
+        kind="addon_error",
     )
 
 

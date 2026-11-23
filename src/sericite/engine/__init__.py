@@ -1,7 +1,7 @@
 """Sericite execution engine, split into cohesive parts.
 
 - `_model`: limits, frames, functions, schemas/records, native wrappers, VMContext and VM/VFS handles
-- `_values`: value semantics, rendering, contract helpers, FFI deep-copy
+- `_values`: value semantics, rendering, contract helpers, host-addon deep-copy
 - `_core`: engine lifecycle, dispatch loop, exception unwinding, call machinery, VFS attachment
 - `_builtins`: built-in functions and child-VM/VFS creation
 - `_operators`: operator/index/attribute semantics and container/record/handle natives

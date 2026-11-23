@@ -40,7 +40,7 @@ class ObservationLifecycleTests(unittest.TestCase):
         with engine.observe(events.append):
             root = engine.create_root(
                 "",
-                functions={"zeta": lambda: None, "alpha": lambda: None},
+                addons={"zeta": lambda: None, "alpha": lambda: None},
                 limits=SericiteLimits(max_instructions=1234),
             )
         self.assertEqual(len(events), 1)
@@ -54,7 +54,7 @@ class ObservationLifecycleTests(unittest.TestCase):
         self.assertEqual(event.data["state"], "done")
         self.assertEqual(event.data["filename"], "<sericite:vm_0>")
         self.assertEqual(event.data["limits"].max_instructions, 1234)
-        self.assertEqual(event.data["functions"], ("alpha", "zeta"))
+        self.assertEqual(event.data["addons"], ("alpha", "zeta"))
         self.assertEqual(root.snapshot()["child_count"], 0)
 
         with (
@@ -516,7 +516,7 @@ class ObservationGarbageCollectionTests(unittest.TestCase):
         observation = engine.observe(events.append)
         root = engine.create_root(
             "def get_vm():\n    return vm_a\n"
-            "vm_a = VM('self = get_vm()', functions={'get_vm': get_vm})\n"
+            "vm_a = VM('from __addon__ import get_vm\\nself = get_vm()', addons={'get_vm': get_vm})\n"
             "vm_a.run()"
         )
         root.run()
@@ -531,8 +531,8 @@ class ObservationGarbageCollectionTests(unittest.TestCase):
         root = engine.create_root(
             "def get_a():\n    return a\n"
             "def get_b():\n    return b\n"
-            "a = VM('b = get_b()', functions={'get_b': get_b})\n"
-            "b = VM('a = get_a()', functions={'get_a': get_a})\n"
+            "a = VM('from __addon__ import get_b\\nb = get_b()', addons={'get_b': get_b})\n"
+            "b = VM('from __addon__ import get_a\\na = get_a()', addons={'get_a': get_a})\n"
             "a.run()\nb.run()"
         )
         root.run()

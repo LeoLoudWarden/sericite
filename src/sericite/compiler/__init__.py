@@ -18,12 +18,25 @@ import ast
 from .. import isa
 from ..errors import SericiteError
 from ._compiler import _Compiler
-from ._rules import RESERVED_NAMES, VFS_METHODS, VM_METHODS
+from ._rules import (
+    ADDON_MODULE,
+    INTRINSIC_MODULES,
+    RESERVED_NAMES,
+    VFS_METHODS,
+    VM_METHODS,
+)
 from ._scopes import _analyze_scopes
 from ._stack import _analyze_stack
 from ._validate import _validate
 
-__all__ = ["RESERVED_NAMES", "VFS_METHODS", "VM_METHODS", "compile_source"]
+__all__ = [
+    "ADDON_MODULE",
+    "INTRINSIC_MODULES",
+    "RESERVED_NAMES",
+    "VFS_METHODS",
+    "VM_METHODS",
+    "compile_source",
+]
 
 
 def compile_source(source: object, filename: str) -> isa.CodeUnit:

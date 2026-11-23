@@ -1,3 +1,5 @@
+from __addon__ import terminal_style
+
 MAX_RESULT_CHARS = 4000
 MAX_LIVE_LINES = 8
 MAX_LIVE_LINE_CHARS = 240

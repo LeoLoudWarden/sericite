@@ -3,9 +3,11 @@ import unittest
 from sericite import SericiteEngine, SericiteError, SericiteLimits
 
 
-def run(source, functions=None, limits=None):
+def run(source, addons=None, limits=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    vm = engine.create_root(source, functions=functions)
+    vm = engine.create_root(source, addons=addons)
     return vm.run()
 
 
@@ -286,9 +288,12 @@ class ComprehensionAccountingTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         vm = engine.create_root(
-            "values = [1, 2, 3]\ncheckpoint()\n"
-            "result = [x for x in values]\ncheckpoint()",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "values = [1, 2, 3]\ncheckpoint()\n"
+                "result = [x for x in values]\ncheckpoint()"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -304,9 +309,12 @@ class ComprehensionAccountingTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 vm = engine.create_root(
-                    "value = make()\ncheckpoint()\n"
-                    f"result = {expression}\ncheckpoint()",
-                    functions={
+                    (
+                        "from __addon__ import make, checkpoint\n"
+                        + "value = make()\ncheckpoint()\n"
+                        f"result = {expression}\ncheckpoint()"
+                    ),
+                    addons={
                         "make": lambda size=size: list(range(size)),
                         "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                             checkpoints.append(engine._contexts[0].instruction_count)

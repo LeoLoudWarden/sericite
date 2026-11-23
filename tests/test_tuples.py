@@ -3,9 +3,11 @@ import unittest
 from sericite import SericiteEngine, SericiteError, SericiteLimits
 
 
-def run(source, functions=None, limits=None):
+def run(source, addons=None, limits=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    vm = engine.create_root(source, functions=functions)
+    vm = engine.create_root(source, addons=addons)
     return vm.run()
 
 
@@ -201,8 +203,11 @@ class TupleBoundaryTests(unittest.TestCase):
 
         engine = SericiteEngine()
         vm = engine.create_root(
-            "original = (1, [2])\nresult = take(original)\nprint(original, result)",
-            functions={"take": take},
+            (
+                "from __addon__ import take\n"
+                + "original = (1, [2])\nresult = take(original)\nprint(original, result)"
+            ),
+            addons={"take": take},
         )
         self.assertEqual(vm.run(), "(1, [2]) (1, [2, 3])\n")
         self.assertIsInstance(seen[0], tuple)
@@ -216,8 +221,11 @@ class TupleBoundaryTests(unittest.TestCase):
 
         engine = SericiteEngine()
         vm = engine.create_root(
-            "value = make()\nvalue[1].append(3)\nprint(value)",
-            functions={"make": make},
+            (
+                "from __addon__ import make\n"
+                + "value = make()\nvalue[1].append(3)\nprint(value)"
+            ),
+            addons={"make": make},
         )
         self.assertEqual(vm.run(), "(1, [2, 3])\n")
         self.assertEqual(host_items, [2])
@@ -239,7 +247,7 @@ class TupleBoundaryTests(unittest.TestCase):
         output = run(
             "def make():\n"
             "    return (1, [2])\n"
-            'sub = VM("value = make()\\nprint(value)", functions={"make": make})\n'
+            'sub = VM("from __addon__ import make\\nvalue = make()\\nprint(value)", addons={"make": make})\n'
             "print(sub.run(), end='')"
         )
         self.assertEqual(output, "(1, [2])\n")
@@ -290,9 +298,12 @@ class TupleUsabilityTests(unittest.TestCase):
         engine = SericiteEngine()
         checkpoints = []
         vm = engine.create_root(
-            "mapping = {'a': 1, 'b': 2}\ncheckpoint()\n"
-            "result = mapping.items()\ncheckpoint()",
-            functions={
+            (
+                "from __addon__ import checkpoint\n"
+                + "mapping = {'a': 1, 'b': 2}\ncheckpoint()\n"
+                "result = mapping.items()\ncheckpoint()"
+            ),
+            addons={
                 "checkpoint": lambda: checkpoints.append(
                     engine._contexts[0].alloc_bytes
                 )
@@ -398,9 +409,12 @@ class TupleUsabilityTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 vm = engine.create_root(
-                    "value = make()\ncheckpoint()\n"
-                    f"result = {expression}\ncheckpoint()",
-                    functions={
+                    (
+                        "from __addon__ import make, checkpoint\n"
+                        + "value = make()\ncheckpoint()\n"
+                        f"result = {expression}\ncheckpoint()"
+                    ),
+                    addons={
                         "make": lambda kind=kind, size=size: (
                             "a" * size if kind == "string" else [0] * (size - 1) + [-1]
                         ),
@@ -431,10 +445,13 @@ class TupleAccountingTests(unittest.TestCase):
 
     def test_ffi_tuple_uses_sequence_size_limit(self):
         engine = SericiteEngine(SericiteLimits(max_list_size=1))
-        vm = engine.create_root("value = make()", functions={"make": lambda: (1, 2)})
+        vm = engine.create_root(
+            ("from __addon__ import make\n" + "value = make()"),
+            addons={"make": lambda: (1, 2)},
+        )
         with self.assertRaises(SericiteError) as ctx:
             vm.run()
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_copy_work_scales_with_result_size(self):
         for operation in ("value + value", "value * 2", "value[:]"):
@@ -443,8 +460,11 @@ class TupleAccountingTests(unittest.TestCase):
                 engine = SericiteEngine()
                 checkpoints = []
                 vm = engine.create_root(
-                    f"value = make()\ncheckpoint()\nresult = {operation}\ncheckpoint()",
-                    functions={
+                    (
+                        "from __addon__ import make, checkpoint\n"
+                        + f"value = make()\ncheckpoint()\nresult = {operation}\ncheckpoint()"
+                    ),
+                    addons={
                         "make": lambda size=size: tuple(range(size)),
                         "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                             checkpoints.append(engine._contexts[0].instruction_count)

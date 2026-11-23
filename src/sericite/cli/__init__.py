@@ -9,7 +9,7 @@ from ._project import _load_project
 from ._repl import _repl
 from ._sources import _CombinedSource
 from ._sources import _ReplSourceMap as _ReplSourceMap
-from ._startup import _CliError, _load_capabilities, _load_source
+from ._startup import _CliError, _load_addons, _load_source
 
 
 def _run_root(root: VMHandle, source: _CombinedSource) -> bool:
@@ -49,7 +49,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             if source_name is not None and source_name != "-"
             else {}
         )
-        config = _load_capabilities(args.capabilities) if args.capabilities else {}
+        config = _load_addons(args.addons) if args.addons else {}
     except _CliError as exc:
         print(f"sericite: {exc}", file=sys.stderr)
         return 1
@@ -60,7 +60,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
             source.text,
             input_provider=_read_stdin,
             limits=config.get("limits"),
-            functions=config.get("functions"),
+            addons=config.get("addons"),
             output_writer=_write_stdout,
             buffer_output=False,
             argv=script_argv,

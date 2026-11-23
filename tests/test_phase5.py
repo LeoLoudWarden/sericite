@@ -5,9 +5,11 @@ from sericite import SericiteEngine, SericiteError, SericiteLimits
 from sericite.engine import _estimate_size, _StringRenderer
 
 
-def run(source, inputs=None, limits=None, functions=None):
+def run(source, inputs=None, limits=None, addons=None):
+    if addons:
+        source = f"from __addon__ import {', '.join(addons)}\n{source}"
     engine = SericiteEngine(limits=limits)
-    vm = engine.create_root(source, functions=functions)
+    vm = engine.create_root(source, addons=addons)
     return vm.run(inputs)
 
 
@@ -53,8 +55,8 @@ class SecurityQuotaTests(unittest.TestCase):
         for size in (100, 1000):
             engine = SericiteEngine()
             vm = engine.create_root(
-                "result = left() < right()\n",
-                functions={
+                ("from __addon__ import left, right\n" + "result = left() < right()\n"),
+                addons={
                     "left": lambda size=size: "a" * size + "x",
                     "right": lambda size=size: "a" * size + "y",
                 },
@@ -69,7 +71,7 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "result = left() < right()\n",
                 limits=limits,
-                functions={
+                addons={
                     "left": lambda: "a" * 10_000 + "x",
                     "right": lambda: "a" * 10_000 + "y",
                 },
@@ -82,8 +84,11 @@ class SecurityQuotaTests(unittest.TestCase):
             for size in (100, 1000):
                 engine = SericiteEngine()
                 vm = engine.create_root(
-                    "value = get()\nfor item in value:\n    break\n",
-                    functions={
+                    (
+                        "from __addon__ import get\n"
+                        + "value = get()\nfor item in value:\n    break\n"
+                    ),
+                    addons={
                         "get": lambda kind=kind, size=size: (
                             "x" * size if kind == "str" else {i: i for i in range(size)}
                         )
@@ -102,7 +107,7 @@ class SecurityQuotaTests(unittest.TestCase):
                     run(
                         "value = get()\nfor item in value:\n    break\n",
                         limits=limits,
-                        functions={
+                        addons={
                             "get": lambda kind=kind: (
                                 "x" * 10_000
                                 if kind == "str"
@@ -140,8 +145,11 @@ class SecurityQuotaTests(unittest.TestCase):
         for size in (100, 1000):
             engine = SericiteEngine()
             vm = engine.create_root(
-                "result = left() == right()\n",
-                functions={
+                (
+                    "from __addon__ import left, right\n"
+                    + "result = left() == right()\n"
+                ),
+                addons={
                     "left": lambda size=size: {i: 0 for i in range(size)},
                     "right": lambda size=size: {i: 1 for i in range(size)},
                 },
@@ -161,7 +169,7 @@ class SecurityQuotaTests(unittest.TestCase):
                     run(
                         source,
                         limits=limits,
-                        functions={
+                        addons={
                             "left": lambda: {i: 0 for i in range(10_000)},
                             "right": lambda: {i: 1 for i in range(10_000)},
                         },
@@ -173,8 +181,8 @@ class SecurityQuotaTests(unittest.TestCase):
         for size in (100, 1000):
             engine = SericiteEngine()
             vm = engine.create_root(
-                "result = float(text())\n",
-                functions={"text": lambda size=size: "0." + "1" * size},
+                ("from __addon__ import text\n" + "result = float(text())\n"),
+                addons={"text": lambda size=size: "0." + "1" * size},
             )
             vm.run()
             counts[size] = vm.snapshot()["instruction_count"]
@@ -186,18 +194,20 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "result = float(text())\n",
                 limits=limits,
-                functions={"text": lambda: "0." + "1" * 10_000},
+                addons={"text": lambda: "0." + "1" * 10_000},
             )
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
     def test_float_conversion_error_truncates_long_input(self):
         engine = SericiteEngine()
         vm = engine.create_root(
-            "try:\n"
-            "    float(text())\n"
-            "except conversion_error as error:\n"
-            "    result = error.message\n",
-            functions={"text": lambda: "x" * 10_000},
+            (
+                "from __addon__ import text\n" + "try:\n"
+                "    float(text())\n"
+                "except conversion_error as error:\n"
+                "    result = error.message\n"
+            ),
+            addons={"text": lambda: "x" * 10_000},
         )
         vm.run()
         message = vm.snapshot()["locals"]["result"]
@@ -211,12 +221,12 @@ class SecurityQuotaTests(unittest.TestCase):
         nested_repr = "[" * 100 + "1" + "]" * 100
         source = f"probe({nested_repr})\n"
         with self.assertRaises(SericiteError) as ctx:
-            run(source, functions={"probe": lambda v: None})
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+            run(source, addons={"probe": lambda v: None})
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_ffi_huge_string_result_rejected(self):
-        source = 'try:\n    big()\nexcept ffi_error:\n    print("blocked")\n'
-        output = run(source, functions={"big": lambda: "x" * 10_000_000})
+        source = 'try:\n    big()\nexcept addon_error:\n    print("blocked")\n'
+        output = run(source, addons={"big": lambda: "x" * 10_000_000})
         self.assertEqual(output, "blocked\n")
 
     def test_ffi_argument_copy_charges_each_node(self):
@@ -225,8 +235,11 @@ class SecurityQuotaTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             engine.create_root(
-                "value = make()\ncheckpoint()\nprobe(value)\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import make, probe, checkpoint\n"
+                    + "value = make()\ncheckpoint()\nprobe(value)\ncheckpoint()\n"
+                ),
+                addons={
                     "make": lambda size=size: [0] * size,
                     "probe": lambda value: None,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
@@ -243,8 +256,11 @@ class SecurityQuotaTests(unittest.TestCase):
             engine = SericiteEngine()
             checkpoints = []
             engine.create_root(
-                "checkpoint()\nvalue = make()\ncheckpoint()\n",
-                functions={
+                (
+                    "from __addon__ import make, checkpoint\n"
+                    + "checkpoint()\nvalue = make()\ncheckpoint()\n"
+                ),
+                addons={
                     "make": lambda size=size: [0] * size,
                     "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
                         checkpoints.append(engine._contexts[0].instruction_count)
@@ -261,7 +277,7 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "value = make()\nprobe(value)\n",
                 limits=limits,
-                functions={
+                addons={
                     "make": lambda: [0] * 10_000,
                     "probe": lambda value: called.append(value),
                 },
@@ -275,7 +291,7 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "value = make()\n",
                 limits=limits,
-                functions={"make": lambda: [0] * 10_000},
+                addons={"make": lambda: [0] * 10_000},
             )
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
@@ -291,8 +307,11 @@ class SecurityQuotaTests(unittest.TestCase):
 
         with patch("sericite.engine._StringRenderer.text", observed_text):
             engine.create_root(
-                "value = make()\ncheckpoint()\nprint(value)\n",
-                functions={
+                (
+                    "from __addon__ import make, checkpoint\n"
+                    + "value = make()\ncheckpoint()\nprint(value)\n"
+                ),
+                addons={
                     "make": lambda: [0] * 1000,
                     "checkpoint": lambda: checkpoints.append(
                         engine._contexts[0].instruction_count
@@ -314,8 +333,12 @@ class SecurityQuotaTests(unittest.TestCase):
         source = 'sub = VM("value = [0' + ", 0" * 99 + ']")\n'
         with patch("sericite.engine._hostdbg._estimate_size", observed_estimate):
             engine.create_root(
-                source + "sub.run()\ncheckpoint()\nsub.snapshot()\n",
-                functions={
+                (
+                    "from __addon__ import checkpoint\n"
+                    + source
+                    + "sub.run()\ncheckpoint()\nsub.snapshot()\n"
+                ),
+                addons={
                     "checkpoint": lambda: checkpoints.append(
                         engine._contexts[0].instruction_count
                     )
@@ -376,9 +399,9 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "value = get()\n",
                 limits=limits,
-                functions={"get": lambda: list(range(10))},
+                addons={"get": lambda: list(range(10))},
             )
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_ffi_result_enforces_dict_size(self):
         limits = SericiteLimits(max_dict_size=2)
@@ -386,20 +409,20 @@ class SecurityQuotaTests(unittest.TestCase):
             run(
                 "value = get()\n",
                 limits=limits,
-                functions={"get": lambda: {i: i for i in range(10)}},
+                addons={"get": lambda: {i: i for i in range(10)}},
             )
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_ffi_result_enforces_integer_bits(self):
         limits = SericiteLimits(max_int_bits=64)
         with self.assertRaises(SericiteError) as ctx:
-            run("value = get()\n", limits=limits, functions={"get": lambda: 1 << 1000})
-        self.assertEqual(ctx.exception.kind, "ffi_error")
+            run("value = get()\n", limits=limits, addons={"get": lambda: 1 << 1000})
+        self.assertEqual(ctx.exception.kind, "addon_error")
 
     def test_ffi_result_string_charges_actual_memory(self):
         limits = SericiteLimits(max_total_bytes=1000)
         with self.assertRaises(SericiteError) as ctx:
-            run("value = get()\n", limits=limits, functions={"get": lambda: "x" * 1000})
+            run("value = get()\n", limits=limits, addons={"get": lambda: "x" * 1000})
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
     def test_ffi_result_allocation_uses_container_and_key_sizes(self):
@@ -408,7 +431,8 @@ class SecurityQuotaTests(unittest.TestCase):
             with self.subTest(value=value):
                 engine = SericiteEngine()
                 engine.create_root(
-                    "value = get()\n", functions={"get": lambda value=value: value}
+                    ("from __addon__ import get\n" + "value = get()\n"),
+                    addons={"get": lambda value=value: value},
                 ).run()
                 self.assertEqual(engine._contexts[0].alloc_bytes, expected)
 
@@ -874,7 +898,7 @@ class DefaultParamTests(unittest.TestCase):
         source = (
             "def f(a, b=5):\n"
             "    return a + b\n"
-            'sub = VM("print(f(1))\\nprint(f(1, 10))\\n", functions={"f": f})\n'
+            'sub = VM("from __addon__ import f\\nprint(f(1))\\nprint(f(1, 10))\\n", addons={"f": f})\n'
             "print(sub.run())\n"
         )
         self.assertEqual(run(source), "6\n11\n\n")

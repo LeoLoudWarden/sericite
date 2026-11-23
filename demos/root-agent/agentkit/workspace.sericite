@@ -1,4 +1,5 @@
 from . import display
+from __addon__ import llm_chat, http_get
 
 RUN_INSTRUCTION_LIMIT = 2000000
 RUN_OUTPUT_LIMIT = 1048576
@@ -73,7 +74,7 @@ def run_path(state, path):
         run = VM(
             entry_file=path,
             fs=state["fs"],
-            functions={"llm_chat": llm_chat, "http_get": http_get},
+            addons={"llm_chat": llm_chat, "http_get": http_get},
             max_instructions=RUN_INSTRUCTION_LIMIT,
             max_output_bytes=RUN_OUTPUT_LIMIT,
             output_writer=display.write_live,
