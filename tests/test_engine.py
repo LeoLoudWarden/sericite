@@ -363,7 +363,7 @@ class SnapshotViewTests(unittest.TestCase):
         self.assertEqual(vm.snapshot()["child_count"], 1)
         self.assertEqual(len(engine._contexts), 2)
 
-    def test_failed_child_creation_does_not_consume_total_vm_quota(self):
+    def test_failed_child_creation_does_not_consume_descendant_quota(self):
         engine = SericiteEngine()
         vm = engine.create_root(
             "try:\n"
@@ -372,9 +372,25 @@ class SnapshotViewTests(unittest.TestCase):
             "    pass\n"
             'sub = VM("print(1)")\n'
             "print(sub.run())\n",
-            limits=SericiteLimits(max_total_vms=2),
+            limits=SericiteLimits(max_descendant_vms=1),
         )
         self.assertEqual(vm.run(), "1\n\n")
+
+    def test_total_vm_limit_is_rejected_as_unknown_option(self):
+        with self.assertRaises(TypeError):
+            SericiteLimits(max_total_vms=2)
+        vm = SericiteEngine().create_root('sub = VM("", max_total_vms=2)')
+        with self.assertRaises(SericiteError) as ctx:
+            vm.run()
+        self.assertEqual(ctx.exception.kind, "type_error")
+
+    def test_unrelated_root_does_not_consume_descendant_quota(self):
+        engine = SericiteEngine(SericiteLimits(max_descendant_vms=1))
+        root = engine.create_root('sub = VM("")\nprint("created")')
+        unrelated = engine.create_root("")
+        self.assertEqual(root.run(), "created\n")
+        self.assertEqual(root.snapshot()["child_count"], 1)
+        unrelated.dispose()
 
     def test_failed_const_allocation_leaves_no_orphan_context(self):
         engine = SericiteEngine()
@@ -970,7 +986,6 @@ UNLIMITED_OPTIONS = {
 }
 STRUCTURAL_OPTIONS = {
     "max_frames",
-    "max_total_vms",
     "max_descendant_vms",
     "max_list_size",
     "max_dict_size",
@@ -1294,8 +1309,8 @@ class DisposeTests(unittest.TestCase):
         gc.collect()
         self.assertEqual(engine._contexts, {})
 
-    def test_live_total_vm_quota_is_refunded_by_gc_and_dispose(self):
-        engine = SericiteEngine(SericiteLimits(max_total_vms=2))
+    def test_live_descendant_quota_is_refunded_by_gc_and_dispose(self):
+        engine = SericiteEngine(SericiteLimits(max_descendant_vms=1))
         root = engine.create_root("def make():\n    sub = VM('')")
         root.run()
         for _ in range(3):

@@ -18,6 +18,7 @@
 
 ### Removed
 - **破坏性变更**：移除 `functions=` 参数、CLI `--capabilities`、观察事件的 `functions` 字段及授予函数的全局名字回退；迁移时需改用 `addons` 并为原直接调用补上 `from __addon__ import ...`。
+- **破坏性变更**：移除 `max_total_vms` 及引擎全局存活 VM 数检查；存活后代数量统一由各 VM 的 `max_descendant_vms` 按子树约束，无关 root 不再相互干扰，脚本也不能再通过全局限额探测其他 root 的存在。
 
 ### Fixed
 - 跨 VM 执行授予函数时，普通模块或 `__addon__` 缺失导出的 `import_error` 不再向调用方泄露定义方导出名；同 VM 诊断仍保留具体名称。

@@ -69,9 +69,8 @@ def bench(fn: Callable[[], None], reps: int) -> float:
 def main() -> None:
     script_limits = SericiteLimits(
         max_instructions=100_000_000,
-        max_total_vms=N_SCRIPT + 100,
+        max_descendant_vms=N_SCRIPT + 100,
     )
-    host_limits = SericiteLimits(max_total_vms=N_HOST + 100)
 
     results: list[tuple[str, float]] = []  # (label, µs per unit)
 
@@ -80,12 +79,12 @@ def main() -> None:
         SericiteEngine().create_root(SOURCE).run()
 
     def host_create() -> None:
-        engine = SericiteEngine(limits=host_limits)
+        engine = SericiteEngine()
         for _ in range(N_HOST):
             engine.create_root(SOURCE)
 
     def host_create_run() -> None:
-        engine = SericiteEngine(limits=host_limits)
+        engine = SericiteEngine()
         for _ in range(N_HOST):
             engine.create_root(SOURCE).run()
 
