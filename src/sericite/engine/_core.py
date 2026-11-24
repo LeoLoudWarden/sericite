@@ -341,12 +341,6 @@ class _EngineCore:
                 if ancestor.parent_id is None:
                     break
                 ancestor = self._resolve_account(ancestor.parent_id)
-        if len(self._contexts) >= limits.max_total_vms:
-            raise SericiteError(
-                "total VM limit exceeded",
-                kind="resource_exhausted",
-                filename=filename,
-            )
         code = compile_source(source, filename)
         vm_id = self._next_vm_id
         _stamp_origin(code, vm_id)

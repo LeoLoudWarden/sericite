@@ -982,15 +982,6 @@ class ExternalAuditTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
-    def test_total_vms_limit(self):
-        limits = SericiteLimits(max_total_vms=3)
-        engine = SericiteEngine(limits=limits)
-        source = 'for i in range(10):\n    sub = VM("x = 1\\n")\n'
-        vm = engine.create_root(source)
-        with self.assertRaises(SericiteError) as ctx:
-            vm.run()
-        self.assertEqual(ctx.exception.kind, "resource_exhausted")
-
     def test_child_source_compilation_is_charged_near_linearly(self):
         limits = SericiteLimits(max_instructions=100)
         engine = SericiteEngine(limits=limits)

@@ -28,7 +28,6 @@ _VM_OPTIONS = {
     "max_string_bytes",
     "max_int_bits",
     "max_total_bytes",
-    "max_total_vms",
     "max_descendant_vms",
     "max_vm_depth",
     "max_fs_files",
@@ -52,7 +51,6 @@ class SericiteLimits:
     max_string_bytes: int = 1_048_576
     max_int_bits: int = 4096
     max_total_bytes: int = 67_108_864
-    max_total_vms: int = 1000
     max_descendant_vms: int = 1000
     max_vm_depth: int = 8
     max_fs_files: int = 1000

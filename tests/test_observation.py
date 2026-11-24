@@ -563,7 +563,7 @@ class ObservationGarbageCollectionTests(unittest.TestCase):
         observation.close()
 
     def test_observed_gc_still_refunds_live_vm_quotas(self):
-        engine = SericiteEngine(SericiteLimits(max_total_vms=2))
+        engine = SericiteEngine(SericiteLimits(max_descendant_vms=1))
         events = []
         observation = engine.observe(events.append)
         root = engine.create_root("def make():\n    sub = VM('')")

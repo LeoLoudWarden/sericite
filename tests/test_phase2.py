@@ -926,14 +926,6 @@ class ResourceLimitTests(unittest.TestCase):
             vm.run()
         self.assertEqual(ctx.exception.kind, "resource_exhausted")
 
-    def test_total_vm_limit(self):
-        limits = SericiteLimits(max_total_vms=2)
-        engine = SericiteEngine(limits=limits)
-        vm = engine.create_root('a = VM("x = 1")\nb = VM("y = 2")\n')
-        with self.assertRaises(SericiteError) as ctx:
-            vm.run()
-        self.assertEqual(ctx.exception.kind, "resource_exhausted")
-
     def test_descendant_limit_covers_tree_and_is_catchable_by_parent(self):
         branch_source = "leaf = VM('')\nsecond_leaf = VM('')"
         child_source = (
@@ -943,7 +935,7 @@ class ResourceLimitTests(unittest.TestCase):
             "except resource_exhausted:\n"
             "    print('child swallowed its own quota')"
         )
-        engine = SericiteEngine(SericiteLimits(max_total_vms=10))
+        engine = SericiteEngine()
         root = engine.create_root(
             f"sub = VM({child_source!r}, max_descendant_vms=2)\n"
             "try:\n"
