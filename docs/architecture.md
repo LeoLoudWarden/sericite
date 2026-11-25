@@ -123,7 +123,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 ### 5.1 Basic rules
 
 - A child VM inherits its parent's quotas by default; `VM()` arguments can only tighten them.
-- Only cumulative quota fields accept `-1` for no local cap; the live-count fields `max_total_vms` and `max_descendant_vms`, like other structural fields, always remain finite.
+- Only cumulative quota fields accept `-1` for no local cap; the live-count field `max_descendant_vms`, like other structural fields, always remains finite.
 - Instruction, memory, and child-VM consumption is charged to all ancestors; exceeding the quota at any finite ring fails. Unlimited accounts still accumulate their ledgers.
 - The memory ledger is an approximate, monotonically increasing high-water mark; closure cells and captured environments are included. `max_fs_storage_bytes` instead compares the file world's current approximate size before and after an operation, allowing shrinkage and operations without further growth without turning that current size into a cumulative VFS-owned ledger.
 - O(n)-and-above work is charged to `instruction_count` at a scale-proportional rate, not treated as one instruction.
@@ -190,7 +190,7 @@ Caveats:
 - Built-in types: int, float, str, bool, None, list, dict, tuple; operators, comparisons, membership, short-circuit logic.
 - Records and schemas: `class` defines a runtime structural contract (fields + per-field contracts), dot member access, fixed shape, `wrap`/`unwrap` conversion to and from dicts; annotations (parameters / return / annotated assignment) execute as real runtime contracts with blame-style errors; class and annotation names are compile-time labels used only in error text.
 - Control flow: `if/elif/else`, `while`, `for`, `break/continue`, `try/except/else/finally`, `raise`, ternary expressions, and list/dict comprehensions with independent scopes.
-- Functions: definitions, recursion, positional and keyword arguments, default arguments, decorators, independent call frames, lexical closures with by-reference capture.
+- Functions: definitions, recursion, positional and keyword arguments, default arguments, `*args`/`**kwargs`, `*`/`**` argument expansion, `global`/`nonlocal` declarations, decorators, independent call frames, lexical closures with by-reference capture.
 - VMs within VMs: any layer can create child VMs; a child cannot tell its depth; the parent can preset files, feed input, set breakpoints, single-step (statement- and instruction-level), snapshot, and terminate.
 - Host observation: `engine.observe()` reports committed creation, state, output, and disposal events across the whole VM tree; the observation session can also take read-only snapshots by VM ID without obtaining driving authority.
 - Capability granting (FFI): the host injects functions into the root VM; any layer can grant functions to the next layer down; bidirectional deep copy across the host boundary with a pure-data type whitelist.
@@ -198,7 +198,7 @@ Caveats:
 - Every VM has a blank VFS by default; a detached workspace can be configured, exclusively moved into a VM, and retrieved after a terminal state without transferring module caches or IO.
 - Module system: supports VFS modules, packages, and relative imports through the unified execution, debugging, and quota paths.
 
-Deliberate trade-offs: additional container methods, variadic arguments, and chained comparisons are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
+Deliberate trade-offs: additional container methods and chained comparisons are not yet supported — these are usability or expressiveness matters, to be added on demand; they do not affect the design's main line.
 
 ## 8. Known limits and semantic deviations
 
@@ -213,4 +213,4 @@ Deliberate trade-offs: additional container methods, variadic arguments, and cha
 
 ## 9. Explicitly not supported yet
 
-String, list, dict, and tuple methods outside the documented closed sets; variadic/keyword-only parameters, set comprehensions, generator expressions, `**` unpacking, starred unpacking, chained comparisons, slice assignment, wildcard imports, `del`, class field defaults/methods/inheritance.
+String, list, dict, and tuple methods outside the documented closed sets; keyword-only parameters, set comprehensions, generator expressions, `*`/`**` expansion in literals, starred destructuring, chained comparisons, slice assignment, wildcard imports, `del`, class field defaults/methods/inheritance.
