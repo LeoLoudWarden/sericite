@@ -97,8 +97,8 @@ for first, second in [(1, 2), (3, 4)]:
 True == 1    # False, bool is not int
 1 + True     # type_error, not arithmetic
 
-if 1:        # implicit truth conversion
-    ...
+bool("")     # False
+bool([0])    # True
 
 not x
 x and y or z # short-circuit, precedence not > and > or

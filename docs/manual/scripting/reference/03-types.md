@@ -6,6 +6,13 @@ These methods take arguments positionally. A `None` in a signature means that po
 
 ## `list`
 
+```text
+list() -> list
+list(value) -> list
+```
+
+Accepts `list`, `tuple`, `str`, or `dict`. `list`/`tuple` build from elements, `str` builds from characters, and `dict` builds from keys; elements are not recursively copied. Other types raise `type_error`. `list()` returns an empty list.
+
 ### `list.append`
 
 ```text
@@ -41,7 +48,12 @@ Returns the position of the first element structurally equal to `value` within t
 
 ## `tuple`
 
-Tuples are not writable and have no `append` or `pop`.
+```text
+tuple() -> tuple
+tuple(value) -> tuple
+```
+
+Tuples are not writable. Input and ordering rules are the same as `list`.
 
 ### `tuple.count`
 
@@ -60,6 +72,21 @@ tuple.index(value, start=None, stop=None) -> int
 Returns the position of the first matching element within the search interval. The rules are the same as [`list.index`](#listindex); not found raises `value_error`.
 
 ## `dict`
+
+```text
+dict() -> dict
+dict(value) -> dict
+dict(**entries) -> dict
+dict(value, **entries) -> dict
+```
+
+`value` must be one of the following:
+- another dict;
+- a list or tuple of two-element lists/tuples. A key-value pair whose length is not 2 raises `value_error`.
+
+Otherwise `type_error` is raised.
+
+Dict copying and key-value pair construction are both shallow copies.
 
 Dict methods follow the dict key whitelist and insertion order; see [values and literals](01-language.md#values-and-literals).
 
