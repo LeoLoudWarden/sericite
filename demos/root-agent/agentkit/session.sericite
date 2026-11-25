@@ -1,8 +1,6 @@
 from . import display
 from . import workspace
-from __addon__ import llm_chat
-
-MAX_ROUNDS = 30
+from __addon__ import llm_chat, get_max_rounds
 
 
 def tool(name, description, properties, required):
@@ -92,7 +90,8 @@ def run_session(prompt, task, fs, controller, title):
     tools = tool_definitions()
     final = "(达到最大轮数)"
     rounds = 0
-    while rounds < MAX_ROUNDS:
+    max_rounds = get_max_rounds()
+    while rounds < max_rounds:
         print()
         display.print_tagged("ROUND", "round", f"{title} {rounds + 1}")
         resp = llm_chat({"messages": messages, "tools": tools})

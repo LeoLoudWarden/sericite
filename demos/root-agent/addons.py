@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent.parent
 DOC_SOURCE_DIR = PROJECT_ROOT / "docs" / "manual" / "scripting"
 DOC_VFS_DIR = "/sericite手册"
+MAX_ROUNDS = 80
 MAX_FETCH_CHARS = 500_000
 LOG_LLM = False
 LOG_LLM_FULL_JSON = False
@@ -218,6 +219,10 @@ def make_http_get():
     return http_get
 
 
+def get_max_rounds():
+    return MAX_ROUNDS
+
+
 def configure():
     load_dotenv(os.environ.get("DEMO_ENV") or BASE_DIR / ".env")
     api_url = os.environ.get("API_URL")
@@ -240,6 +245,7 @@ def configure():
             "llm_chat": make_llm_chat(_normalize_api_url(api_url), api_key, model),
             "http_get": make_http_get(),
             "terminal_style": terminal_style,
+            "get_max_rounds": get_max_rounds,
         },
         "files": {
             "/control/prompt_outer.txt": (BASE_DIR / "prompt_outer.txt").read_text(
