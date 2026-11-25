@@ -18,7 +18,7 @@ debugger.sericite SOURCE [INPUT] [TARGET_ARG ...]
 | `INPUT` | 预置给目标 VM 的 stdin，可包含多行；省略后不预置 |
 | `TARGET_ARG` | 显式构造给目标程序的 argv 参数 |
 
-子 VM 不自动继承父级 argv（见 [CLI 参考](../../docs/cli-reference.zh-CN.md)第 2 节）。因此调试器会在目标源码前显式加入一行 `argv = [...]`。
+子 VM 不自动继承父级 argv（见 [CLI 参考](../../docs/manual/cli/reference/01-cli.zh-CN.md#argv)）。因此调试器会在目标源码前显式加入一行 `argv = [...]`。
 
 面板把这一行也显示出来，所以显示的行号与目标实际执行完全一致。
 
@@ -143,7 +143,7 @@ outer debugger
 session ended · done
 ```
 
-外层能观察内层的安全快照，但不能越过内层取得最内层 VM 的句柄。控制可以递归，可见性仍有边界；快照为什么不携带子 VM 句柄，见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
+外层能观察内层的安全快照，但不能越过内层取得最内层 VM 的句柄。控制可以递归，可见性仍有边界；快照为什么不携带子 VM 句柄，见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md)。
 
 每台目标 VM 都获得一份隔离的 `debugger_lib` 辅助模块副本。因此即使内层调试器只以源码字符串进入目标，它的 import 仍能解析，D(D(P)) 不需要宿主文件映射。
 
@@ -163,11 +163,11 @@ session ended · done
 | `q` | `terminate()` 目标 VM |
 | `h` | 显示帮助 |
 
-语句级单步把函数调用作为一条语句执行；指令级单步可以进入函数内部（语义见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节）。
+语句级单步把函数调用作为一条语句执行；指令级单步可以进入函数内部（语义见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md)）。
 
 目标 VM 的指令配额为 20,000 条。长源码只显示当前位置附近的窗口，避免自调试时反复打印整份调试器源码。
 
-当前快照 API 不提供 opcode 名称或操作数，因此 `i` 展示每条内部指令执行后的源码位置和状态变化，不是反汇编。快照的完整字段与限制见[虚拟机参考](../../docs/vm-reference.zh-CN.md)第 4 节。
+当前快照 API 不提供 opcode 名称或操作数，因此 `i` 展示每条内部指令执行后的源码位置和状态变化，不是反汇编。快照的完整字段与限制见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md)。
 
 ## 文件与依赖
 
@@ -176,6 +176,6 @@ session ended · done
 - `debugger_lib/session.sericite`：watchpoint 状态和语句/指令驱动。
 - `tests/test_sericite_debugger.py`：真实 CLI 测试，包括完整的 D(D(P)) 链路。
 
-demo 不需要 Python capabilities、宿主目标文件目录、网络、LLM 或第三方依赖。
+demo 不需要 Python addon 配置、宿主目标文件目录、网络、LLM 或第三方依赖。
 
 命令行中的 shell 变量只负责把源码文本放进 argv，不参与 Sericite 程序的执行。

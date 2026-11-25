@@ -18,7 +18,7 @@ debugger.sericite SOURCE [INPUT] [TARGET_ARG ...]
 | `INPUT` | Optional multiline stdin preloaded into the target VM |
 | `TARGET_ARG` | Arguments used to construct the target program's argv explicitly |
 
-A child VM does not inherit its parent's argv (see the [CLI reference](../../docs/cli-reference.md) §2). The debugger therefore prepends an explicit `argv = [...]` line to the target source.
+A child VM does not inherit its parent's argv (see the [CLI reference](../../docs/manual/cli/reference/01-cli.md#argv)). The debugger therefore prepends an explicit `argv = [...]` line to the target source.
 
 The panel shows this line too, so displayed line numbers match the executing target exactly.
 
@@ -143,7 +143,7 @@ The outer debugger eventually sees the tail of the inner debugger's isolated std
 session ended · done
 ```
 
-The outer debugger can inspect the inner one's safe snapshot, but cannot reach through it to obtain the innermost VM handle. Control can recurse while visibility boundaries remain; see the [VM reference](../../docs/vm-reference.md) §4 for why snapshots do not carry child VM handles.
+The outer debugger can inspect the inner one's safe snapshot, but cannot reach through it to obtain the innermost VM handle. Control can recurse while visibility boundaries remain; see the [VM reference](../../docs/manual/scripting/reference/06-vm.md) for why snapshots do not carry child VM handles.
 
 Every target VM receives an isolated copy of the `debugger_lib` helper modules. The source-only inner entry can therefore resolve its imports and repeat D(D(P)) without a host-filesystem mapping.
 
@@ -163,11 +163,11 @@ Every target VM receives an isolated copy of the `debugger_lib` helper modules. 
 | `q` | `terminate()` the target VM |
 | `h` | Show help |
 
-Statement stepping treats a function call as one statement; instruction stepping can enter the function (see the [VM reference](../../docs/vm-reference.md) §4).
+Statement stepping treats a function call as one statement; instruction stepping can enter the function (see the [VM reference](../../docs/manual/scripting/reference/06-vm.md)).
 
 The target VM has a 20,000-instruction quota. Long sources show only a window around the current position instead of repeatedly printing the entire debugger source.
 
-The current snapshot API does not expose opcode names or operands, so `i` shows source positions and state after each internal instruction, not disassembly. See the [VM reference](../../docs/vm-reference.md) §4 for the full snapshot fields and limits.
+The current snapshot API does not expose opcode names or operands, so `i` shows source positions and state after each internal instruction, not disassembly. See the [VM reference](../../docs/manual/scripting/reference/06-vm.md) for the full snapshot fields and limits.
 
 ## Files and dependencies
 
@@ -176,6 +176,6 @@ The current snapshot API does not expose opcode names or operands, so `i` shows 
 - `debugger_lib/session.sericite`: watchpoint state and statement/instruction driving.
 - `tests/test_sericite_debugger.py`: real CLI tests, including the complete D(D(P)) chain.
 
-The demo needs no Python capabilities, host target-file directory, network, LLM, or third-party dependency.
+The demo needs no Python addon configuration, host target-file directory, network, LLM, or third-party dependency.
 
 Shell variables in the commands only place source text into argv; they do not participate in executing Sericite code.
