@@ -33,6 +33,8 @@ uv run --extra demo sericite \
   demos/root-agent/agent.sericite
 ```
 
+`MAX_ROUNDS` at the top of `addons.py` controls the outer LLM session's round limit and defaults to 80.
+
 `DEMO_ENV` can select another environment file. Never commit API keys; for the addon configuration file's trust boundary, see the [CLI reference](../../docs/manual/cli/reference/01-cli.md#data-and-trust-boundary).
 
 ## Full verification without a real API

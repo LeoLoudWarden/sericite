@@ -33,6 +33,8 @@ uv run --extra demo sericite \
   demos/root-agent/agent.sericite
 ```
 
+`addons.py` 顶部的 `MAX_ROUNDS` 控制外层 LLM 会话的最大轮数，默认 80。
+
 也可以用 `DEMO_ENV` 指定另一个环境文件。不要把 API 密钥提交到仓库；addon 配置文件的信任边界见 [CLI 参考](../../docs/manual/cli/reference/01-cli.zh-CN.md#数据与信任边界)。
 
 ## 无真实 API 的完整验证

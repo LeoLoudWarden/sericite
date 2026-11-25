@@ -138,6 +138,31 @@ class RootAgentDemoTests(unittest.TestCase):
         self.assertIn("请不要重复打印或重跑大段输出", result.stdout)
 
 
+class AddonConfigurationTests(unittest.TestCase):
+    def test_max_rounds_is_configurable(self):
+        spec = importlib.util.spec_from_file_location(
+            "sericite_demo_addons", DEMO_ROOT / "addons.py"
+        )
+        addons = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(addons)
+        self.assertEqual(addons.MAX_ROUNDS, 80)
+        with (
+            mock.patch.object(addons, "load_dotenv"),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "API_URL": "http://example.test",
+                    "API_KEY": "test",
+                    "API_MODEL": "test",
+                },
+                clear=True,
+            ),
+            mock.patch.object(addons, "MAX_ROUNDS", 7),
+        ):
+            config = addons.configure()
+            self.assertEqual(config["addons"]["get_max_rounds"](), 7)
+
+
 class ManualFileTests(unittest.TestCase):
     def test_all_chinese_scripting_manual_pages_are_seeded(self):
         spec = importlib.util.spec_from_file_location(
