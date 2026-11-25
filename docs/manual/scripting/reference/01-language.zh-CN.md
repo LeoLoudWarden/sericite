@@ -371,7 +371,7 @@ print(f"{value:{width}.{precision}f}")
 | `{value}` | 默认字符串渲染 |
 | `{value!s}` | 先经 `str()` 语义转换 |
 | `{value!r}` | 先经安全 `repr` 渲染 |
-| `{value!a}` | 类似 `!r`，并非法 ASCII 字符递归转义 |
+| `{value!a}` | 类似 `!r`，并对非 ASCII 字符递归转义 |
 
 转换先于格式说明符执行。带非空格式说明符且没有显式转换时，只接受 `str`、`int`、`float`。
 
