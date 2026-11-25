@@ -258,6 +258,45 @@ class ConstructorResourceTests(unittest.TestCase):
                     run_error(expression, limits).kind, "resource_exhausted"
                 )
 
+    def test_dict_duplicate_keys_count_toward_size_limit_once(self):
+        limits = SericiteLimits(max_dict_size=1)
+        cases = {
+            "dict([('a', 1), ('a', 2)])": "{'a': 2}\n",
+            "dict({'a': 1}, a=2)": "{'a': 2}\n",
+            "dict([('a', 1), ('a', 2)], a=3)": "{'a': 3}\n",
+        }
+        for expression, expected in cases.items():
+            with self.subTest(expression=expression):
+                self.assertEqual(run(f"print({expression})", limits), expected)
+
+    def test_dict_duplicate_writes_allocate_only_final_slots(self):
+        deltas = {}
+        sources = {
+            "single": [["a", 1]],
+            "duplicate": [["a", 1], ["a", 2]],
+            "two": [["a", 1], ["b", 2]],
+        }
+        for name, value in sources.items():
+            engine = SericiteEngine()
+            checkpoints = []
+            vm = engine.create_root(
+                "from __addon__ import make, checkpoint\n"
+                "value = make()\n"
+                "checkpoint()\n"
+                "result = dict(value)\n"
+                "checkpoint()",
+                addons={
+                    "make": lambda value=value: value,
+                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                        checkpoints.append(engine._contexts[0].alloc_bytes)
+                    ),
+                },
+            )
+            vm.run()
+            deltas[name] = checkpoints[1] - checkpoints[0]
+        self.assertEqual(deltas["duplicate"], deltas["single"])
+        self.assertEqual(deltas["two"] - deltas["single"], 16)
+
     def test_container_results_enforce_memory_limit(self):
         limits = SericiteLimits(max_total_bytes=0)
         for expression in ("list('x')", "tuple('x')", "dict(a=1)"):
@@ -266,37 +305,39 @@ class ConstructorResourceTests(unittest.TestCase):
                     run_error(expression, limits).kind, "resource_exhausted"
                 )
 
-    def test_list_constructor_work_and_allocation_scale_with_input(self):
-        deltas = {}
-        for size in (10, 1000):
-            engine = SericiteEngine()
-            checkpoints = []
-            vm = engine.create_root(
-                "from __addon__ import make, checkpoint\n"
-                "value = make()\n"
-                "checkpoint()\n"
-                "result = list(value)\n"
-                "checkpoint()",
-                addons={
-                    "make": lambda size=size: "x" * size,
-                    "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
-                        checkpoints.append(
-                            (
-                                engine._contexts[0].instruction_count,
-                                engine._contexts[0].alloc_bytes,
+    def test_sequence_constructor_work_and_allocation_scale_with_input(self):
+        for constructor in ("list", "tuple"):
+            deltas = {}
+            for size in (10, 1000):
+                engine = SericiteEngine()
+                checkpoints = []
+                vm = engine.create_root(
+                    "from __addon__ import make, checkpoint\n"
+                    "value = make()\n"
+                    "checkpoint()\n"
+                    f"result = {constructor}(value)\n"
+                    "checkpoint()",
+                    addons={
+                        "make": lambda size=size: "界" * size,
+                        "checkpoint": lambda engine=engine, checkpoints=checkpoints: (
+                            checkpoints.append(
+                                (
+                                    engine._contexts[0].instruction_count,
+                                    engine._contexts[0].alloc_bytes,
+                                )
                             )
-                        )
-                    ),
-                },
-            )
-            vm.run()
-            deltas[size] = (
-                checkpoints[1][0] - checkpoints[0][0],
-                checkpoints[1][1] - checkpoints[0][1],
-            )
-        self.assertGreater(deltas[1000][0], deltas[10][0])
-        self.assertGreaterEqual(deltas[10][1], 10 * 8)
-        self.assertGreaterEqual(deltas[1000][1], 1000 * 8)
+                        ),
+                    },
+                )
+                vm.run()
+                deltas[size] = (
+                    checkpoints[1][0] - checkpoints[0][0],
+                    checkpoints[1][1] - checkpoints[0][1],
+                )
+            with self.subTest(constructor=constructor):
+                self.assertGreater(deltas[1000][0], deltas[10][0])
+                self.assertGreaterEqual(deltas[10][1], 10 * 12)
+                self.assertGreaterEqual(deltas[1000][1], 1000 * 12)
 
     def test_failed_dict_conversion_charges_long_key_scan(self):
         deltas = {}
