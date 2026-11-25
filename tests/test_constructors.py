@@ -111,6 +111,14 @@ class ConstructorValueTests(unittest.TestCase):
             "{'a': 1, 'b': 2}\n{'a': 3, 'b': 4}\n{'value': 1, 'entries': 2}\n",
         )
 
+    def test_dict_accepts_former_internal_keyword_names_as_entries(self):
+        self.assertEqual(
+            run(
+                "print(dict(_caller_context=1, _caller_meter=2, _allocation_permit=3))"
+            ),
+            "{'_caller_context': 1, '_caller_meter': 2, '_allocation_permit': 3}\n",
+        )
+
 
 class ConstructorContractTests(unittest.TestCase):
     def test_all_constructor_names_remain_annotation_contracts(self):
@@ -188,6 +196,12 @@ class ConstructorErrorTests(unittest.TestCase):
             "int(1, 2)",
             "float(1, 2)",
             "str(1, 2)",
+            "str(1, 2, 3)",
+            "str(*[1, 2])",
+            "str(1, *[2])",
+            "repr(1, 2)",
+            "repr(1, 2, 3)",
+            "repr(*[1, 2])",
             "bool(1, 2)",
             "list([], [])",
             "tuple([], [])",
@@ -195,6 +209,20 @@ class ConstructorErrorTests(unittest.TestCase):
         ):
             with self.subTest(expression=expression):
                 self.assertEqual(run_error(expression).kind, "type_error")
+
+    def test_string_native_argument_errors_are_catchable(self):
+        for name in ("str", "repr"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    run(
+                        "try:\n"
+                        f"    {name}(1, 2)\n"
+                        "except type_error:\n"
+                        "    print('caught')\n"
+                        "print('alive')"
+                    ),
+                    "caught\nalive\n",
+                )
 
     def test_literal_and_comprehension_unpacking_remain_rejected(self):
         for source in (

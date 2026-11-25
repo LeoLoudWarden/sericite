@@ -14,6 +14,7 @@ from ._model import (
     VMHandle,
     _GrantedHostFunction,
     _GrantedSericiteFunction,
+    _NativeCall,
     _NativeFunction,
 )
 from ._values import _MAX_RENDER_NODES, _estimate_size, _function_repr, _schema_repr
@@ -97,6 +98,7 @@ class _EngineHostDebug:
 
     def _vm_method_work(
         self,
+        _call: _NativeCall,
         handle: VMHandle,
         attr: str,
         args: tuple[object, ...],
@@ -134,6 +136,7 @@ class _EngineHostDebug:
 
     def _vm_method_allocation(
         self,
+        call: _NativeCall,
         handle: VMHandle,
         attr: str,
         args: tuple[object, ...],
@@ -144,7 +147,6 @@ class _EngineHostDebug:
             return 32 * size
         if attr == "take_fs":
             return 8
-        context = kwargs["_caller_context"]
         target = self._context(handle)
         if attr == "run":
             inputs = args[0] if args else kwargs.get("inputs")
@@ -153,18 +155,13 @@ class _EngineHostDebug:
             if not isinstance(inputs, (list, tuple)):
                 return 0
             amount = target.io.batch_cost(inputs)
-            return self._meter(context).reserve(target.io, "input", amount)
+            return call.meter.reserve(target.io, "input", amount)
         if attr == "feed_input":
             value = args[0] if args else kwargs.get("value")
             amount = target.io.input_cost(value)
-            return self._meter(context).reserve(target.io, "input", amount)
+            return call.meter.reserve(target.io, "input", amount)
         if attr == "add_breakpoint":
-            public_kwargs = {
-                name: value
-                for name, value in kwargs.items()
-                if name not in {"_caller_context", "_caller_meter"}
-            }
-            key = self._breakpoint_call(args, public_kwargs)
+            key = self._breakpoint_call(args, kwargs)
             if key in target.breakpoints:
                 return 0
             return 64 + (len(key[1]) * 4 if key[1] is not None else 0)
@@ -185,15 +182,15 @@ class _EngineHostDebug:
 
     def _charged_vm_method(
         self,
+        call: _NativeCall,
         handle: VMHandle,
         attr: str,
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> object:
-        context = kwargs.pop("_caller_context")
-        result_meter = kwargs.pop("_caller_meter")
-        meter = self._meter(context)
-        permit = kwargs.pop("_allocation_permit", None)
+        result_meter = call.caller_meter
+        meter = call.meter
+        permit = call.allocation_permit
         feed_signature = (
             len(args) + len(kwargs) == 1 and len(args) <= 1 and set(kwargs) <= {"value"}
         )

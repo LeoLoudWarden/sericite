@@ -5,6 +5,7 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import replace
 
 from .. import isa
 from ..accounting import UNLIMITED, AccountRoute, AllocationPermit, Meter
@@ -31,6 +32,7 @@ from ._model import (
     _Cell,
     _GrantedHostFunction,
     _GrantedSericiteFunction,
+    _NativeCall,
     _NativeFunction,
 )
 from ._values import (
@@ -1458,7 +1460,7 @@ class _EngineCore:
             ):
                 home = None
             contexts = (context,) if home is None else (context, home)
-            caller_meter = self._meter(context) if function.needs_caller else None
+            caller_meter = self._meter(context)
             try:
                 with self._causal_meter(*contexts) as meter:
                     meter.work(len(function._signatures) + len(args) + len(kwargs))
@@ -1469,16 +1471,14 @@ class _EngineCore:
                         raise SericiteError(
                             f"invalid arguments for {function.name}", kind="type_error"
                         ) from None
-                    if function.needs_caller:
-                        kwargs["_caller_context"] = context
-                        kwargs["_caller_meter"] = caller_meter
-                    meter.work(function.work(*args, **kwargs))
-                    allocation = function.allocation(*args, **kwargs)
+                    call = _NativeCall(context, meter, caller_meter)
+                    meter.work(function.work(call, *args, **kwargs))
+                    allocation = function.allocation(call, *args, **kwargs)
                     if isinstance(allocation, AllocationPermit):
-                        kwargs["_allocation_permit"] = allocation
+                        call = replace(call, allocation_permit=allocation)
                     else:
                         meter.allocate(allocation)
-                    result = function.execute(*args, **kwargs)
+                    result = function.execute(call, *args, **kwargs)
             except InputRequired:
                 raise
             except SericiteError as error:
@@ -1869,7 +1869,7 @@ class _EngineCore:
         if name in module_locals:
             return module_locals[name]
         # Builtins resolve back to the code's defining VM (home), not the currently executing VM
-        builtin = self._builtin(frame.home or context, name, caller=context)
+        builtin = self._builtin(frame.home or context, name)
         if builtin is not None:
             return builtin
         raise self._undefined_name(context, frame, name)

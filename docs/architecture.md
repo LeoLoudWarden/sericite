@@ -132,6 +132,7 @@ Quotas are defined by `SericiteLimits`; the field list and defaults are in the [
 
 - The unified Meter handles the base cost of every instruction.
 - Every native explicitly declares `home`, `work`, and `allocation`; constant costs must be explicit too.
+- Every native `work`, `allocation`, and `execute` callback receives a per-invocation `_NativeCall` as its internal first parameter; argument binding uses the public signature with that parameter removed. The caller, caller/home/target meters, and `AllocationPermit` travel only through this context, never through script `kwargs` or public parameter names.
 - Predictable dynamic costs are charged before execution. Copying, rendering, comparison, snapshots, and other composite workloads are charged per node or small slice, never after completion.
 - Validation, estimation, failures, and result construction are work too; they must not become free channels.
 

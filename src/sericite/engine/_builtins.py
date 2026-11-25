@@ -34,16 +34,11 @@ _MISSING = object()
 
 
 class _EngineBuiltins:
-    def _builtin(
-        self,
-        home: VMContext,
-        name: str,
-        caller: VMContext | None = None,
-    ) -> _NativeFunction | None:
+    def _builtin(self, home: VMContext, name: str) -> _NativeFunction | None:
         if name == "input":
             return _NativeFunction(
                 "input",
-                lambda: self._read_input(home),
+                lambda _call: self._read_input(home),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
@@ -51,18 +46,17 @@ class _EngineBuiltins:
         if name == "print":
             return _NativeFunction(
                 "print",
-                lambda *values, sep=" ", end="\n", _caller_context=None, _caller_meter=None: (
-                    self._print(home, values, sep, end, _caller_context)
+                lambda call, *values, sep=" ", end="\n": self._print(
+                    home, values, sep, end, call.caller
                 ),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
-                needs_caller=True,
             )
         if name == "len":
             return _NativeFunction(
                 "len",
-                self._len,
+                lambda _call, value: self._len(value),
                 None,
                 work=_no_work,
                 allocation=_no_allocation,
@@ -70,7 +64,7 @@ class _EngineBuiltins:
         if name == "int":
             return _NativeFunction(
                 "int",
-                lambda value=0: self._convert_int(home, value),
+                lambda _call, value=0: self._convert_int(home, value),
                 home,
                 work=self._string_work,
                 allocation=_no_allocation,
@@ -78,7 +72,7 @@ class _EngineBuiltins:
         if name == "float":
             return _NativeFunction(
                 "float",
-                lambda value=0.0: self._convert_float(home, value),
+                lambda _call, value=0.0: self._convert_float(home, value),
                 home,
                 work=self._string_work,
                 allocation=_no_allocation,
@@ -86,18 +80,15 @@ class _EngineBuiltins:
         if name == "str":
             return _NativeFunction(
                 "str",
-                lambda value="", *, _caller_context=None, _caller_meter=None: (
-                    self._str_builtin(home, value, _caller_context)
-                ),
+                lambda call, value="": self._str_builtin(home, value, call.caller),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
-                needs_caller=True,
             )
         if name == "bool":
             return _NativeFunction(
                 "bool",
-                lambda value=False: _truthy(value),
+                lambda _call, value=False: _truthy(value),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
@@ -105,48 +96,45 @@ class _EngineBuiltins:
         if name == "list":
             return _NativeFunction(
                 "list",
-                lambda value=_MISSING: self._list_builtin(value),
+                lambda _call, value=_MISSING: self._list_builtin(value),
                 home,
                 work=self._sequence_constructor_work,
-                allocation=lambda value=_MISSING: self._sequence_allocation(
+                allocation=lambda _call, value=_MISSING: self._sequence_allocation(
                     home, value, tuple_result=False
                 ),
             )
         if name == "tuple":
             return _NativeFunction(
                 "tuple",
-                lambda value=_MISSING: self._tuple_builtin(value),
+                lambda _call, value=_MISSING: self._tuple_builtin(value),
                 home,
                 work=self._sequence_constructor_work,
-                allocation=lambda value=_MISSING: self._sequence_allocation(
+                allocation=lambda _call, value=_MISSING: self._sequence_allocation(
                     home, value, tuple_result=True
                 ),
             )
         if name == "dict":
             return _NativeFunction(
                 "dict",
-                lambda *args, **entries: self._dict_builtin(args, entries),
+                lambda _call, *args, **entries: self._dict_builtin(args, entries),
                 home,
                 work=self._dict_work,
-                allocation=lambda *args, **entries: self._dict_allocation(
+                allocation=lambda _call, *args, **entries: self._dict_allocation(
                     home, args, entries
                 ),
             )
         if name == "repr":
             return _NativeFunction(
                 "repr",
-                lambda value, _caller_context=None, _caller_meter=None: (
-                    self._repr_builtin(home, value, _caller_context)
-                ),
+                lambda call, value: self._repr_builtin(home, value, call.caller),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
-                needs_caller=True,
             )
         if name == "range":
             return _NativeFunction(
                 "range",
-                lambda *args: self._range(home, args),
+                lambda _call, *args: self._range(home, args),
                 home,
                 work=self._range_work,
                 allocation=_no_allocation,
@@ -156,7 +144,7 @@ class _EngineBuiltins:
         if name == "wrap":
             return _NativeFunction(
                 "wrap",
-                lambda schema, data: self._wrap(home, schema, data),
+                lambda _call, schema, data: self._wrap(home, schema, data),
                 home,
                 work=self._wrap_work,
                 allocation=self._wrap_allocation,
@@ -164,7 +152,7 @@ class _EngineBuiltins:
         if name == "unwrap":
             return _NativeFunction(
                 "unwrap",
-                lambda record: self._unwrap(home, record),
+                lambda _call, record: self._unwrap(home, record),
                 home,
                 work=self._unwrap_work,
                 allocation=self._unwrap_allocation,
@@ -172,64 +160,68 @@ class _EngineBuiltins:
         if name == "read_file":
             return _NativeFunction(
                 "read_file",
-                lambda path: self._read_file(home, path),
+                lambda _call, path: self._read_file(home, path),
                 home,
-                work=lambda path: self._attached_vfs(home).path_work(path),
+                work=lambda _call, path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "write_file":
             return _NativeFunction(
                 "write_file",
-                lambda path, text, *, _allocation_permit=None: self._write_file(
-                    home, path, text, _allocation_permit
+                lambda call, path, text: self._write_file(
+                    home, path, text, call.allocation_permit
                 ),
                 home,
-                work=lambda path, text: self._attached_vfs(home).write_work(path, text),
-                allocation=lambda path, text: self._vfs_allocation(home, path, text),
+                work=lambda _call, path, text: self._attached_vfs(home).write_work(
+                    path, text
+                ),
+                allocation=lambda _call, path, text: self._vfs_allocation(
+                    home, path, text
+                ),
             )
         if name == "delete_file":
             return _NativeFunction(
                 "delete_file",
-                lambda path: self._attached_vfs(home).delete_file(path),
+                lambda _call, path: self._attached_vfs(home).delete_file(path),
                 home,
-                work=lambda path: self._attached_vfs(home).path_work(path),
+                work=lambda _call, path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "rename_file":
             return _NativeFunction(
                 "rename_file",
-                lambda old_path, new_path, *, _allocation_permit=None: (
-                    self._attached_vfs(home).rename_file(
-                        old_path,
-                        new_path,
-                        permit=_allocation_permit,
-                        limits=self._file_operation_limits(home),
-                    )
+                lambda call, old_path, new_path: self._attached_vfs(home).rename_file(
+                    old_path,
+                    new_path,
+                    permit=call.allocation_permit,
+                    limits=self._file_operation_limits(home),
                 ),
                 home,
-                work=lambda old_path, new_path: self._attached_vfs(home).rename_work(
-                    old_path, new_path
-                ),
-                allocation=lambda old_path, new_path: self._vfs_mutation_allocation(
-                    home, "rename_allocation", old_path, new_path
+                work=lambda _call, old_path, new_path: self._attached_vfs(
+                    home
+                ).rename_work(old_path, new_path),
+                allocation=lambda _call, old_path, new_path: (
+                    self._vfs_mutation_allocation(
+                        home, "rename_allocation", old_path, new_path
+                    )
                 ),
             )
         if name == "copy_file":
             return _NativeFunction(
                 "copy_file",
-                lambda source_path, destination_path, *, _allocation_permit=None: (
-                    self._attached_vfs(home).copy_file(
-                        source_path,
-                        destination_path,
-                        permit=_allocation_permit,
-                        limits=self._file_operation_limits(home),
-                    )
+                lambda call, source_path, destination_path: self._attached_vfs(
+                    home
+                ).copy_file(
+                    source_path,
+                    destination_path,
+                    permit=call.allocation_permit,
+                    limits=self._file_operation_limits(home),
                 ),
                 home,
-                work=lambda source_path, destination_path: self._attached_vfs(
+                work=lambda _call, source_path, destination_path: self._attached_vfs(
                     home
                 ).copy_work(source_path, destination_path),
-                allocation=lambda source_path, destination_path: (
+                allocation=lambda _call, source_path, destination_path: (
                     self._vfs_mutation_allocation(
                         home, "copy_allocation", source_path, destination_path
                     )
@@ -238,46 +230,46 @@ class _EngineBuiltins:
         if name == "delete_dir":
             return _NativeFunction(
                 "delete_dir",
-                lambda path: self._attached_vfs(home).delete_dir(path),
+                lambda _call, path: self._attached_vfs(home).delete_dir(path),
                 home,
-                work=lambda path: self._attached_vfs(home).delete_dir_work(path),
+                work=lambda _call, path: self._attached_vfs(home).delete_dir_work(path),
                 allocation=_no_allocation,
             )
         if name == "rename_dir":
             return _NativeFunction(
                 "rename_dir",
-                lambda old_path, new_path, *, _allocation_permit=None: (
-                    self._attached_vfs(home).rename_dir(
-                        old_path,
-                        new_path,
-                        permit=_allocation_permit,
-                        limits=self._file_operation_limits(home),
-                    )
+                lambda call, old_path, new_path: self._attached_vfs(home).rename_dir(
+                    old_path,
+                    new_path,
+                    permit=call.allocation_permit,
+                    limits=self._file_operation_limits(home),
                 ),
                 home,
-                work=lambda old_path, new_path: self._attached_vfs(
+                work=lambda _call, old_path, new_path: self._attached_vfs(
                     home
                 ).rename_dir_work(old_path, new_path),
-                allocation=lambda old_path, new_path: self._vfs_mutation_allocation(
-                    home, "rename_dir_allocation", old_path, new_path
+                allocation=lambda _call, old_path, new_path: (
+                    self._vfs_mutation_allocation(
+                        home, "rename_dir_allocation", old_path, new_path
+                    )
                 ),
             )
         if name == "copy_dir":
             return _NativeFunction(
                 "copy_dir",
-                lambda source_path, destination_path, *, _allocation_permit=None: (
-                    self._attached_vfs(home).copy_dir(
-                        source_path,
-                        destination_path,
-                        permit=_allocation_permit,
-                        limits=self._file_operation_limits(home),
-                    )
+                lambda call, source_path, destination_path: self._attached_vfs(
+                    home
+                ).copy_dir(
+                    source_path,
+                    destination_path,
+                    permit=call.allocation_permit,
+                    limits=self._file_operation_limits(home),
                 ),
                 home,
-                work=lambda source_path, destination_path: self._attached_vfs(
+                work=lambda _call, source_path, destination_path: self._attached_vfs(
                     home
                 ).copy_dir_work(source_path, destination_path),
-                allocation=lambda source_path, destination_path: (
+                allocation=lambda _call, source_path, destination_path: (
                     self._vfs_mutation_allocation(
                         home, "copy_dir_allocation", source_path, destination_path
                     )
@@ -286,48 +278,46 @@ class _EngineBuiltins:
         if name == "make_dir":
             return _NativeFunction(
                 "make_dir",
-                lambda path, *, _allocation_permit=None: self._attached_vfs(
-                    home
-                ).make_dir(
+                lambda call, path: self._attached_vfs(home).make_dir(
                     path,
-                    permit=_allocation_permit,
+                    permit=call.allocation_permit,
                     limits=self._file_operation_limits(home),
                 ),
                 home,
-                work=lambda path: self._attached_vfs(home).path_work(path),
-                allocation=lambda path: self._vfs_mutation_allocation(
+                work=lambda _call, path: self._attached_vfs(home).path_work(path),
+                allocation=lambda _call, path: self._vfs_mutation_allocation(
                     home, "make_dir_allocation", path
                 ),
             )
         if name == "list_dir":
             return _NativeFunction(
                 "list_dir",
-                lambda path: self._list_dir(home, path),
+                lambda _call, path: self._list_dir(home, path),
                 home,
-                work=lambda path: self._attached_vfs(home).list_dir_work(path),
+                work=lambda _call, path: self._attached_vfs(home).list_dir_work(path),
                 allocation=_no_allocation,
             )
         if name == "path_exists":
             return _NativeFunction(
                 "path_exists",
-                lambda path: self._attached_vfs(home).path_exists(path),
+                lambda _call, path: self._attached_vfs(home).path_exists(path),
                 home,
-                work=lambda path: self._attached_vfs(home).path_work(path),
+                work=lambda _call, path: self._attached_vfs(home).path_work(path),
                 allocation=_no_allocation,
             )
         if name == "VFS":
             return _NativeFunction(
                 "VFS",
-                self.create_vfs,
+                lambda _call: self.create_vfs(),
                 home,
                 work=_no_work,
-                allocation=lambda: 8,
+                allocation=lambda _call: 8,
             )
         if name == "VM":
             return _NativeFunction(
                 "VM",
-                lambda source=None, **kwargs: self._create_child(
-                    home, source, kwargs, cap=caller
+                lambda call, source=None, **kwargs: self._create_child(
+                    home, source, kwargs, cap=call.caller
                 ),
                 home,
                 work=self._vm_creation_work,
@@ -337,7 +327,10 @@ class _EngineBuiltins:
 
     @staticmethod
     def _vm_creation_work(
-        source: object = None, entry_file: object = None, **kwargs: object
+        _call: object,
+        source: object = None,
+        entry_file: object = None,
+        **kwargs: object,
     ) -> int:
         if isinstance(source, str):
             return 1 + len(source) // 4
@@ -557,7 +550,7 @@ class _EngineBuiltins:
         )
 
     @staticmethod
-    def _sequence_constructor_work(value: object = _MISSING) -> int:
+    def _sequence_constructor_work(_call: object, value: object = _MISSING) -> int:
         return len(value) if type(value) in (list, tuple, str, dict) else 0
 
     def _sequence_allocation(
@@ -600,7 +593,7 @@ class _EngineBuiltins:
         return len(key) if type(key) is str else 0
 
     @classmethod
-    def _dict_work(cls, *args: object, **entries: object) -> int:
+    def _dict_work(cls, _call: object, *args: object, **entries: object) -> int:
         if len(args) > 1:
             return 0
         value = args[0] if args else _MISSING
@@ -725,7 +718,7 @@ class _EngineBuiltins:
         return renderer.text(allocate=True)
 
     @staticmethod
-    def _string_work(value: object = "") -> int:
+    def _string_work(_call: object, value: object = "") -> int:
         return len(value) if isinstance(value, str) else 0
 
     def _convert_float(self, context: VMContext, value: object) -> float:
@@ -747,7 +740,7 @@ class _EngineBuiltins:
         )
 
     @staticmethod
-    def _range_work(*args: object) -> int:
+    def _range_work(_call: object, *args: object) -> int:
         try:
             return len(range(*args))
         except (TypeError, ValueError, OverflowError):

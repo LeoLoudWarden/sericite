@@ -132,6 +132,7 @@
 
 - 每条指令的基础成本由统一 Meter 处理。
 - native 必须显式声明 `home`、`work`、`allocation`；常量成本也必须明确写出，不能省略。
+- native 的 `work`、`allocation`、`execute` 回调统一接收每次调用创建的 `_NativeCall` 作为内部首参数，参数绑定使用移除该首参数后的公开签名。caller、caller/home/target Meter 与 `AllocationPermit` 只经该上下文传递，不注入脚本 `kwargs`，也不占用公开参数名。
 - 可预估的动态成本在执行前扣除。复制、渲染、比较、快照等复合过程按节点或小片扣除，不能完成后补账。
 - 参数验证、成本估算、失败路径和结果构造也属于工作，不能成为免费通道。
 

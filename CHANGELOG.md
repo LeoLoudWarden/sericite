@@ -12,7 +12,7 @@
 - `list(value)` 与 `tuple(value)` 支持从 list、tuple、字符串或字典键构造序列；`dict()` 支持字典复制、二元 list/tuple 序列及关键字项，重复键后写覆盖先写。容器转换采用浅拷贝，键校验、大小限制与转换工作量均纳入统一资源计量。
 
 ### Fixed
-- `str()` 的多余位置实参不再误绑内部 caller 参数并触发 `internal_error`，现按普通 native 参数错误以 `type_error` 拒绝。
+- `str()` 与 `repr()` 的多余位置实参不再误绑内部 caller 参数并触发 `internal_error`，现按普通 native 参数错误以 `type_error` 拒绝。native 调用统一通过独立内部上下文传递 caller、计量器与 `AllocationPermit`，公开参数绑定不再暴露内部关键字参数。
 
 ## [0.21.1] - 2026-11-25
 
