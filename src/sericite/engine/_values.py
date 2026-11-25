@@ -531,6 +531,12 @@ def _operand_error(op: str, left: object, right: object) -> SericiteError:
     )
 
 
+def _function_repr(value: SericiteFunction, viewer_vm_id: int | None) -> str:
+    if value.code.origin_vm != viewer_vm_id:
+        return "<function>"
+    return repr(value)
+
+
 class _StringRenderer:
     def __init__(
         self,
@@ -540,6 +546,7 @@ class _StringRenderer:
         truncate: bool = False,
         meter: Meter | None = None,
         ascii_only: bool = False,
+        viewer_vm_id: int | None = None,
     ) -> None:
         self.parts: list[str] = []
         self.size = 0
@@ -550,6 +557,7 @@ class _StringRenderer:
         self.truncate = truncate
         self.meter = meter
         self.ascii_only = ascii_only
+        self.viewer_vm_id = viewer_vm_id
         self.exhausted = False
 
     def _work(self, amount: int) -> None:
@@ -668,6 +676,9 @@ class _StringRenderer:
         if isinstance(value, SericiteSchema):
             self.render_schema(value)
             return
+        if isinstance(value, SericiteFunction):
+            self._add(_function_repr(value, self.viewer_vm_id))
+            return
         self._add(repr(value))
 
     def render_schema(self, schema: SericiteSchema) -> None:
@@ -722,7 +733,8 @@ def _to_str(
     max_chars: int = _MAX_RENDER_CHARS,
     *,
     meter: Meter | None = None,
+    viewer_vm_id: int | None = None,
 ) -> str:
-    renderer = _StringRenderer(max_chars, meter=meter)
+    renderer = _StringRenderer(max_chars, meter=meter, viewer_vm_id=viewer_vm_id)
     renderer.render(value)
     return renderer.text(allocate=meter is not None)

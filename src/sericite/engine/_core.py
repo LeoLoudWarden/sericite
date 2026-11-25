@@ -1073,6 +1073,7 @@ class _EngineCore:
                 context.limits.max_string_bytes,
                 spec=spec,
                 meter=self._meter(context),
+                viewer_vm_id=context.vm_id,
             )
         elif op == isa.BUILD_STRING:
             parts = stack[len(stack) - arg :] if arg else []

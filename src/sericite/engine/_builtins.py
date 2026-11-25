@@ -84,18 +84,24 @@ class _EngineBuiltins:
         if name == "str":
             return _NativeFunction(
                 "str",
-                lambda value: self._str_builtin(home, value),
+                lambda value, _caller_context=None, _caller_meter=None: (
+                    self._str_builtin(home, value, _caller_context)
+                ),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
+                needs_caller=True,
             )
         if name == "repr":
             return _NativeFunction(
                 "repr",
-                lambda value: self._repr_builtin(home, value),
+                lambda value, _caller_context=None, _caller_meter=None: (
+                    self._repr_builtin(home, value, _caller_context)
+                ),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
+                needs_caller=True,
             )
         if name == "range":
             return _NativeFunction(
@@ -444,6 +450,7 @@ class _EngineBuiltins:
             _MAX_RENDER_CHARS if remaining is None else remaining,
             output=True,
             meter=meter,
+            viewer_vm_id=context.vm_id,
         )
         for index, value in enumerate(values):
             if index:
@@ -539,13 +546,24 @@ class _EngineBuiltins:
             f"cannot convert {_type_name(value)} to int", kind="type_error"
         )
 
-    def _str_builtin(self, context: VMContext, value: object) -> str:
+    def _str_builtin(
+        self, context: VMContext, value: object, caller: VMContext | None = None
+    ) -> str:
         meter = self._meter(context)
-        return _to_str(value, context.limits.max_string_bytes, meter=meter)
+        return _to_str(
+            value,
+            context.limits.max_string_bytes,
+            meter=meter,
+            viewer_vm_id=caller.vm_id if caller is not None else None,
+        )
 
-    def _repr_builtin(self, context: VMContext, value: object) -> str:
+    def _repr_builtin(
+        self, context: VMContext, value: object, caller: VMContext | None = None
+    ) -> str:
         renderer = _StringRenderer(
-            context.limits.max_string_bytes, meter=self._meter(context)
+            context.limits.max_string_bytes,
+            meter=self._meter(context),
+            viewer_vm_id=caller.vm_id if caller is not None else None,
         )
         renderer.render(value, repr_strings=True)
         return renderer.text(allocate=True)
