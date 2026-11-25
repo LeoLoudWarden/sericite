@@ -13,6 +13,8 @@
 
 ### Fixed
 - `str()` 与 `repr()` 的多余位置实参不再误绑内部 caller 参数并触发 `internal_error`，现按普通 native 参数错误以 `type_error` 拒绝。native 调用统一通过独立内部上下文传递 caller、计量器与 `AllocationPermit`，公开参数绑定不再暴露内部关键字参数。
+- `list(str)` 与 `tuple(str)` 现在除容器槽位外，也计入新建单字符字符串的内存；浅拷贝其他容器仍只计槽位。
+- `dict()` 按最终实际键数执行 `max_dict_size` 与槽位计量，重复键及关键字覆盖不再被误算为新增字典项；真正超出最终项数时仍按原规则拒绝。
 
 ## [0.21.1] - 2026-11-25
 

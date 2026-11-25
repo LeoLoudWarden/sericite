@@ -116,12 +116,10 @@ class _EngineBuiltins:
         if name == "dict":
             return _NativeFunction(
                 "dict",
-                lambda _call, *args, **entries: self._dict_builtin(args, entries),
+                lambda _call, *args, **entries: self._dict_builtin(home, args, entries),
                 home,
                 work=self._dict_work,
-                allocation=lambda _call, *args, **entries: self._dict_allocation(
-                    home, args, entries
-                ),
+                allocation=lambda _call, *args, **entries: self._dict_allocation(args),
             )
         if name == "repr":
             return _NativeFunction(
@@ -566,7 +564,7 @@ class _EngineBuiltins:
             )
         if tuple_result and type(value) is tuple:
             return 0
-        return size * 8
+        return size * (12 if type(value) is str else 8)
 
     @staticmethod
     def _list_builtin(value: object) -> list[object]:
@@ -630,41 +628,44 @@ class _EngineBuiltins:
                 )
             self._check_dict_method_key(pair[0])
 
-    def _dict_allocation(
-        self,
-        context: VMContext,
-        args: tuple[object, ...],
-        entries: dict[str, object],
-    ) -> int:
+    def _dict_allocation(self, args: tuple[object, ...]) -> int:
         if len(args) > 1:
             return 0
         value = args[0] if args else _MISSING
         if value is not _MISSING and type(value) not in (dict, list, tuple):
             return 0
         self._validate_dict_source(value)
-        count = (0 if value is _MISSING else len(value)) + len(entries)
-        if count > context.limits.max_dict_size:
-            raise SericiteError("dict size limit exceeded", kind="resource_exhausted")
-        return count * 16
+        return 0
 
-    @staticmethod
     def _dict_builtin(
-        args: tuple[object, ...], entries: dict[str, object]
+        self,
+        context: VMContext,
+        args: tuple[object, ...],
+        entries: dict[str, object],
     ) -> dict[object, object]:
         if len(args) > 1:
             raise SericiteError("invalid arguments for dict", kind="type_error")
         value = args[0] if args else _MISSING
         if value is _MISSING:
-            result = {}
+            source_items = ()
         elif type(value) is dict:
-            result = dict(value)
+            source_items = value.items()
         elif type(value) in (list, tuple):
-            result = {pair[0]: pair[1] for pair in value}
+            source_items = ((pair[0], pair[1]) for pair in value)
         else:
             raise SericiteError(
                 f"cannot convert {_type_name(value)} to dict", kind="type_error"
             )
-        result.update(entries)
+        result = {}
+        for items in (source_items, entries.items()):
+            for key, item in items:
+                if key not in result:
+                    if len(result) >= context.limits.max_dict_size:
+                        raise SericiteError(
+                            "dict size limit exceeded", kind="resource_exhausted"
+                        )
+                    self._meter(context).allocate(16)
+                result[key] = item
         return result
 
     def _convert_int(self, context: VMContext, value: object) -> int:
