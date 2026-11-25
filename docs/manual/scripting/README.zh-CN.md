@@ -13,7 +13,7 @@
 | [自定义记录对象](guides/03-record.zh-CN.md) | record 与 schema、契约与注解、宽度检查、结构相等 |
 | [异常处理](guides/04-errors.zh-CN.md) | 捕获与抛出、错误 record、静态过滤器 |
 | [文件系统](guides/05-files.zh-CN.md) | 文件与目录操作、路径解析、隐式与显式目录 |
-| [独立运行空间](guides/06-vm.zh-CN.md) | 子 VM 构造、移交工作区、授予能力、驱动与单步 |
+| [独立运行空间](guides/06-vm.zh-CN.md) | 把源码作为独立程序运行、提供文件、授予能力、控制执行 |
 | [安全注意事项](guides/07-vm-safety.zh-CN.md) | 环境隔离、执行限额、常见坏习惯 |
 
 ## API 参考
@@ -25,7 +25,7 @@
 | [值类型方法](reference/03-types.zh-CN.md) | `list`、`tuple`、`dict`、`str` 的全部公开方法 |
 | [文件与目录](reference/04-files.zh-CN.md) | 路径和目录共同规则、11 个文件与目录接口 |
 | [错误与异常](reference/05-errors.zh-CN.md) | 捕获和抛出、异常 record、全部错误 kind、固定过滤器组 |
-| [VM](reference/06-vm.zh-CN.md) | 子 VM 构造、状态、驱动、调试、快照、配额和 addon 授予 |
+| [VM](reference/06-vm.zh-CN.md) | VM 构造、状态、驱动、调试、快照、配额和 addon 授予 |
 | [VFS](reference/07-vfs.zh-CN.md) | 分离工作区、排他移交和 VFS 文件方法 |
 
 ## 签名记法

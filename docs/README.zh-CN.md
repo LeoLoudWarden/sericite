@@ -6,7 +6,7 @@ Sericite 的文档按读者任务和变化频率分层：用户手册跟随公�
 
 ## 入门与示例
 
-- [项目 README](../README.zh-CN.md)：项目定位、安装与快速上手。
+- [项目 README](../README.zh-CN.md)：项目定位、安装与简短的可运行导览。
 - [完整演示](../demos/README.zh-CN.md)：root 驱动的 LLM 应用及离线验证；小型语言片段另见 `examples/`。
 
 ## 用户手册

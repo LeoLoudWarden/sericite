@@ -6,7 +6,7 @@ Sericite's documentation is organized by reader task and rate of change: user ma
 
 ## Start and examples
 
-- [Project README](../README.md): positioning, installation, and quick start.
+- [Project README](../README.md): positioning, installation, and a short runnable introduction.
 - [Application demos](../demos/README.md): a root-driven LLM application with offline verification; see `examples/` for small language snippets.
 
 ## User manuals
