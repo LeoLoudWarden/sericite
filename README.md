@@ -59,13 +59,16 @@ print(sub.run(), end="")
 print(vm.run(), end="")
 ```
 
-Grant a capability to a VM (FFI):
+Grant a capability to a VM (addons):
 
 ```python
 def double(x):
     return x * 2
 
-vm = engine.create_root("print(double(21))", functions={"double": double})
+vm = engine.create_root(
+    "from __addon__ import double\nprint(double(21))",
+    addons={"double": double},
+)
 print(vm.run(), end="")    # 42
 ```
 
