@@ -104,11 +104,12 @@ class TupleValueTests(unittest.TestCase):
         )
         self.assertEqual(run(source), "(1, 2)\n")
         self.assertEqual(run_error("value: tuple = []\n").kind, "contract_error")
-        for source in ("tuple = ()", "value = tuple", "print(tuple())"):
+        for source in ("tuple = ()", "value = tuple"):
             with self.subTest(source=source):
                 with self.assertRaises(SericiteError) as ctx:
                     SericiteEngine().create_root(source)
                 self.assertEqual(ctx.exception.kind, "syntax_error")
+        self.assertEqual(run("print(tuple())"), "()\n")
 
 
 class TupleUnpackingTests(unittest.TestCase):

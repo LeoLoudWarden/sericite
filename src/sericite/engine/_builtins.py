@@ -8,7 +8,6 @@ from ..io import VirtualIO
 from ._model import (
     _ANY,
     _CUMULATIVE_VM_OPTIONS,
-    _TAG_CONTRACTS,
     _VM_OPTIONS,
     SericiteFunction,
     VMContext,
@@ -27,8 +26,11 @@ from ._values import (
     _StringRenderer,
     _tighten_limit,
     _to_str,
+    _truthy,
     _type_name,
 )
+
+_MISSING = object()
 
 
 class _EngineBuiltins:
@@ -68,7 +70,7 @@ class _EngineBuiltins:
         if name == "int":
             return _NativeFunction(
                 "int",
-                lambda value: self._convert_int(home, value),
+                lambda value=0: self._convert_int(home, value),
                 home,
                 work=self._string_work,
                 allocation=_no_allocation,
@@ -76,7 +78,7 @@ class _EngineBuiltins:
         if name == "float":
             return _NativeFunction(
                 "float",
-                lambda value: self._convert_float(home, value),
+                lambda value=0.0: self._convert_float(home, value),
                 home,
                 work=self._string_work,
                 allocation=_no_allocation,
@@ -84,13 +86,51 @@ class _EngineBuiltins:
         if name == "str":
             return _NativeFunction(
                 "str",
-                lambda value, _caller_context=None, _caller_meter=None: (
+                lambda value="", *, _caller_context=None, _caller_meter=None: (
                     self._str_builtin(home, value, _caller_context)
                 ),
                 home,
                 work=_no_work,
                 allocation=_no_allocation,
                 needs_caller=True,
+            )
+        if name == "bool":
+            return _NativeFunction(
+                "bool",
+                lambda value=False: _truthy(value),
+                home,
+                work=_no_work,
+                allocation=_no_allocation,
+            )
+        if name == "list":
+            return _NativeFunction(
+                "list",
+                lambda value=_MISSING: self._list_builtin(value),
+                home,
+                work=self._sequence_constructor_work,
+                allocation=lambda value=_MISSING: self._sequence_allocation(
+                    home, value, tuple_result=False
+                ),
+            )
+        if name == "tuple":
+            return _NativeFunction(
+                "tuple",
+                lambda value=_MISSING: self._tuple_builtin(value),
+                home,
+                work=self._sequence_constructor_work,
+                allocation=lambda value=_MISSING: self._sequence_allocation(
+                    home, value, tuple_result=True
+                ),
+            )
+        if name == "dict":
+            return _NativeFunction(
+                "dict",
+                lambda *args, **entries: self._dict_builtin(args, entries),
+                home,
+                work=self._dict_work,
+                allocation=lambda *args, **entries: self._dict_allocation(
+                    home, args, entries
+                ),
             )
         if name == "repr":
             return _NativeFunction(
@@ -113,8 +153,6 @@ class _EngineBuiltins:
             )
         if name == "any":
             return _ANY
-        if name in _TAG_CONTRACTS:
-            return _TAG_CONTRACTS[name]
         if name == "wrap":
             return _NativeFunction(
                 "wrap",
@@ -518,6 +556,124 @@ class _EngineBuiltins:
             kind="type_error",
         )
 
+    @staticmethod
+    def _sequence_constructor_work(value: object = _MISSING) -> int:
+        return len(value) if type(value) in (list, tuple, str, dict) else 0
+
+    def _sequence_allocation(
+        self, context: VMContext, value: object, *, tuple_result: bool
+    ) -> int:
+        if value is _MISSING or type(value) not in (list, tuple, str, dict):
+            return 0
+        size = len(value)
+        if size > context.limits.max_list_size:
+            name = "tuple" if tuple_result else "list"
+            raise SericiteError(
+                f"{name} size limit exceeded", kind="resource_exhausted"
+            )
+        if tuple_result and type(value) is tuple:
+            return 0
+        return size * 8
+
+    @staticmethod
+    def _list_builtin(value: object) -> list[object]:
+        if value is _MISSING:
+            return []
+        if type(value) not in (list, tuple, str, dict):
+            raise SericiteError(
+                f"cannot convert {_type_name(value)} to list", kind="type_error"
+            )
+        return list(value)
+
+    @staticmethod
+    def _tuple_builtin(value: object) -> tuple[object, ...]:
+        if value is _MISSING:
+            return ()
+        if type(value) not in (list, tuple, str, dict):
+            raise SericiteError(
+                f"cannot convert {_type_name(value)} to tuple", kind="type_error"
+            )
+        return tuple(value)
+
+    @staticmethod
+    def _dict_key_work(key: object) -> int:
+        return len(key) if type(key) is str else 0
+
+    @classmethod
+    def _dict_work(cls, *args: object, **entries: object) -> int:
+        if len(args) > 1:
+            return 0
+        value = args[0] if args else _MISSING
+        work = len(entries) + sum(cls._dict_key_work(key) for key in entries)
+        if type(value) is dict:
+            return (
+                work
+                + 2 * len(value)
+                + 2 * sum(cls._dict_key_work(key) for key in value)
+            )
+        if type(value) in (list, tuple):
+            work += 2 * len(value)
+            for pair in value:
+                if type(pair) in (list, tuple) and len(pair) == 2:
+                    work += 2 * cls._dict_key_work(pair[0])
+        return work
+
+    def _validate_dict_source(self, value: object) -> None:
+        if type(value) is dict:
+            for key in value:
+                self._check_dict_method_key(key)
+            return
+        if type(value) not in (list, tuple):
+            return
+        for pair in value:
+            if type(pair) not in (list, tuple):
+                raise SericiteError(
+                    "dict() entries must be list or tuple pairs", kind="type_error"
+                )
+            if len(pair) != 2:
+                raise SericiteError(
+                    f"dict() entry must have length 2, got {len(pair)}",
+                    kind="value_error",
+                )
+            self._check_dict_method_key(pair[0])
+
+    def _dict_allocation(
+        self,
+        context: VMContext,
+        args: tuple[object, ...],
+        entries: dict[str, object],
+    ) -> int:
+        if len(args) > 1:
+            return 0
+        value = args[0] if args else _MISSING
+        if value is not _MISSING and type(value) not in (dict, list, tuple):
+            return 0
+        self._validate_dict_source(value)
+        count = (0 if value is _MISSING else len(value)) + len(entries)
+        if count > context.limits.max_dict_size:
+            raise SericiteError("dict size limit exceeded", kind="resource_exhausted")
+        return count * 16
+
+    @staticmethod
+    def _dict_builtin(
+        args: tuple[object, ...], entries: dict[str, object]
+    ) -> dict[object, object]:
+        if len(args) > 1:
+            raise SericiteError("invalid arguments for dict", kind="type_error")
+        value = args[0] if args else _MISSING
+        if value is _MISSING:
+            result = {}
+        elif type(value) is dict:
+            result = dict(value)
+        elif type(value) in (list, tuple):
+            result = {pair[0]: pair[1] for pair in value}
+        else:
+            raise SericiteError(
+                f"cannot convert {_type_name(value)} to dict", kind="type_error"
+            )
+        result.update(entries)
+        return result
+
     def _convert_int(self, context: VMContext, value: object) -> int:
         if type(value) is bool:
             return int(value)
@@ -569,7 +725,7 @@ class _EngineBuiltins:
         return renderer.text(allocate=True)
 
     @staticmethod
-    def _string_work(value: object) -> int:
+    def _string_work(value: object = "") -> int:
         return len(value) if isinstance(value, str) else 0
 
     def _convert_float(self, context: VMContext, value: object) -> float:

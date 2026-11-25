@@ -36,8 +36,8 @@ RESERVED_NAMES = {
     "unwrap",
 }
 
-# Contract names that may only appear in annotation positions (not functions, not callable).
-_CONTRACT_ONLY_NAMES = {"any", "bool", "list", "dict", "tuple"}
+# The universal contract may only appear in annotation positions (not callable).
+_CONTRACT_ONLY_NAMES = {"any"}
 
 _ALLOWED_NODES = {
     ast.Module,

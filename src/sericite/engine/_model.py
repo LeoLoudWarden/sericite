@@ -152,7 +152,7 @@ class SericiteFunction:
 
 
 class _TagContract:
-    """Annotation-only contract-name singleton: any / bool / list / dict / tuple. Not callable."""
+    """Annotation-only universal contract-name singleton. Not callable."""
 
     __slots__ = ("tag",)
 
@@ -164,9 +164,6 @@ class _TagContract:
 
 
 _ANY = _TagContract("any")
-_TAG_CONTRACTS = {
-    name: _TagContract(name) for name in ("bool", "list", "dict", "tuple")
-}
 
 _CONTRACT_TAGS = ("int", "float", "str", "bool", "list", "dict", "tuple")
 _TAG_TYPES = {

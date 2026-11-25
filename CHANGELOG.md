@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Added
+- `int()`、`float()`、`str()` 新增空构造，分别返回 `0`、`0.0` 和 `""`；新增 `bool()`、`list()`、`tuple()`、`dict()`，七种基础类型名现均可直接调用并继续作为注解契约，`any` 仍仅用于注解。
+- `list(value)` 与 `tuple(value)` 支持从 list、tuple、字符串或字典键构造序列；`dict()` 支持字典复制、二元 list/tuple 序列及关键字项，重复键后写覆盖先写。容器转换采用浅拷贝，键校验、大小限制与转换工作量均纳入统一资源计量。
+
+### Fixed
+- `str()` 的多余位置实参不再误绑内部 caller 参数并触发 `internal_error`，现按普通 native 参数错误以 `type_error` 拒绝。
+
 ## [0.21.1] - 2026-11-25
 
 ### Security
