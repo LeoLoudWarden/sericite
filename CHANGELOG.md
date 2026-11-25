@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-11-25
+
+### Security
+- 修复普通 Sericite 函数跨 VM 后，`print`/`str`/`repr`、f-string、嵌套容器和快照仍显示定义方函数名的问题；外来函数现匿名显示为 `<function>`，同 VM 定义名与显式 addon 授予名保持不变。
+
 ## [0.21.0] - 2026-11-25
 
 ### Added

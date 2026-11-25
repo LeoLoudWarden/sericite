@@ -771,6 +771,122 @@ class ClosureAndVMTests(unittest.TestCase):
         )
         self.assertEqual(out, "name 'missing_visible_name' is not defined\n")
 
+    def test_foreign_function_rendering_hides_definition_name(self):
+        child = (
+            "from __addon__ import maker\n"
+            "f = maker()\n"
+            "print(maker)\n"
+            "print(f)\n"
+            "print(str(f))\n"
+            "print(repr(f))\n"
+            'print(f"{f}")\n'
+            'print(f"{f!s}")\n'
+            'print(f"{f!r}")\n'
+            'print(f"{f!a}")\n'
+            "print([f], {'f': f})\n"
+        )
+        source = (
+            "def maker():\n"
+            "    def inner_secret():\n"
+            "        pass\n"
+            "    return inner_secret\n"
+            "sub = VM(" + repr(child) + ", addons={'maker': maker})\n"
+            "print(sub.run(), end='')\n"
+        )
+        out = run(source)
+        self.assertEqual(
+            out,
+            "<function maker>\n"
+            + "<function>\n" * 7
+            + "[<function>] {'f': <function>}\n",
+        )
+        self.assertNotIn("inner_secret", out)
+
+    def test_foreign_function_snapshot_hides_definition_name(self):
+        child = (
+            "from __addon__ import maker\n"
+            "class Box:\n"
+            "    value\n"
+            "f = maker()\n"
+            "values = [f, {'f': f}]\n"
+            "box = Box(f)\n"
+            "missing\n"
+        )
+        source = (
+            "def maker():\n"
+            "    def inner_secret():\n"
+            "        pass\n"
+            "    return inner_secret\n"
+            "sub = VM(" + repr(child) + ", addons={'maker': maker})\n"
+            "try:\n"
+            "    sub.run()\n"
+            "except name_error:\n"
+            "    snapshot = sub.snapshot()\n"
+            "    print(snapshot['locals']['f'])\n"
+            "    print(snapshot['locals']['values'])\n"
+            "    print(snapshot['locals']['box']['<record>']['value'])\n"
+        )
+        out = run(source)
+        self.assertEqual(
+            out,
+            "<function>\n['<function>', {'f': '<function>'}]\n<function>\n",
+        )
+        self.assertNotIn("inner_secret", out)
+
+    def test_foreign_string_builtins_use_caller_visibility(self):
+        child = (
+            "from __addon__ import render_str, render_repr, render_fstring\n"
+            "print(render_str())\n"
+            "print(render_repr())\n"
+            "print(render_fstring())\n"
+        )
+        source = (
+            "def render_str():\n"
+            "    def inner_secret():\n"
+            "        pass\n"
+            "    return str(inner_secret)\n"
+            "def render_repr():\n"
+            "    def inner_secret():\n"
+            "        pass\n"
+            "    return repr(inner_secret)\n"
+            "def render_fstring():\n"
+            "    def inner_secret():\n"
+            "        pass\n"
+            '    return f"{inner_secret!r}"\n'
+            "sub = VM("
+            + repr(child)
+            + ", addons={'render_str': render_str, 'render_repr': render_repr, "
+            "'render_fstring': render_fstring})\n"
+            "print(sub.run(), end='')\n"
+        )
+        out = run(source)
+        self.assertEqual(out, "<function>\n" * 3)
+        self.assertNotIn("inner_secret", out)
+
+    def test_function_rendering_preserves_local_and_grant_names(self):
+        child = (
+            "from __addon__ import maker\n"
+            "f = maker()\n"
+            "print(f)\n"
+            'grand = VM("from __addon__ import callback\\nprint(callback)\\nprint(callback())", '
+            "addons={'callback': f})\n"
+            "print(grand.run(), end='')\n"
+        )
+        source = (
+            "def maker():\n"
+            "    def inner_secret():\n"
+            "        return 42\n"
+            "    return inner_secret\n"
+            "sub = VM(" + repr(child) + ", addons={'maker': maker})\n"
+            "print(sub.run(), end='')\n"
+            "print(maker())\n"
+        )
+        out = run(source)
+        self.assertEqual(
+            out,
+            "<function>\n<function callback>\n42\n<function inner_secret>\n",
+        )
+
     def test_foreign_name_errors_hide_definition_side_names(self):
         source = (
             "def module_error():\n"

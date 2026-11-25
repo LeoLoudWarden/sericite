@@ -271,6 +271,7 @@ def _format_value(
     *,
     spec: str | None = None,
     meter: Meter | None = None,
+    viewer_vm_id: int | None = None,
 ) -> str:
     if conversion not in (-1, 97, 114, 115):
         raise SericiteError("unknown f-string conversion", kind="internal_error")
@@ -282,12 +283,17 @@ def _format_value(
             if type(value) not in (str, int, float):
                 raise _unsupported_spec(value)
             return _format_with_spec(value, spec, max_chars, meter)
-        return _to_str(value, max_chars, meter=meter)
+        return _to_str(value, max_chars, meter=meter, viewer_vm_id=viewer_vm_id)
 
     if conversion == 115:
-        converted = _to_str(value, max_chars, meter=meter)
+        converted = _to_str(value, max_chars, meter=meter, viewer_vm_id=viewer_vm_id)
     else:
-        renderer = _StringRenderer(max_chars, meter=meter, ascii_only=conversion == 97)
+        renderer = _StringRenderer(
+            max_chars,
+            meter=meter,
+            ascii_only=conversion == 97,
+            viewer_vm_id=viewer_vm_id,
+        )
         renderer.render(value, repr_strings=True)
         converted = renderer.text(allocate=meter is not None)
     if spec:

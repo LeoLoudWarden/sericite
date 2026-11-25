@@ -16,7 +16,7 @@ from ._model import (
     _GrantedSericiteFunction,
     _NativeFunction,
 )
-from ._values import _MAX_RENDER_NODES, _estimate_size, _schema_repr
+from ._values import _MAX_RENDER_NODES, _estimate_size, _function_repr, _schema_repr
 
 
 class _EngineHostDebug:
@@ -276,7 +276,13 @@ class _EngineHostDebug:
             seen: set[int] = set()
             budget = [_MAX_RENDER_NODES]
             locals_ = {
-                name: self._safe_value(value, seen, _budget=budget, meter=meter)
+                name: self._safe_value(
+                    value,
+                    seen,
+                    _budget=budget,
+                    viewer_vm_id=context.vm_id,
+                    meter=meter,
+                )
                 for name, value in visible.items()
                 if not name.startswith("$")
             }
@@ -345,6 +351,7 @@ class _EngineHostDebug:
         _depth: int = 0,
         _budget: list[int] | None = None,
         *,
+        viewer_vm_id: int | None = None,
         meter: Meter | None = None,
     ) -> object:
         if _seen is None:
@@ -375,28 +382,46 @@ class _EngineHostDebug:
             _seen.add(ident)
             if type(value) is list:
                 return [
-                    self._safe_value(item, _seen, _depth + 1, _budget, meter=meter)
+                    self._safe_value(
+                        item,
+                        _seen,
+                        _depth + 1,
+                        _budget,
+                        viewer_vm_id=viewer_vm_id,
+                        meter=meter,
+                    )
                     for item in value
                 ]
             if type(value) is tuple:
                 return tuple(
-                    self._safe_value(item, _seen, _depth + 1, _budget, meter=meter)
+                    self._safe_value(
+                        item,
+                        _seen,
+                        _depth + 1,
+                        _budget,
+                        viewer_vm_id=viewer_vm_id,
+                        meter=meter,
+                    )
                     for item in value
                 )
             fields = value.fields if isinstance(value, SericiteRecord) else value
             result = {
                 str(key): self._safe_value(
-                    item, _seen, _depth + 1, _budget, meter=meter
+                    item,
+                    _seen,
+                    _depth + 1,
+                    _budget,
+                    viewer_vm_id=viewer_vm_id,
+                    meter=meter,
                 )
                 for key, item in fields.items()
             }
             return {"<record>": result} if isinstance(value, SericiteRecord) else result
         if isinstance(value, SericiteSchema):
             return _schema_repr(value, _seen, _budget, meter=meter)
-        if isinstance(
-            value,
-            (VMHandle, VFSHandle, SericiteFunction, SericiteModule, _NativeFunction),
-        ):
+        if isinstance(value, SericiteFunction):
+            return _function_repr(value, viewer_vm_id)
+        if isinstance(value, (VMHandle, VFSHandle, SericiteModule, _NativeFunction)):
             return repr(value)
         if isinstance(value, (_GrantedHostFunction, _GrantedSericiteFunction)):
             return repr(value)
