@@ -12,7 +12,7 @@
 
 **本系列是重构的教学历史。** 各阶段的代码取自真实开发历史，但提交顺序、文档结构是为了教学重新编排的，不是逐日时间线。原始的开发过程记录见 [behind-the-scenes](../behind-the-scenes/README.zh-CN.md)。
 
-**本系列在 0.1.0 冻结。** 文章描述的是 0.1.0 的构建过程，不是当前 API 文档；语言行为以[语言参考](../language-reference.zh-CN.md)为准，当前实现以[架构说明](../architecture.zh-CN.md)为准。后续版本的变化会写进 CHANGELOG，而不是回头改这些文章。
+**本系列在 0.1.0 冻结。** 文章描述的是 0.1.0 的构建过程，不是当前 API 文档；语言行为以[脚本手册](../manual/scripting/README.zh-CN.md)为准，当前实现以[架构说明](../architecture.zh-CN.md)为准。后续版本的变化会写进 CHANGELOG，而不是回头改这些文章。
 
 ## 前置知识
 

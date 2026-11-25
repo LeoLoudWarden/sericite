@@ -1,6 +1,6 @@
 # Sericite 架构说明
 
-本文描述 Sericite-PY（Python 参考实现）的内部结构与当前实现状态。设计理念见 [design](design.zh-CN.md)；语言行为见[语言参考](language-reference.zh-CN.md)；安全边界见[安全模型](security.zh-CN.md)。
+本文描述 Sericite-PY（Python 参考实现）的内部结构与当前实现状态。设计理念见 [design](design.zh-CN.md)；语言行为见[脚本手册](manual/scripting/README.zh-CN.md)；安全边界见[安全模型](security.zh-CN.md)。
 
 ## 1. 执行管线
 
@@ -19,10 +19,10 @@
 | `engine` | 调度循环、帧/求值栈、运算语义、异常展开（跨帧/跨 VM）、内建函数、VM 生命周期与 exec 投递、资源配额、调试快照与观察事件分发 |
 | `accounting` | 因果记账路由、统一 Meter、原子收费与一次性资源变更许可 |
 | `vfs` | 可移交工作区的纯内存、纯文本文件系统（平坦文件字典 + 直接子项目录树、名称元数据与子树聚合统计，供递归目录操作预付成本）；VFS 不持有配额或账户，依附关系由引擎排他管理 |
-| `io` | 每个 VM 独立的虚拟输入与输出（输出字节上限与可选缓冲；脚本输入变更需许可，宿主预置走显式 trusted 通道）。stdout 提交与转发分离：观察事件跟随前者、先于后者。输出可经显式配置的 writer 转发：脚本侧见[虚拟机参考](vm-reference.zh-CN.md)第 4 节，宿主侧 root 回调见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 2 节 |
+| `io` | 每个 VM 独立的虚拟输入与输出（输出字节上限与可选缓冲；脚本输入变更需许可，宿主预置走显式 trusted 通道）。stdout 提交与转发分离：观察事件跟随前者、先于后者。输出可经显式配置的 writer 转发：脚本侧见 [VM 输出参考](manual/scripting/reference/06-vm.zh-CN.md#输出转发与缓冲)，宿主侧 root 回调见[引擎输入与输出参考](manual/host-python/reference/01-engine-and-limits.zh-CN.md#输入与输出) |
 | `errors` | `SericiteError`、集中管理的错误 kind 注册表与固定的编译期 except 过滤组 |
 | `events` | 公开的 `SericiteEvent` 数据与 `SericiteObservation` 会话生命周期、关闭、故障状态、轮询及只读快照入口 |
-| `cli` / `__main__` | 命令行入口：源码读取、静态可达项目模块的 VFS 快照及来源行号映射、可信能力文件装载、root argv 初始化、一次性执行与基于持久 `exec()` 的 REPL、宿主侧诊断。不改变编译、调度或隔离不变量（命令行契约见 [CLI 参考](cli-reference.zh-CN.md)） |
+| `cli` / `__main__` | 命令行入口：源码读取、静态可达项目模块的 VFS 快照及来源行号映射、可信 addon 文件装载、root argv 初始化、一次性执行与基于持久 `exec()` 的 REPL、宿主侧诊断。不改变编译、调度或隔离不变量（命令行契约见 [CLI 参考](manual/cli/reference/01-cli.zh-CN.md)） |
 
 `compiler` 包按内聚职责拆分为：
 
@@ -75,7 +75,7 @@
 11. VM/VFS 句柄方法白名单都只有一个来源（编译器侧定义），引擎侧引用它们，两边不得分叉。
 12.
   - a. 宿主边界（FFI）必须双向深拷贝 + 类型白名单（None/bool/int/float/str/list/dict/tuple 递归）：句柄、函数、record/schema、宿主原生对象一律不得越界。
-  - b. FFI 异常契约：宿主回调只能通过抛契约 kind 的 `SericiteError` 报告失败；契约之外的任何 `Exception` 都视为治理失败，当前 VM 以不可捕获的 `host_error` 终止。完整契约见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 6.3 节。
+  - b. FFI 异常契约：宿主回调只能通过抛契约 kind 的 `SericiteError` 报告失败；契约之外的任何 `Exception` 都视为治理失败，当前 VM 以不可捕获的 `host_error` 终止。完整契约见 [addon 回调失败契约](manual/host-python/reference/04-addons.zh-CN.md#回调失败)。
   - c. VM 之间的函数授予在同一引擎信任域内按引用传递，不拷贝。
 13.
   - a. 授予的 sericite 函数执行在**调用方 VM 的帧栈**上，指令计入调用方及祖先。
@@ -87,7 +87,7 @@
 16.
   - a. 跨 VM 的只有结构：record/schema 不携带名字，schema 相等按字段集与契约的结构比较；类名、注解名等标签是编译期、作用域本地的诊断数据，出作用域即失效。
   - b. 外来代码（`origin_vm` 不同的 CodeUnit）在当前 VM 的报错（属性 hint、参数/返回契约、参数数量）一律退为结构描述与授予名，定义方的函数名、类型标签、参数名（以位置序号替代）不得出现；外来代码的 `name_error` 使用不含具体名字的通用未定义消息，不得暴露定义方局部变量、闭包变量或模块变量名；
-  - c. 新增值形式或跨层通道时，必须同样保证名字不随值越层。设计论证见[设计说明](design.zh-CN.md)第 3.4 节，脚本可见语义见[语言参考](language-reference.zh-CN.md)第 7 节。
+  - c. 新增值形式或跨层通道时，必须同样保证名字不随值越层。设计论证见[设计说明](design.zh-CN.md)第 3.4 节，脚本可见语义见[脚本参考：record 与 schema](manual/scripting/reference/01-language.zh-CN.md#record-与-schema)。
 17.
   - a. 引擎的 VM 索引与永久计量结构不得拥有 `VMContext`；句柄与执行环境持有它，存活后代通过记账路由保留祖先配额链。
   - b. 不可达上下文由 Python GC 经 finalizer 最终注销，自引用与跨 VM 环不得形成永久泄露；finalizer 不得执行脚本、FFI 或 output writer。
@@ -112,13 +112,13 @@
 
 ## 4. 脚本接口
 
-脚本可见的内建函数与容器方法以[语言参考](language-reference.zh-CN.md)第 6 节为准；VM/VFS 句柄方法与 VM 状态以[虚拟机参考](vm-reference.zh-CN.md)第 2～4 节为准。引擎侧对这份接口只承担两条内部职责：这些名字的编译器白名单有唯一来源（不变量 11）；容器与字符串方法走封闭的原生分发，不暴露任意 Python 属性。方法调用的计费规则见第 5 节。
+脚本可见的内建函数与容器方法以[通用内建](manual/scripting/reference/02-builtins.zh-CN.md)、[值类型方法](manual/scripting/reference/03-types.zh-CN.md)和[文件与目录](manual/scripting/reference/04-files.zh-CN.md)参考为准；VM/VFS 句柄方法与 VM 状态以 [VM](manual/scripting/reference/06-vm.zh-CN.md) 和 [VFS](manual/scripting/reference/07-vfs.zh-CN.md) 参考为准。引擎侧对这份接口只承担两条内部职责：这些名字的编译器白名单有唯一来源（不变量 11）；容器与字符串方法走封闭的原生分发，不暴露任意 Python 属性。方法调用的计费规则见第 5 节。
 
-错误 kind 与固定的编译期过滤组由 `errors` 模块集中注册。编译器接受具体可捕获 kind 与固定组名，把组展开为 handler 表中的实际 kind，并拒绝未知过滤名字与始终不可捕获的 kind；组名不会成为运行期错误 kind。`resource_exhausted` 的运行时可捕获性由来源 VM 决定（不变量 10），`file_limit_error` 则是与执行账户耗尽无关的普通可捕获错误。完整 kind 清单与固定组成员见[语言参考](language-reference.zh-CN.md)第 5 节。
+错误 kind 与固定的编译期过滤组由 `errors` 模块集中注册。编译器接受具体可捕获 kind 与固定组名，把组展开为 handler 表中的实际 kind，并拒绝未知过滤名字与始终不可捕获的 kind；组名不会成为运行期错误 kind。`resource_exhausted` 的运行时可捕获性由来源 VM 决定（不变量 10），`file_limit_error` 则是与执行账户耗尽无关的普通可捕获错误。完整 kind 清单与固定组成员见[脚本错误与异常参考](manual/scripting/reference/05-errors.zh-CN.md)。
 
 ## 5. 资源配额
 
-配额由 `SericiteLimits` 定义，字段清单与默认值见[虚拟机参考](vm-reference.zh-CN.md)第 5 节。本节只讲计费模型。
+配额由 `SericiteLimits` 定义，字段清单与默认值见 [Python 宿主 `SericiteLimits` 参考](manual/host-python/reference/01-engine-and-limits.zh-CN.md#sericitelimits)。本节只讲计费模型。
 
 ### 5.1 基本规则
 
@@ -207,7 +207,7 @@
 - `repr` 按包含引号与转义的最终渲染结果应用 `max_string_bytes`。输入字符串本身未超限时，渲染结果仍可能超限并抛出当前 VM 不可捕获的 `resource_exhausted`；传播到其他 VM 后按跨 VM 资源错误规则处理（不变量 10）。
 - 递归安全渲染对循环与重复引用使用占位符，因此共享但无环的容器也可能显示为 `[...]`、`(...)`、`{...}` 或 `record(...)`，而不会重复展开。
 - for 遍历 list 为活视图、遍历 dict 为键快照。
-- 自动 VM 回收不保证立即发生：上下文可能晚于最后一次显式引用之后才被回收，且时机不与语句或作用域边界绑定（契约见[虚拟机参考](vm-reference.zh-CN.md)第 3 节）。观察还增加第二层延迟：GC tombstone 由 finalizer 排队，只由 `poll()` 或后续安全引擎入口投递，因此通知时点不等于回收时点。
+- 自动 VM 回收不保证立即发生：上下文可能晚于最后一次显式引用之后才被回收，且时机不与语句或作用域边界绑定（契约见 [`VM.dispose`](manual/scripting/reference/06-vm.zh-CN.md#vmdispose)）。观察还增加第二层延迟：GC tombstone 由 finalizer 排队，只由 `poll()` 或后续安全引擎入口投递，因此通知时点不等于回收时点。
 - 单次收费先检查路由上的全部账户再统一提交；被拒绝的新收费不会只落入部分账户，已经完成的工作收费则保留。
 - 跨 VM 调用共享祖先只计一次；完整计费规则见第 5.4 节。
 

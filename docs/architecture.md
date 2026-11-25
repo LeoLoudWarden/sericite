@@ -1,6 +1,6 @@
 # Sericite Architecture Notes
 
-This document describes the internal structure and current implementation status of Sericite-PY (the Python reference implementation). For the design rationale see [design](design.md); for language behavior see the [language reference](language-reference.md); for security boundaries see the [security model](security.md).
+This document describes the internal structure and current implementation status of Sericite-PY (the Python reference implementation). For the design rationale see [design](design.md); for language behavior see the [scripting manual](manual/scripting/README.md); for security boundaries see the [security model](security.md).
 
 ## 1. Execution pipeline
 
@@ -19,10 +19,10 @@ source → ast.parse → node-whitelist validation → compile to internal instr
 | `engine` | Dispatch loop, frames/evaluation stack, operator semantics, exception unwinding (across frames and VMs), built-ins, VM lifecycle and exec delivery, resource quotas, debug snapshots, and observation-event dispatch |
 | `accounting` | Causal account routes, unified meters, atomic charging, and one-shot resource-mutation permits |
 | `vfs` | Transferable-workspace virtual filesystem (pure memory, text only; flat file dictionary + direct-child directory tree, name metadata, and subtree aggregates for prepaid recursive directory costs). The VFS holds no quotas or accounts; the engine manages exclusive attachment |
-| `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Stdout commit is separate from forwarding: observation events follow the former and precede the latter. Output can be forwarded through an explicitly configured writer: script side in the [VM reference](vm-reference.md) §4, host-side root callback in the [Sericite-PY reference](sericite-py-reference.md) §2 |
+| `io` | Per-VM virtual input and output (output byte cap and optional buffering; script input mutations require permits, while host preconfiguration uses explicit trusted channels). Stdout commit is separate from forwarding: observation events follow the former and precede the latter. Output can be forwarded through an explicitly configured writer: script side in the [VM output reference](manual/scripting/reference/06-vm.md#output-forwarding-and-buffering), host-side root callback in the [engine input and output reference](manual/host-python/reference/01-engine-and-limits.md#input-and-output) |
 | `errors` | `SericiteError`, the central error-kind registry, and fixed compile-time except-filter groups |
 | `events` | Public `SericiteEvent` data and `SericiteObservation` session lifecycle, closure, failure state, polling, and read-only snapshot entry |
-| `cli` / `__main__` | Command-line entry points: source loading, VFS snapshots of statically reachable project modules and source-line mapping, trusted capability-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](cli-reference.md)) |
+| `cli` / `__main__` | Command-line entry points: source loading, VFS snapshots of statically reachable project modules and source-line mapping, trusted addon-file loading, root argv initialization, one-shot execution and a REPL built on persistent `exec()`, and host-side diagnostics. Does not change compilation, dispatch, or isolation invariants (command-line contract: [CLI reference](manual/cli/reference/01-cli.md)) |
 
 The `compiler` package is split into cohesive parts:
 
@@ -75,7 +75,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 11. The VM/VFS handle-method whitelists each have exactly one source (defined on the compiler side); the engine references them, and the two sides must not diverge.
 12.
   - a. The host boundary (FFI) must deep-copy in both directions with a type whitelist (None/bool/int/float/str/list/dict/tuple, recursive): handles, functions, records/schemas, and host-native objects must never cross.
-  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [Sericite-PY reference](sericite-py-reference.md), section 6.3.
+  - b. FFI exception contract: host callbacks signal failure only by raising `SericiteError` with a contract kind; any `Exception` outside the contract is a governance failure and kills the VM with the uncatchable `host_error`. The full contract is in the [addon callback failure contract](manual/host-python/reference/04-addons.md#callback-failure).
   - c. Functions granted between VMs are passed by reference within the same engine trust domain, not copied.
 13.
   - a. A granted sericite function executes on the **calling VM's frame stack**, with instructions charged to the caller and its ancestors.
@@ -87,7 +87,7 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 16.
   - a. Only structure crosses VMs: records/schemas carry no names, and schema equality compares the structure of field sets and contracts; class names, annotation names, and other labels are compile-time, scope-local diagnostic data that expires at scope exit.
   - b. Errors raised by foreign code (a CodeUnit whose `origin_vm` differs) in the current VM — attribute hints, parameter/return contracts, arity — must fall back to structural descriptions and the granted name; definition-side function names, type labels, and parameter names (replaced by positional indices) must not appear. Foreign `name_error` uses a generic undefined-name message without the definition-side local, closure, or module variable name;
-  - c. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values. Design rationale is in [design](design.md) §3.4; script-visible semantics in the [language reference](language-reference.md) §7.
+  - c. New value forms or cross-layer channels must likewise guarantee that names do not cross layers with values. Design rationale is in [design](design.md) §3.4; script-visible semantics in [records and schemas](manual/scripting/reference/01-language.md#records-and-schemas).
 17.
   - a. The engine's VM index and permanent accounting structures must not own a `VMContext`; handles and execution environments retain it, and live descendants retain their ancestors' accounting chain through their routes.
   - b. An unreachable context is eventually unregistered by Python GC through a finalizer; self-references and cross-VM cycles must not become permanent leaks. Finalizers must not execute scripts, FFI, or output writers.
@@ -112,13 +112,13 @@ Anyone modifying the engine must preserve the following invariants (numbered for
 
 ## 4. Script interface
 
-The script-visible builtin functions and container methods are owned by the [language reference](language-reference.md) §6; VM/VFS handle methods and VM states by the [VM reference](vm-reference.md) §§2–4. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
+The script-visible built-in functions and container methods are owned by the [general built-ins](manual/scripting/reference/02-builtins.md), [value type methods](manual/scripting/reference/03-types.md), and [files and directories](manual/scripting/reference/04-files.md) references; VM/VFS handle methods and VM states are owned by the [VM](manual/scripting/reference/06-vm.md) and [VFS](manual/scripting/reference/07-vfs.md) references. On the engine side, this interface carries only two internal responsibilities: the compiler-side whitelist is the single source of these names (invariant 11), and container/string methods dispatch through closed native paths that never expose arbitrary Python attributes. Charging rules for method calls are in section 5.
 
-Error kinds and fixed compile-time filter groups are centrally registered in the `errors` module. The compiler accepts concrete catchable kinds and fixed group names, expanding groups into actual kinds in handler tables; it rejects unknown filter names and always-uncatchable kinds. Group names never become runtime error kinds. The runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10), while `file_limit_error` is an ordinary catchable error unrelated to execution-account exhaustion. The full kind list and fixed group memberships are in the [language reference](language-reference.md) §5.
+Error kinds and fixed compile-time filter groups are centrally registered in the `errors` module. The compiler accepts concrete catchable kinds and fixed group names, expanding groups into actual kinds in handler tables; it rejects unknown filter names and always-uncatchable kinds. Group names never become runtime error kinds. The runtime catchability of `resource_exhausted` is determined by its source VM (invariant 10), while `file_limit_error` is an ordinary catchable error unrelated to execution-account exhaustion. The full kind list and fixed group memberships are in the [script errors and exceptions reference](manual/scripting/reference/05-errors.md).
 
 ## 5. Resource quotas
 
-Quotas are defined by `SericiteLimits`; the field list and defaults are in the [VM reference](vm-reference.md) §5. This section covers only the charging model.
+Quotas are defined by `SericiteLimits`; the field list and defaults are in the [Python host `SericiteLimits` reference](manual/host-python/reference/01-engine-and-limits.md#sericitelimits). This section covers only the charging model.
 
 ### 5.1 Basic rules
 
@@ -207,7 +207,7 @@ Deliberate trade-offs: additional container methods, variadic arguments, and cha
 - `repr` applies `max_string_bytes` to the fully rendered result, including quotes and escapes. An input string that is itself within the limit can therefore produce a `resource_exhausted` uncatchable in the current VM when its rendered result exceeds the limit; propagation to another VM follows the cross-VM resource-error rules (invariant 10).
 - Recursive safe rendering uses placeholders for cycles and repeated references. Shared non-cyclic containers can therefore render as `[...]`, `(...)`, `{...}`, or `record(...)` instead of being expanded repeatedly.
 - `for` iterates lists as a live view and dicts as a key snapshot.
-- Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in the [VM reference](vm-reference.md) §3). Observation adds a second delay: GC tombstones are queued by finalizers and delivered only by `poll()` or a later safe engine entry, so notification timing is not collection timing.
+- Automatic VM collection is not immediate: a context may outlive its last explicit reference, and its timing is not tied to a statement or scope boundary (contract in [`VM.dispose`](manual/scripting/reference/06-vm.md#vmdispose)). Observation adds a second delay: GC tombstones are queued by finalizers and delivered only by `poll()` or a later safe engine entry, so notification timing is not collection timing.
 - Each charge checks every account on its route before committing anywhere; a rejected new charge is not partially committed, while charges for completed work are retained.
 - Cross-VM calls charge shared ancestors once; the full charging rules are in section 5.4.
 

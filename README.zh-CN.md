@@ -43,10 +43,10 @@ sericite -c 'print(argv)' first second
 
 ```bash
 sericite app.sericite                       # 自动准备静态可达的导入依赖
-sericite --capabilities capabilities.py app.sericite
+sericite --addons addons.py app.sericite
 ```
 
-入口文件所在目录是项目根，导入依赖会自动准备好；capabilities 是操作者显式信任、用于配置函数、配额和初始文件的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
+入口文件所在目录是项目根，导入依赖会自动准备好；addon 配置是操作者显式信任、用于配置函数、配额和初始文件的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/reference/01-cli.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
 
 ```python
 from sericite import SericiteEngine
@@ -79,7 +79,7 @@ print(vm.run(), end="")    # 42
 - 父级可以预置文件、喂输入、设置行断点、逐语句或逐指令单步、查看快照、随时终止；
 - 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
 
-Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的事件，并按 VM ID 读取只读快照，无需脚本配合；见 [Sericite-PY 参考第 5 节](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md#5-观察-vm-活动)。
+Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的事件，并按 VM ID 读取只读快照，无需脚本配合；见 [Python 宿主观察参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/reference/05-observation.zh-CN.md)。
 
 廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.105 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
 
@@ -91,7 +91,7 @@ Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的�
 - record 只携带数据和契约。类型名是编译期、作用域本地的透明别名（同 Elm `type alias`），只用于报错文本——不参与相等、不参与契约判断，出作用域即擦除；
 - 命名是接收方的本地行为：一个值在不同作用域可以有不同的名字，也可以没有名字。
 
-设计论证见[设计说明 §3.4](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)，完整语义与示例见[语言参考 §7](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md)。
+设计论证见[设计说明 §3.4](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)，完整语义与示例见[脚本参考：record 与 schema](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/reference/01-language.zh-CN.md#record-与-schema)。
 
 ## 文档
 
@@ -99,10 +99,9 @@ Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的�
 |---|---|
 | [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) |
 | [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) |
-| [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.zh-CN.md) | [CLI reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/cli-reference.md) |
-| [语言参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.zh-CN.md) | [Language reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/language-reference.md) |
-| [虚拟机参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.zh-CN.md) | [VM reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/vm-reference.md) |
-| [Sericite-PY 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.zh-CN.md) | [Sericite-PY reference](https://github.com/LeoLoudWarden/sericite/blob/main/docs/sericite-py-reference.md) |
+| [脚本手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.zh-CN.md) | [Scripting manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.md) |
+| [命令行手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.zh-CN.md) | [CLI manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.md) |
+| [Python 宿主手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.zh-CN.md) | [Python host manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.md) |
 | [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) |
 | [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) |
 | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |

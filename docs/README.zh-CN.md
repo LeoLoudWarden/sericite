@@ -2,23 +2,24 @@
 
 [English index](README.md)
 
-Sericite 的文档按读者任务和变化频率分层：使用参考跟随公开接口，实现文档跟随代码，设计文档解释长期边界，历史写定后冻结。文件保持稳定的扁平路径，分类由本索引承担。
+Sericite 的文档按读者任务和变化频率分层：用户手册跟随公开接口，实现文档跟随代码，设计文档解释长期边界，历史写定后冻结。本索引为各套手册和其他文档提供分类与层次。
 
 ## 入门与示例
 
 - [项目 README](../README.zh-CN.md)：项目定位、安装与快速上手。
 - [完整演示](../demos/README.zh-CN.md)：root 驱动的 LLM 应用及离线验证；小型语言片段另见 `examples/`。
 
-## 使用参考
+## 用户手册
 
-| 文档 | 读者与内容 | English |
+每套手册都包含按任务组织的指南，以及供精确查询契约的 API 参考。
+
+| 手册 | 读者与内容 | English |
 |---|---|---|
-| [CLI 参考](cli-reference.zh-CN.md) | 运行程序的操作者：命令、多文件项目、可信能力配置、退出码 | [cli-reference.md](cli-reference.md) |
-| [语言参考](language-reference.zh-CN.md) | 脚本作者：语言子集、内建、record、VM 与异常语义 | [language-reference.md](language-reference.md) |
-| [虚拟机参考](vm-reference.zh-CN.md) | 脚本作者：执行会话、VFS 移交、VM 状态、驱动、配额与授予语义 | [vm-reference.md](vm-reference.md) |
-| [Sericite-PY 参考](sericite-py-reference.zh-CN.md) | Python 嵌入者：引擎 API、观察事件、后代只读快照、FFI、宿主诊断与错误处理 | [sericite-py-reference.md](sericite-py-reference.md) |
+| [脚本手册](manual/scripting/README.zh-CN.md) | 脚本作者：语言、内建、record、异常、文件、VM 与 VFS | [Scripting manual](manual/scripting/README.md) |
+| [命令行手册](manual/cli/README.zh-CN.md) | 运行程序的操作者：命令、多文件项目、可信 addon 配置、退出码 | [CLI manual](manual/cli/README.md) |
+| [Python 宿主手册](manual/host-python/README.zh-CN.md) | Python 嵌入者：引擎 API、VM 生命周期、VFS、addon、观察与宿主诊断 | [Python host manual](manual/host-python/README.md) |
 
-写脚本先读语言参考，不要求理解引擎或宿主；运行程序读 CLI 参考；在脚本中驱动与调试子 VM 读虚拟机参考；Python 宿主侧的差异集中在 Sericite-PY 参考。
+脚本手册可以独立阅读：编写脚本不要求理解命令行或 Python 宿主细节。需要从终端运行程序时读命令行手册；需要由既有 Python 应用创建、驱动或检查 VM 时读 Python 宿主手册。
 
 ## 设计与边界
 

@@ -12,7 +12,7 @@ This series tells how Mica 0.1.0 was built: from an AST prototype that could exe
 
 **This series is a reconstructed teaching history.** The code at each stage comes from the real development history, but the commit order and document structure were rearranged for teaching; it is not a day-by-day timeline. The original development process records are in [behind-the-scenes](../behind-the-scenes/README.md).
 
-**This series is frozen at 0.1.0.** The articles describe how 0.1.0 was built; they are not current API documentation. Language behavior is governed by the [language reference](../language-reference.md), and the current implementation by the [architecture notes](../architecture.md). Later changes go into the CHANGELOG, not back into these articles.
+**This series is frozen at 0.1.0.** The articles describe how 0.1.0 was built; they are not current API documentation. Language behavior is governed by the [scripting manual](../manual/scripting/README.md), and the current implementation by the [architecture notes](../architecture.md). Later changes go into the CHANGELOG, not back into these articles.
 
 ## Prerequisites
 
