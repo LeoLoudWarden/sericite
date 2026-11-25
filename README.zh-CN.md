@@ -5,15 +5,15 @@
 [![Python](https://img.shields.io/pypi/pyversions/sericite)](https://pypi.org/project/sericite/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/LeoLoudWarden/sericite/blob/main/LICENSE)
 
-**Sericite** 是一门脚本语言及其执行引擎，围绕一个想法构建：**创建一个完全隔离、可以任意嵌套的运行环境，应当是语言自身的一种廉价的第一类操作。**
+**Sericite** 是一门脚本语言及其执行引擎，围绕一个想法构建：**创建一个完全隔离、可以任意嵌套的 VM，应当是语言自身的一种廉价的第一类操作。**
 
-语法借用 Python 的一个子集，但 Sericite 源码会被编译为 Sericite 自己的指令流，由 Sericite 引擎逐条执行——不经过 `exec`/`eval`。每台 VM 初始能力为零：独立的虚拟 IO、独立的内存文件系统、创建子 VM。其余一切能力（网络、宿主数据、任何你选择授予的东西）都通过 FFI 逐层显式授予。
+语法借用 Python 的一个子集，但源码会被编译为 Sericite 自己的指令流执行——不经过 Python `exec`/`eval`。
 
 [English documentation](https://github.com/LeoLoudWarden/sericite/blob/main/README.md)
 
 ## 状态
 
-1.0 之前的原型。引擎是 Python 参考实现（代号 **Sericite-PY**）：零运行时依赖，Python ≥ 3.12。API 与语义在 1.0 之前可能变化。
+1.0 之前的原型。引擎是 Python 参考实现（代号 **Sericite-PY**），零运行时依赖，需要 Python ≥ 3.12。API 与语义在 1.0 之前可能变化。
 
 > **安全提示。** Sericite 为隔离而设计，但当前原型与宿主同进程运行，未经正式安全审计。执行对抗性代码时，不要把 Sericite 当作**唯一**的隔离边界。引擎保证什么、不保证什么，见[安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md)。
 
@@ -23,78 +23,69 @@
 pip install sericite
 ```
 
-发行包名为 `sericite`，导入包名为 `sericite`。
+## 你的第一个隔离程序
 
-## 快速上手
-
-命令行：
-
-```bash
-sericite -c 'print("hello from sericite")'
-printf 'print("hello from sericite")\n' > hello.sericite
-sericite hello.sericite        # hello from sericite
-sericite                       # 进入 REPL，EOF 退出
-sericite -c 'print(argv)' first second
-```
-
-非 UTF-8 的 Windows 环境可先在 PowerShell 中设置 `$env:PYTHONUTF8 = "1"`，再运行上述命令。
-
-多文件项目与程序能力配置：
-
-```bash
-sericite app.sericite                       # 自动准备静态可达的导入依赖
-sericite --addons addons.py app.sericite
-```
-
-入口文件所在目录是项目根，导入依赖会自动准备好；addon 配置是操作者显式信任、用于配置函数、配额和初始文件的 Python 配置。完整契约见 [CLI 参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/reference/01-cli.zh-CN.md)，完整应用见 [root-agent demo](https://github.com/LeoLoudWarden/sericite/blob/main/demos/root-agent/README.zh-CN.md)。需要由既有宿主系统管理 VM 生命周期时，再嵌入 Python：
+创建 `play.sericite`。新建的 VM 会查找一个在它创建前写入的文件，再把答案留在自己的工作区：
 
 ```python
-from sericite import SericiteEngine
+write_file("/before.txt", "already here")
 
-engine = SericiteEngine()
-vm = engine.create_root("""
-sub = VM("print('hello from a child VM')")
-print(sub.run(), end="")
+vm = VM("""
+print(path_exists("/before.txt"))
+write_file("/answer.txt", "42")
 """)
+
 print(vm.run(), end="")
+workspace = vm.take_fs()
+print(workspace.read_file("/answer.txt"))
 ```
 
-向 VM 授予能力（addons）：
+运行：
 
-```python
-def double(x):
-    return x * 2
-
-vm = engine.create_root(
-    "from __addon__ import double\nprint(double(21))",
-    addons={"double": double},
-)
-print(vm.run(), end="")    # 42
+```bash
+sericite play.sericite
 ```
 
-## 一台 Sericite VM 是什么
+输出：
 
-一个廉价、自包含的代码运行环境：
+```text
+False
+42
+```
 
-- 看不到父级的变量、文件和句柄，也不知道自己嵌套在第几层；
-- 默认有独立的空白内存文件系统（纯文本——结构上碰不到真实磁盘）；这个文件工作区可以在 VM 之间显式移交；
-- 资源配额（指令、内存、输出、存活 VM 数、存活后代数、嵌套深度……）只能收紧不能放宽，子 VM 的消耗计入所有祖先；
-- 父级可以预置文件、喂输入、设置行断点、逐语句或逐指令单步、查看快照、随时终止；
-- 它可以创建自己的子 VM——隔离是递归的，因为不可信的代码是递归的。
+## 不可信代码竞技场
 
-Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的事件，并按 VM ID 读取只读快照，无需脚本配合；见 [Python 宿主观察参考](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/reference/05-observation.zh-CN.md)。
+九份互不信任的程序参加排序比赛。正确的算法按指令数排名；偷答案、死循环和输出洪泛只会导致当前提交出局，裁判继续运行。
 
-廉价是实测过的：当前 Python 原型中，脚本内创建一台子 VM 约 0.105 ms，与创建一个线程同数量级，比进程便宜一到两个数量级。更多实测数字与复现脚本见[架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md)第 6 节与 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)。
+```bash
+git clone https://github.com/LeoLoudWarden/sericite.git
+cd sericite
+sericite --addons demos/sorting-arena/addons.py demos/sorting-arena/arena.sericite
+```
 
-## record：类型名只是编译期的报错标签
+输出节选（每次运行都会生成新的随机测试）：
 
-0.4 起，sericite 有了自定义含成员的对象。它的类型观与 VM 的隔离观是同一条戒律：**结构跨层，名字层本地。**
+```text
+  RANK  CONTESTANT                  TOTAL INSTRUCTIONS
+  1     quicksort               15,383
+  ...
+  DQ    answer-thief            file_not_found
+  DQ    output-flood            resource_exhausted
+  DQ    infinite-loop           resource_exhausted
+  ...
+  The arena survived every submission. The scoreboard only counts correct code.
+```
 
-- schema（`class` 定义的结构契约）是匿名的：两处分别定义的同形 schema 彼此相等，不存在名义类型；
-- record 只携带数据和契约。类型名是编译期、作用域本地的透明别名（同 Elm `type alias`），只用于报错文本——不参与相等、不参与契约判断，出作用域即擦除；
-- 命名是接收方的本地行为：一个值在不同作用域可以有不同的名字，也可以没有名字。
+[它是怎么做到的](https://github.com/LeoLoudWarden/sericite/blob/main/demos/sorting-arena/README.zh-CN.md)
 
-设计论证见[设计说明 §3.4](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)，完整语义与示例见[脚本参考：record 与 schema](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/reference/01-language.zh-CN.md#record-与-schema)。
+## 了解更多
+
+| 下一步 | 中文 | English |
+|---|---|---|
+| 看更多完整应用 | [更多演示](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.zh-CN.md) | [More demos](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.md) |
+| 学习编写 Sericite 程序 | [Sericite 脚本手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.zh-CN.md) | [Sericite scripting manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.md) |
+| 从终端运行程序 | [Sericite 命令行手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.zh-CN.md) | [Sericite CLI manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.md) |
+| 嵌入 Python 应用 | [Sericite-PY 手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.zh-CN.md) | [Sericite-PY manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.md) |
 
 ## 文档
 
@@ -102,30 +93,25 @@ Python 宿主还可以通过 `engine.observe()` 接收整棵 VM 树已提交的�
 |---|---|
 | [设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md) | [Design notes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.md) |
 | [先例与相关工作](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.zh-CN.md) | [Prior art](https://github.com/LeoLoudWarden/sericite/blob/main/docs/prior-art.md) |
-| [脚本手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.zh-CN.md) | [Scripting manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.md) |
-| [命令行手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.zh-CN.md) | [CLI manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.md) |
-| [Python 宿主手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.zh-CN.md) | [Python host manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/host-python/README.md) |
 | [架构说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.zh-CN.md) | [Architecture](https://github.com/LeoLoudWarden/sericite/blob/main/docs/architecture.md) |
 | [安全模型](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.zh-CN.md) | [Security model](https://github.com/LeoLoudWarden/sericite/blob/main/docs/security.md) |
+| [性能基准](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks) | [Benchmarks](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks) |
 | [构建手记](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.zh-CN.md) | [Build journal](https://github.com/LeoLoudWarden/sericite/blob/main/docs/stages/README.md) |
 | [幕后](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.zh-CN.md) | [Behind the scenes](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/README.md) |
+| [AI 辅助开发](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/ai-assisted-development.zh-CN.md) | [AI-assisted development](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/ai-assisted-development.md) |
 
-每篇文档的定位与读者指引集中在[文档索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/README.zh-CN.md)维护。构建手记与幕后的正文文章仅中文（其索引页有英文版）；不计划全文翻译——它们是冻结的历史。
-
-## 这个项目是怎么写出来的
-
-Sericite 全程使用 AI 辅助开发——设计讨论、实现、测试、对抗性审查、文档起草。AI 做了什么、作者做了什么、产出如何被验证，记录在 [AI 辅助开发说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/behind-the-scenes/ai-assisted-development.zh-CN.md)，附开发对话选编。
+每篇文档的定位与读者指引集中在[文档索引](https://github.com/LeoLoudWarden/sericite/blob/main/docs/README.zh-CN.md)维护。
 
 ## 路线图
 
-- 更多列表/字典方法、字符串方法与更多易用性语法
-- 性能基准：VM 创建、每指令执行与调试成本已实测（见 [benchmarks/](https://github.com/LeoLoudWarden/sericite/tree/main/benchmarks)）；更多工作负载的覆盖待补
-- 规范化的语言规范与一致性测试套件，供未来非 Python 引擎对照验证
-- 原生引擎评估（包名刻意取语言级：`sericite` 在引擎重写后依然成立）
+- 更多列表/字典方法、字符串方法与易用性语法
+- 覆盖更多工作负载的性能基准
+- 规范化的语言规范与一致性测试套件，供未来引擎对照验证
+- 原生引擎评估
 
 ## 名字由来
 
-Sericite 即绢云母，云母族中晶粒最细的一支：细小的丝绢鳞片层层叠置，与所有云母一样是绝缘体——这个名字保留了项目命名时的三个承诺：层叠、绝缘、轻量。（本项目曾短暂名为 Mica/MicaLang，因名字被占用而更名。）完整叙述见[设计说明](https://github.com/LeoLoudWarden/sericite/blob/main/docs/design.zh-CN.md)第 6 节。
+Sericite 即绢云母，一种晶粒细小的云母：丝绢般的薄片层层叠置，而且绝缘。这个名字对应层叠、隔离与轻量。
 
 ## 许可证
 

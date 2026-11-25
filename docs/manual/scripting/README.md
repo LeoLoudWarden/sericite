@@ -13,7 +13,7 @@ When learning the language for the first time, start with the [scripting guide](
 | [Custom record objects](guides/03-record.md) | Records and schemas, contracts and annotations, width checks, structural equality |
 | [Error handling](guides/04-errors.md) | Catching and raising, error records, static filters |
 | [File system](guides/05-files.md) | File and directory operations, path resolution, implicit and explicit directories |
-| [Isolated execution spaces](guides/06-vm.md) | Child VM construction, transferring a workspace, granting capabilities, driving and stepping |
+| [Isolated execution spaces](guides/06-vm.md) | Run source as an independent program, provide files, grant capabilities, and control execution |
 | [Safety notes](guides/07-vm-safety.md) | Environment isolation, execution limits, common bad habits |
 
 ## API reference
@@ -25,7 +25,7 @@ When learning the language for the first time, start with the [scripting guide](
 | [Value type methods](reference/03-types.md) | All public methods of `list`, `tuple`, `dict`, `str` |
 | [Files and directories](reference/04-files.md) | Common path and directory rules, the 11 file and directory interfaces |
 | [Errors and exceptions](reference/05-errors.md) | Catching and raising, exception records, all error kinds, the fixed filter groups |
-| [VM](reference/06-vm.md) | Child VM construction, states, driving, debugging, snapshots, quotas, and addon granting |
+| [VM](reference/06-vm.md) | VM construction, states, driving, debugging, snapshots, quotas, and addon granting |
 | [VFS](reference/07-vfs.md) | Detached workspaces, exclusive transfer, and VFS file methods |
 
 ## Signature notation
