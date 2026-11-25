@@ -44,7 +44,6 @@ missing()
 
 CHILD_AGENT_CODE = """from __addon__ import llm_chat
 prompt_inner = read_file("/prompt_inner.txt")
-doc = read_file("/sericite语言特性速览.md")
 
 tools = [
     {"type": "function", "function": {"name": "file_read", "description": "读文件", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
@@ -55,7 +54,20 @@ tools = [
 
 messages = [{"role": "system", "content": prompt_inner}, {"role": "user", "content": "开始"}]
 workspace = VFS()
-workspace.write_file("/sericite语言特性速览.md", doc)
+
+def copy_manual(source, target):
+    workspace.make_dir(target)
+    for name in list_dir(source):
+        source_path = source.rstrip("/") + "/" + name
+        target_path = target.rstrip("/") + "/" + name
+        try:
+            text = read_file(source_path)
+        except is_directory:
+            copy_manual(source_path, target_path)
+        else:
+            workspace.write_file(target_path, text)
+
+copy_manual("/sericite手册", "/sericite手册")
 
 final = "(无结果)"
 done = False
@@ -151,7 +163,9 @@ class Handler(BaseHTTPRequestHandler):
         if turn == 1:
             return _reply(
                 tool_calls=[
-                    _tool_call(1, "file_read", {"path": "/sericite语言特性速览.md"}),
+                    _tool_call(
+                        1, "file_read", {"path": "/sericite手册/README.zh-CN.md"}
+                    ),
                     _tool_call(10, "file_list", {"path": "/"}),
                 ]
             )
