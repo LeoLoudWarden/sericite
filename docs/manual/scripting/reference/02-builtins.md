@@ -49,10 +49,11 @@ Returns the character count of a string, the element count of a list or tuple, o
 ## `int`
 
 ```text
+int() -> int
 int(value) -> int
 ```
 
-Converts an `int`, `float`, `bool`, or `str` to an integer.
+Converts an `int`, `float`, `bool`, or `str` to an integer. `int()` returns `0`.
 
 - Integers pass through unchanged, still subject to the integer bit-width quota.
 - Booleans become `1` or `0`.
@@ -65,22 +66,33 @@ Allowing booleans to be converted here does not mean booleans can take part in o
 ## `float`
 
 ```text
+float() -> float
 float(value) -> float
 ```
 
-Converts an `int`, `float`, `bool`, or `str` to a float.
+Converts an `int`, `float`, `bool`, or `str` to a float. `float()` returns `0.0`.
 
 Strings ignore surrounding whitespace and accept ordinary decimal float spellings as well as implementation-supported special float texts such as `nan` and `inf`. Invalid text raises `conversion_error`; other types raise `type_error`.
 
 ## `str`
 
 ```text
+str() -> str
 str(value) -> str
 ```
 
-Returns the value's string representation. Strings return themselves; other scalars, containers, records, schemas, functions, modules, and handles use Sericite's safe rendering rules.
+Returns the value's string representation. Strings return themselves; other scalars, containers, records, schemas, functions, modules, and handles use Sericite's safe rendering rules. `str()` returns the empty string.
 
 Containers are rendered recursively, and string elements are quoted inside containers. The rendered result is subject to `max_string_bytes`, and exceeding it may raise `resource_exhausted`.
+
+## `bool`
+
+```text
+bool() -> bool
+bool(value) -> bool
+```
+
+Uses the same truthiness rules as `if`, `while`, and short-circuit logic. `bool()` returns `False`.
 
 ## `repr`
 

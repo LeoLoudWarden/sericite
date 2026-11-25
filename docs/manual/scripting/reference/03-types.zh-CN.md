@@ -6,6 +6,13 @@
 
 ## `list`
 
+```text
+list() -> list
+list(value) -> list
+```
+
+接受 `list`、`tuple`、`str`、`dict`。`list/tuple` 按元素构造，`str` 按字符构造，`dict` 按键构造，元素本身不递归复制。其他类型报 `type_error`。`list()` 返回空列表。
+
 ### `list.append`
 
 ```text
@@ -41,7 +48,12 @@ list.index(value, start=None, stop=None) -> int
 
 ## `tuple`
 
-元组不可写入，没有 `append` 或 `pop`。
+```text
+tuple() -> tuple
+tuple(value) -> tuple
+```
+
+元组不可写入。输入和顺序规则同 `list`。
 
 ### `tuple.count`
 
@@ -60,6 +72,21 @@ tuple.index(value, start=None, stop=None) -> int
 返回搜索区间内首个匹配元素的位置。规则与 [`list.index`](#listindex) 相同，找不到报 `value_error`。
 
 ## `dict`
+
+```text
+dict() -> dict
+dict(value) -> dict
+dict(**entries) -> dict
+dict(value, **entries) -> dict
+```
+
+`value` 需为以下之一：
+- 另一个 dict；
+- 由二元 list/tuple 组成的 list/tuple。键值对长度不是 2 报 `value_error`。
+
+否则报 `type_error`。
+
+字典复制和键值对构造都是浅拷贝。
 
 字典方法遵循字典键白名单和插入顺序，见[值与字面量](01-language.zh-CN.md#值与字面量)。
 

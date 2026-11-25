@@ -41,7 +41,7 @@ make_dir delete_dir rename_dir copy_dir list_dir path_exists
 any bool list dict tuple wrap unwrap
 ```
 
-`int`、`float`、`str` 可直接调用，也可作为契约名。`any`、`bool`、`list`、`dict`、`tuple` 只能作为契约名出现在注解位。其他内建只能直接调用，不能先保存为普通变量再间接调用。
+`int`、`float`、`str`、`bool`、`list`、`dict` 和 `tuple` 既可直接调用，也可作为契约名。`any` 只能作为契约名出现在注解位。可调用内建不能先保存为普通变量再间接调用。
 
 ## 运算与求值
 
@@ -469,6 +469,6 @@ from __addon__ import first, second as alias
 - class 继承、方法、装饰器、字段默认值；
 - 语句级裸注解赋值；
 - 通配符导入和双下划线名称；
-- 重绑定内建名或把仅注解契约名当作普通值。
+- 重绑定内建名或在注解位以外使用 `any`。
 
 这些错误通常报 `syntax_error`。同一份源码不能用自身的 `try` 捕获自己的编译错误，因为编译先于执行；父程序创建或驱动子程序时可以捕获子源码的 `syntax_error`。

@@ -41,7 +41,7 @@ make_dir delete_dir rename_dir copy_dir list_dir path_exists
 any bool list dict tuple wrap unwrap
 ```
 
-`int`, `float`, and `str` can be called directly and can also serve as contract names. `any`, `bool`, `list`, `dict`, and `tuple` can only appear as contract names in annotation positions. The other built-ins can only be called directly, not saved as ordinary variables and then called indirectly.
+`int`, `float`, `str`, `bool`, `list`, `dict`, and `tuple` can be called directly and can also serve as contract names. `any` can only appear as a contract name in annotation positions. Callable built-ins cannot be saved as ordinary variables and then called indirectly.
 
 ## Operations and evaluation
 
@@ -469,6 +469,6 @@ Besides the limits already listed, the following forms are also unavailable:
 - class inheritance, methods, decorators, field defaults;
 - bare statement-level annotations;
 - wildcard imports and double-underscore names;
-- rebinding built-in names or treating annotation-only contract names as ordinary values.
+- rebinding built-in names or using `any` outside annotation positions.
 
 These errors usually report `syntax_error`. The same source cannot catch its own compile-time error with its own `try`, because compilation happens before execution; a parent program creating or driving a child program can catch the child source's `syntax_error`.

@@ -49,10 +49,11 @@ len(value) -> int
 ## `int`
 
 ```text
+int() -> int
 int(value) -> int
 ```
 
-把 `int`、`float`、`bool` 或 `str` 转成整数。
+把 `int`、`float`、`bool` 或 `str` 转成整数。`int()` 返回 `0`。
 
 - 整数保持不变，仍检查整数位宽配额。
 - 布尔值变为 `1` 或 `0`。
@@ -65,22 +66,33 @@ int(value) -> int
 ## `float`
 
 ```text
+float() -> float
 float(value) -> float
 ```
 
-把 `int`、`float`、`bool` 或 `str` 转成浮点数。
+把 `int`、`float`、`bool` 或 `str` 转成浮点数。`float()` 返回 `0.0`。
 
 字符串忽略两端空白，接受常规十进制浮点写法以及实现支持的 `nan`、`inf` 等特殊浮点文本。无效文本报 `conversion_error`，其他类型报 `type_error`。
 
 ## `str`
 
 ```text
+str() -> str
 str(value) -> str
 ```
 
-返回值的字符串表示。字符串返回自身；其他标量、容器、record、schema、函数、模块和句柄使用 Sericite 的安全渲染规则。
+返回值的字符串表示。字符串返回自身；其他标量、容器、record、schema、函数、模块和句柄使用 Sericite 的安全渲染规则。`str()` 返回空字符串。
 
 容器递归渲染，字符串元素在容器内带引号。渲染结果受 `max_string_bytes` 约束，超限可能报 `resource_exhausted`。
+
+## `bool`
+
+```text
+bool() -> bool
+bool(value) -> bool
+```
+
+使用与 `if`、`while`、短路逻辑相同的真值规则。`bool()` 返回 `False`。
 
 ## `repr`
 

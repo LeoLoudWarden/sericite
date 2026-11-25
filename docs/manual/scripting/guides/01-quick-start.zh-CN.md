@@ -97,8 +97,8 @@ for first, second in [(1, 2), (3, 4)]:
 True == 1    # False，bool 不是 int
 1 + True     # type_error，不参与算术
 
-if 1:        # 自动真值转换
-    ...
+bool("")     # False
+bool([0])    # True
 
 not x
 x and y or z # 短路求值，优先级 not > and > or
