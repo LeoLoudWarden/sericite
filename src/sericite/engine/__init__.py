@@ -24,6 +24,7 @@ from ._model import (
     VFSHandle,
     VMContext,
     VMHandle,
+    _NativeCall,
     _NativeFunction,
 )
 from ._modules import _EngineModules
@@ -46,6 +47,7 @@ __all__ = [
     "VFSHandle",
     "VMContext",
     "VMHandle",
+    "_NativeCall",
     "_NativeFunction",
     "_StringRenderer",
     "_estimate_size",

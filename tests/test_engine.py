@@ -581,14 +581,65 @@ class SnapshotViewTests(unittest.TestCase):
                 self.assertEqual(ctx.exception.kind, expected_kind)
                 self.assertEqual(vm.snapshot()["instruction_count"], expected_count)
 
+    def test_native_public_signatures_exclude_internal_call(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        context = engine._context(vm)
+        for name, public_names in (
+            ("str", ["value"]),
+            ("repr", ["value"]),
+            ("print", ["values", "sep", "end"]),
+            ("write_file", ["path", "text"]),
+        ):
+            with self.subTest(name=name):
+                native = engine._builtin(context, name)
+                execute_signature = native._signatures[-1]
+                self.assertEqual(
+                    list(execute_signature.parameters),
+                    public_names,
+                )
+
+    def test_native_callbacks_require_internal_call_parameter(self):
+        engine = SericiteEngine()
+        vm = engine.create_root("")
+        native = engine._builtin(engine._context(vm), "len")
+        invalid_callbacks = (
+            lambda: None,
+            lambda value: value,
+            lambda call=None: call,
+        )
+        for callback in invalid_callbacks:
+            with (
+                self.subTest(callback=callback),
+                self.assertRaises(TypeError),
+            ):
+                replace(native, execute=callback)
+
+    def test_former_internal_keywords_are_not_native_parameters(self):
+        sources = (
+            "str(_caller_context=1)",
+            "str(1, _caller_meter=2)",
+            "repr(1, _caller_context=2)",
+            "write_file('/x', 'y', _allocation_permit=1)",
+            "VFS(_allocation_permit=1)",
+            "vm = VM('')\nvm.stdout(_caller_context=1)",
+            "fs = VFS()\nfs.path_exists('/', _caller_meter=1)",
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                vm = SericiteEngine().create_root(source)
+                with self.assertRaises(SericiteError) as ctx:
+                    vm.run()
+                self.assertEqual(ctx.exception.kind, "type_error")
+
     def test_native_internal_type_errors_are_uncatchable_internal_errors(self):
         def fail():
             raise TypeError("internal bug")
 
         callbacks = {
-            "work": lambda *args, **kwargs: fail(),
-            "allocation": lambda *args, **kwargs: fail(),
-            "execute": lambda value: fail(),
+            "work": lambda _call, *args, **kwargs: fail(),
+            "allocation": lambda _call, *args, **kwargs: fail(),
+            "execute": lambda _call, value: fail(),
         }
         for stage, callback in callbacks.items():
             with self.subTest(stage=stage):

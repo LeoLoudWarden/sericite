@@ -213,11 +213,38 @@ class SericiteRecord:
         self.fields = fields
 
 
-def _no_work(*args: object, **kwargs: object) -> int:
+@dataclass(frozen=True, slots=True)
+class _NativeCall:
+    caller: VMContext
+    meter: Meter
+    caller_meter: Meter
+    allocation_permit: AllocationPermit | None = None
+
+
+def _native_signature(callback: Callable[..., object]) -> inspect.Signature:
+    signature = inspect.signature(callback)
+    parameters = list(signature.parameters.values())
+    if (
+        not parameters
+        or parameters[0].name not in {"call", "_call"}
+        or parameters[0].kind
+        not in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+        or parameters[0].default is not inspect.Parameter.empty
+    ):
+        raise TypeError(
+            "native callbacks must require a native call as their first argument"
+        )
+    return signature.replace(parameters=parameters[1:])
+
+
+def _no_work(_call: _NativeCall, *args: object, **kwargs: object) -> int:
     return 0
 
 
-def _no_allocation(*args: object, **kwargs: object) -> int:
+def _no_allocation(_call: _NativeCall, *args: object, **kwargs: object) -> int:
     return 0
 
 
@@ -230,7 +257,6 @@ class _NativeFunction:
     home: object
     work: Callable[..., int]
     allocation: Callable[..., int | AllocationPermit]
-    needs_caller: bool = False
     _signatures: tuple[inspect.Signature, ...] = field(
         init=False, repr=False, compare=False
     )
@@ -240,7 +266,7 @@ class _NativeFunction:
             self,
             "_signatures",
             tuple(
-                inspect.signature(callback)
+                _native_signature(callback)
                 for callback in (self.work, self.allocation, self.execute)
             ),
         )

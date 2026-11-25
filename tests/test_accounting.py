@@ -5,7 +5,7 @@ from dataclasses import MISSING, dataclass, fields
 from types import SimpleNamespace
 
 from sericite.accounting import AccountRoute, Meter
-from sericite.engine import SericiteEngine, _estimate_size, _NativeFunction
+from sericite.engine import SericiteEngine, _estimate_size, _NativeCall, _NativeFunction
 from sericite.errors import SericiteError
 
 
@@ -129,15 +129,13 @@ class NativeCostContractTests(unittest.TestCase):
     def test_unknown_vm_method_cost_contract_fails_closed(self) -> None:
         engine = SericiteEngine()
         handle = engine.create_root("")
+        context = engine._contexts[0]
+        meter = engine._meter(context)
+        call = _NativeCall(context, meter, meter)
         with self.assertRaises(SericiteError) as work_error:
-            engine._vm_method_work(handle, "future_method", (), {})
+            engine._vm_method_work(call, handle, "future_method", (), {})
         with self.assertRaises(SericiteError) as allocation_error:
-            engine._vm_method_allocation(
-                handle,
-                "future_method",
-                (),
-                {"_caller_context": engine._contexts[0]},
-            )
+            engine._vm_method_allocation(call, handle, "future_method", (), {})
         self.assertEqual(work_error.exception.kind, "internal_error")
         self.assertEqual(allocation_error.exception.kind, "internal_error")
 

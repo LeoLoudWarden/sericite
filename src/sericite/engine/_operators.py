@@ -337,26 +337,28 @@ class _EngineOperators:
             )
             return _NativeFunction(
                 f"VM.{attr}",
-                lambda *a, **k: self._charged_vm_method(value, attr, a, k),
+                lambda call, *a, **k: self._charged_vm_method(call, value, attr, a, k),
                 home,
-                work=lambda *a, **k: self._vm_method_work(value, attr, a, k),
-                allocation=lambda *a, **k: self._vm_method_allocation(
-                    value, attr, a, k
+                work=lambda call, *a, **k: self._vm_method_work(
+                    call, value, attr, a, k
                 ),
-                needs_caller=True,
+                allocation=lambda call, *a, **k: self._vm_method_allocation(
+                    call, value, attr, a, k
+                ),
             )
         if isinstance(value, VMHandle):
             raise SericiteError(f"VM has no method '{attr}'", kind="attribute_error")
         if isinstance(value, VFSHandle) and attr in VFSHandle._METHODS:
             return _NativeFunction(
                 f"VFS.{attr}",
-                lambda *a, **k: self._charged_vfs_method(value, attr, a, k),
+                lambda call, *a, **k: self._charged_vfs_method(call, value, attr, a, k),
                 None,
-                work=lambda *a, **k: self._vfs_method_work(value, attr, a, k),
-                allocation=lambda *a, **k: self._vfs_method_allocation(
-                    value, attr, a, k
+                work=lambda call, *a, **k: self._vfs_method_work(
+                    call, value, attr, a, k
                 ),
-                needs_caller=True,
+                allocation=lambda call, *a, **k: self._vfs_method_allocation(
+                    call, value, attr, a, k
+                ),
             )
         if isinstance(value, VFSHandle):
             raise SericiteError(f"VFS has no method '{attr}'", kind="attribute_error")
@@ -364,23 +366,25 @@ class _EngineOperators:
             if type(value) is list and attr == "append":
                 return _NativeFunction(
                     "list.append",
-                    lambda *args: self._list_append(context, value, args),
+                    lambda _call, *args: self._list_append(context, value, args),
                     context,
                     work=_no_work,
-                    allocation=lambda *args: 8 if len(args) == 1 else 0,
+                    allocation=lambda _call, *args: 8 if len(args) == 1 else 0,
                 )
             if type(value) is list and attr == "pop":
                 return _NativeFunction(
                     "list.pop",
-                    lambda *args: self._list_pop(context, value, args),
+                    lambda _call, *args: self._list_pop(context, value, args),
                     context,
-                    work=lambda *args: self._list_pop_work(value, args),
+                    work=lambda _call, *args: self._list_pop_work(value, args),
                     allocation=_no_allocation,
                 )
             if attr in ("count", "index"):
                 return _NativeFunction(
                     f"{_type_name(value)}.{attr}",
-                    lambda *args: self._sequence_method(context, value, attr, args),
+                    lambda _call, *args: self._sequence_method(
+                        context, value, attr, args
+                    ),
                     context,
                     work=_no_work,
                     allocation=_no_allocation,
@@ -400,7 +404,9 @@ class _EngineOperators:
             ):
                 return _NativeFunction(
                     f"str.{attr}",
-                    lambda *args: self._string_method(context, value, attr, args),
+                    lambda _call, *args: self._string_method(
+                        context, value, attr, args
+                    ),
                     context,
                     work=_no_work,
                     allocation=_no_allocation,
@@ -410,27 +416,29 @@ class _EngineOperators:
             if attr in ("keys", "values", "items"):
                 return _NativeFunction(
                     f"dict.{attr}",
-                    lambda *args: self._dict_snapshot(context, value, attr, args),
+                    lambda _call, *args: self._dict_snapshot(
+                        context, value, attr, args
+                    ),
                     context,
-                    work=lambda *args: 0 if args else len(value),
-                    allocation=lambda *args: (
+                    work=lambda _call, *args: 0 if args else len(value),
+                    allocation=lambda _call, *args: (
                         0 if args else len(value) * (24 if attr == "items" else 8)
                     ),
                 )
             if attr == "get":
                 return _NativeFunction(
                     "dict.get",
-                    lambda *args: self._dict_get(context, value, args),
+                    lambda _call, *args: self._dict_get(context, value, args),
                     context,
-                    work=lambda *args: self._dict_method_work(args),
+                    work=lambda _call, *args: self._dict_method_work(args),
                     allocation=_no_allocation,
                 )
             if attr == "pop":
                 return _NativeFunction(
                     "dict.pop",
-                    lambda *args: self._dict_pop(context, value, args),
+                    lambda _call, *args: self._dict_pop(context, value, args),
                     context,
-                    work=lambda *args: self._dict_method_work(args),
+                    work=lambda _call, *args: self._dict_method_work(args),
                     allocation=_no_allocation,
                 )
         if type(value) in (list, tuple, dict):
@@ -967,7 +975,7 @@ class _EngineOperators:
         return target.pop(args[0])
 
     @staticmethod
-    def _wrap_work(schema: object, data: object) -> int:
+    def _wrap_work(_call: object, schema: object, data: object) -> int:
         if not isinstance(schema, SericiteSchema) or type(data) is not dict:
             return 0
         return (
@@ -977,7 +985,7 @@ class _EngineOperators:
         )
 
     @staticmethod
-    def _wrap_allocation(schema: object, data: object) -> int:
+    def _wrap_allocation(_call: object, schema: object, data: object) -> int:
         if not isinstance(schema, SericiteSchema) or type(data) is not dict:
             return 0
         return 64 + len(schema.fields) * 16
@@ -1015,11 +1023,11 @@ class _EngineOperators:
         return SericiteRecord(schema, {name: data[name] for name, _ in schema.fields})
 
     @staticmethod
-    def _unwrap_work(record: object) -> int:
+    def _unwrap_work(_call: object, record: object) -> int:
         return len(record.fields) if isinstance(record, SericiteRecord) else 0
 
     @staticmethod
-    def _unwrap_allocation(record: object) -> int:
+    def _unwrap_allocation(_call: object, record: object) -> int:
         return len(record.fields) * 16 if isinstance(record, SericiteRecord) else 0
 
     def _unwrap(self, context: VMContext, record: object) -> dict:

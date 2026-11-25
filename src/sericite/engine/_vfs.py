@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..accounting import AllocationPermit
 from ..errors import SericiteError
 from ..vfs import VFSAttachment, VirtualFileSystem
-from ._model import VFSHandle
+from ._model import VFSHandle, _NativeCall
 from ._values import _estimate_size
 
 
@@ -32,6 +32,7 @@ class _EngineVFS:
 
     def _vfs_method_work(
         self,
+        _call: _NativeCall,
         handle: VFSHandle,
         attr: str,
         args: tuple[object, ...],
@@ -69,17 +70,17 @@ class _EngineVFS:
 
     def _vfs_method_allocation(
         self,
+        call: _NativeCall,
         handle: VFSHandle,
         attr: str,
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> int | AllocationPermit:
-        context = kwargs["_caller_context"]
         fs = self._detached_vfs(handle)
         if attr in {"read_file", "list_dir", "path_exists"}:
             return 0
         if attr in {"delete_file", "delete_dir"}:
-            self._meter(context).allocate(8)
+            call.meter.allocate(8)
             return 0
         estimates = {
             "write_file": fs.write_allocation,
@@ -111,20 +112,21 @@ class _EngineVFS:
         else:
             path = args[0] if args else kwargs.get("path")
             amount = estimate(path)
-        permit = self._meter(context).reserve(fs, "write", amount)
-        self._meter(context).allocate(8)
+        permit = call.meter.reserve(fs, "write", amount)
+        call.meter.allocate(8)
         return permit
 
     def _charged_vfs_method(
         self,
+        call: _NativeCall,
         handle: VFSHandle,
         attr: str,
         args: tuple[object, ...],
         kwargs: dict[str, object],
     ) -> object:
-        context = kwargs.pop("_caller_context")
-        result_meter = kwargs.pop("_caller_meter")
-        permit = kwargs.pop("_allocation_permit", None)
+        context = call.caller
+        result_meter = call.caller_meter
+        permit = call.allocation_permit
         write_signature = (
             len(args) + len(kwargs) == 2
             and len(args) <= 2
