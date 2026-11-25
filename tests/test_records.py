@@ -1215,12 +1215,11 @@ class ClosureAndVMTests(unittest.TestCase):
         exc = run_error("z: dict = [1]\n")
         self.assertEqual(exc.kind, "contract_error")
 
-    def test_contract_only_names_reserved(self):
+    def test_builtin_type_names_remain_reserved(self):
         for source in ("bool = 5\n", "list = []\n", "dict = {}\n"):
             exc = run_error(source)
             self.assertEqual(exc.kind, "syntax_error", msg=source)
-        exc = run_error("print(list([1]))\n")
-        self.assertEqual(exc.kind, "syntax_error")
+        self.assertEqual(run("print(list([1]))\n"), "[1]\n")
 
     def test_field_named_after_builtin(self):
         out = run("class C:\n    int\n    print\nc = C(1, 2)\nprint(c.int, c.print)\n")
