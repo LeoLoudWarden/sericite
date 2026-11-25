@@ -1,6 +1,6 @@
 # Sericite 设计说明
 
-本文说明 Sericite 是什么、为什么存在、设计边界划在哪里。语言语法见[语言参考](language-reference.zh-CN.md)，引擎内部结构与当前实现状态见[架构说明](architecture.zh-CN.md)（[English](architecture.md)）。
+本文说明 Sericite 是什么、为什么存在、设计边界划在哪里。语言语法见[脚本手册](manual/scripting/README.zh-CN.md)，引擎内部结构与当前实现状态见[架构说明](architecture.zh-CN.md)（[English](architecture.md)）。
 
 ## 1. Sericite 是什么
 
@@ -52,7 +52,7 @@ VM 当然不是只能拥有内建能力——但那走另一条路：**能力授
 
 所以网络访问之类的能力，正确形态是由外部用 FFI 注入，而不是在引擎里内置。
 
-这套机制已在原型中落地：宿主用 Python 函数注入 root VM，任何一层 VM 也可以把自己 `def` 的函数（或上一层已授予自己的函数）授予给下一层。跨越宿主边界时，参数与返回值都做双向深拷贝，且只限纯数据类型——VM 与宿主之间不存在共享的可变对象。宿主回调以契约 kind 的 `SericiteError` 报告失败；契约之外的宿主异常会使 VM 以不可捕获的 `host_error` 终止。完整异常契约见 [Sericite-PY 参考](sericite-py-reference.zh-CN.md)第 6.3 节。
+这套机制已在原型中落地：宿主用 Python 函数注入 root VM，任何一层 VM 也可以把自己 `def` 的函数（或上一层已授予自己的函数）授予给下一层。跨越宿主边界时，参数与返回值都做双向深拷贝，且只限纯数据类型——VM 与宿主之间不存在共享的可变对象。宿主回调以契约 kind 的 `SericiteError` 报告失败；契约之外的宿主异常会使 VM 以不可捕获的 `host_error` 终止。完整异常契约见 [addon 回调失败契约](manual/host-python/reference/04-addons.zh-CN.md#回调失败)。
 
 ### 3.3 安全边界的划分
 
@@ -91,7 +91,7 @@ record/schema 的设计（`class` 定义结构契约、点号成员访问）遵�
 
 **资源约束属于 VM，不属于 VFS。** VFS 只保存文件树及其规模元数据，不持有配额、账户或资源耗尽状态。文件操作约束可以拒绝一次变更，但这与执行预算耗尽是两类事件：前者产生普通、可捕获的 `file_limit_error`，会话可以恢复；后者仍遵守 `resource_exhausted` 的既有边界，当前 VM 不能靠捕获自己的耗尽自救。
 
-具体的创建、移交和配额契约见[虚拟机参考](vm-reference.zh-CN.md)。
+具体的创建和配额契约见[脚本 VM 参考](manual/scripting/reference/06-vm.zh-CN.md)，工作区所有权与移交见 [VFS 参考](manual/scripting/reference/07-vfs.zh-CN.md)。
 
 ## 4. Sericite 与 LLM 的关系
 

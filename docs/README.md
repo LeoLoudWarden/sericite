@@ -2,23 +2,24 @@
 
 [中文索引](README.zh-CN.md)
 
-Sericite's documentation is organized by reader task and rate of change: usage references follow public interfaces, implementation notes follow code, design documents explain durable boundaries, and history freezes once written. Files keep stable flat paths; this index provides the hierarchy.
+Sericite's documentation is organized by reader task and rate of change: user manuals follow public interfaces, implementation notes follow code, design documents explain durable boundaries, and history freezes once written. This index provides the hierarchy across the manuals and supporting documents.
 
 ## Start and examples
 
 - [Project README](../README.md): positioning, installation, and quick start.
 - [Application demos](../demos/README.md): a root-driven LLM application with offline verification; see `examples/` for small language snippets.
 
-## Usage references
+## User manuals
 
-| Document | Audience and contents | 中文 |
+Each manual provides task-organized guides and an API reference for looking up precise contracts.
+
+| Manual | Audience and contents | 中文 |
 |---|---|---|
-| [CLI reference](cli-reference.md) | Program operators: commands, multi-file projects, trusted capabilities, and exit codes | [cli-reference.zh-CN.md](cli-reference.zh-CN.md) |
-| [Language reference](language-reference.md) | Script authors: syntax subset, built-ins, records, VMs, and errors | [language-reference.zh-CN.md](language-reference.zh-CN.md) |
-| [VM reference](vm-reference.md) | Script authors: execution sessions, VFS transfer, VM states, driving, quotas, and grants | [vm-reference.zh-CN.md](vm-reference.zh-CN.md) |
-| [Sericite-PY reference](sericite-py-reference.md) | Python embedders: engine API, observation events, read-only descendant snapshots, FFI, host diagnostics, and error handling | [sericite-py-reference.zh-CN.md](sericite-py-reference.zh-CN.md) |
+| [Scripting manual](manual/scripting/README.md) | Script authors: language, built-ins, records, errors, files, VMs, and VFSs | [脚本手册](manual/scripting/README.zh-CN.md) |
+| [CLI manual](manual/cli/README.md) | Program operators: commands, multi-file projects, trusted addon configuration, and exit codes | [命令行手册](manual/cli/README.zh-CN.md) |
+| [Python host manual](manual/host-python/README.md) | Python embedders: engine API, VM lifecycle, VFSs, addons, observation, and host diagnostics | [Python 宿主手册](manual/host-python/README.zh-CN.md) |
 
-Read the language reference to write scripts without needing engine or host details, the CLI reference to run programs, and the VM reference to drive child VMs inside scripts. Python-host differences are concentrated in the Sericite-PY reference.
+The scripting manual can be read independently: writing scripts does not require the CLI or Python host details. Read the CLI manual to run programs from a terminal, and the Python host manual when an existing Python application needs to create, drive, or inspect VMs.
 
 ## Design and boundaries
 

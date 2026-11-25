@@ -68,7 +68,7 @@ Sericite 本身不内置随机数。`addons.py` 把 Python 的 `random.randrange
 
 `nearly sorted` 额外调用 8 次 `random_int` 来选择交换位置。
 
-`random_int` 只授予 root；创建选手 VM 时没有传 `addons`，所以选手不能调用它。授予不会自动跨层继承的完整规则见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md#addon授予)。
+`random_int` 只授予 root；创建选手 VM 时没有传 `addons`，所以选手不能调用它。授予不会自动跨层继承的完整规则见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md#addon-授予)。
 
 每组测试的主要配额（完整字段见 `arena_lib/judge.sericite` 中的 `run_case()`，字段语义见[VM 参考](../../docs/manual/scripting/reference/06-vm.zh-CN.md#配额)）：
 

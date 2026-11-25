@@ -1,6 +1,6 @@
 # Sericite Design Notes
 
-This document explains what Sericite is, why it exists, and where its design boundaries are drawn. For the language itself see the [language reference](language-reference.md); for the engine's internal structure and current implementation status see the [architecture notes](architecture.md) ([中文](architecture.zh-CN.md)).
+This document explains what Sericite is, why it exists, and where its design boundaries are drawn. For the language itself see the [scripting manual](manual/scripting/README.md); for the engine's internal structure and current implementation status see the [architecture notes](architecture.md) ([中文](architecture.zh-CN.md)).
 
 ## 1. What Sericite is
 
@@ -52,7 +52,7 @@ Why not build network access into the VM? Because that road ends in absurdity: b
 
 So capabilities like network access belong outside, injected via FFI, not built into the engine.
 
-This mechanism is already working in the prototype: the host injects Python functions into the root VM, and any VM can grant functions it defined with `def` (or granted functions it already holds) to the next layer. Across the host boundary, arguments and return values are deep-copied in both directions and restricted to pure data types — no shared mutable objects exist between VM and host. A host callback signals failure by raising a `SericiteError` with a contract kind; any host exception outside the contract terminates the VM with the uncatchable `host_error`. The full exception contract is in the [Sericite-PY reference](sericite-py-reference.md), section 6.3.
+This mechanism is already working in the prototype: the host injects Python functions into the root VM, and any VM can grant functions it defined with `def` (or granted functions it already holds) to the next layer. Across the host boundary, arguments and return values are deep-copied in both directions and restricted to pure data types — no shared mutable objects exist between VM and host. A host callback signals failure by raising a `SericiteError` with a contract kind; any host exception outside the contract terminates the VM with the uncatchable `host_error`. The full exception contract is in the [addon callback failure contract](manual/host-python/reference/04-addons.md#callback-failure).
 
 ### 3.3 Division of security responsibility
 
@@ -91,7 +91,7 @@ VM lifetime therefore has two mechanisms: Python GC automatically destroys a res
 
 **Resource constraints belong to VMs, not VFSs.** A VFS stores only the file tree and its size metadata; it holds no quotas, accounts, or resource-exhaustion state. A file-operation constraint rejecting a mutation is different from exhausting an execution budget: the former produces an ordinary, catchable `file_limit_error` from which the session can recover, while the latter retains the existing `resource_exhausted` boundary—a VM cannot rescue itself by catching its own exhaustion.
 
-For the concrete creation, transfer, and quota contracts, see the [VM reference](vm-reference.md).
+For the concrete creation and quota contracts, see the [script VM reference](manual/scripting/reference/06-vm.md); for workspace ownership and transfer, see the [VFS reference](manual/scripting/reference/07-vfs.md).
 
 ## 4. Sericite's relationship with LLMs
 

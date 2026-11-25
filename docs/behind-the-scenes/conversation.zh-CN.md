@@ -1146,7 +1146,7 @@ mica.errors.MicaError: <mica:vm_0>:54:47: validation_error: unsupported syntax: 
 
 - [mica/compiler.py](https://github.com/LeoLoudWarden/sericite/blob/stage-6/mica/compiler.py)：白名单加 `ast.IfExp`，编译为 `JUMP_IF_FALSE / JUMP` 跳转序列，只计算被选中的分支；
 - [tests/test_phase5.py](../../tests/test_phase5.py)：新增 `TernaryTests`（基本求值、短路——未选中分支的函数不会被调用、嵌套三元 + 用在调用实参里）；
-- [docs/language-reference.zh-CN.md](../../docs/language-reference.zh-CN.md)：控制流一节正式写明三元表达式可用，文档那个示例现在合法了。
+- [docs/mica语言特性速览.md](docs/mica语言特性速览.md)：控制流一节正式写明三元表达式可用，文档那个示例现在合法了。
 
 ## 验证
 
