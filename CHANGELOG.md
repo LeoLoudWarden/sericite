@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-25
+
 ### Added
 - 每台 VM 新增预加载内建模块 `__addon__`，默认没有导出；宿主与父 VM 授予的函数现在经 `from __addon__ import name` 显式导入，支持别名、跨 `exec()` 保留与逐层转授，不对应 VFS 文件。
 
