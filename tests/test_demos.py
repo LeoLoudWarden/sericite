@@ -65,7 +65,9 @@ class RootAgentDemoTests(unittest.TestCase):
         result = self.run_agent()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("ROUND   │ outer session 1", result.stdout)
-        self.assertIn("ROOT    │ file_read /sericite语言特性速览.md", result.stdout)
+        self.assertIn(
+            "ROOT    │ file_read /sericite手册/README.zh-CN.md", result.stdout
+        )
         self.assertIn("chars · full result sent to model", result.stdout)
         self.assertIn("VM 1    │ 外层练习: fib", result.stdout)
         self.assertIn("内层练习: 写读文件", result.stdout)
@@ -134,6 +136,42 @@ class RootAgentDemoTests(unittest.TestCase):
         self.assertIn("[提示：本次输出共 ", result.stdout)
         self.assertIn("[再次截断：本次输出共 ", result.stdout)
         self.assertIn("请不要重复打印或重跑大段输出", result.stdout)
+
+
+class ManualFileTests(unittest.TestCase):
+    def test_all_chinese_scripting_manual_pages_are_seeded(self):
+        spec = importlib.util.spec_from_file_location(
+            "sericite_demo_addons", DEMO_ROOT / "addons.py"
+        )
+        addons = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(addons)
+        with (
+            mock.patch.object(addons, "load_dotenv"),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "API_URL": "http://example.test",
+                    "API_KEY": "test",
+                    "API_MODEL": "test",
+                },
+                clear=True,
+            ),
+        ):
+            files = addons.configure()["files"]
+
+        prefix = "/workspace/sericite手册/"
+        expected = {
+            f"{prefix}{path.relative_to(addons.DOC_SOURCE_DIR).as_posix()}": path.read_text(
+                encoding="utf-8"
+            )
+            for path in sorted(addons.DOC_SOURCE_DIR.rglob("*.zh-CN.md"))
+        }
+        actual = {
+            path: content for path, content in files.items() if path.startswith(prefix)
+        }
+        self.assertTrue(expected)
+        self.assertEqual(actual, expected)
+        self.assertNotIn("/workspace/sericite语言特性速览.md", files)
 
 
 class TerminalStyleTests(unittest.TestCase):

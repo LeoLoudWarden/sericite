@@ -18,7 +18,8 @@ from sericite import SericiteError, SericiteLimits
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent.parent
-DOC_VFS_PATH = "/sericite语言特性速览.md"
+DOC_SOURCE_DIR = PROJECT_ROOT / "docs" / "manual" / "scripting"
+DOC_VFS_DIR = "/sericite手册"
 MAX_FETCH_CHARS = 500_000
 LOG_LLM = False
 LOG_LLM_FULL_JSON = False
@@ -227,6 +228,12 @@ def configure():
             "API_URL, API_KEY, and API_MODEL are required; "
             "set them in demos/root-agent/.env or the environment"
         )
+    manual_files = {
+        f"/workspace{DOC_VFS_DIR}/{path.relative_to(DOC_SOURCE_DIR).as_posix()}": path.read_text(
+            encoding="utf-8"
+        )
+        for path in sorted(DOC_SOURCE_DIR.rglob("*.zh-CN.md"))
+    }
     return {
         "limits": SericiteLimits(max_instructions=100_000_000),
         "addons": {
@@ -241,8 +248,6 @@ def configure():
             "/workspace/prompt_inner.txt": (BASE_DIR / "prompt_inner.txt").read_text(
                 encoding="utf-8"
             ),
-            "/workspace" + DOC_VFS_PATH: (
-                PROJECT_ROOT / "docs" / "language-reference.zh-CN.md"
-            ).read_text(encoding="utf-8"),
+            **manual_files,
         },
     }

@@ -12,7 +12,7 @@ This demo is a multi-layer LLM application driven by a root Sericite program. **
 
 ## Files and prompt boundary
 
-- The root VFS is divided into `/control`, `/workspace`, and `/agentkit`. The outer prompt stays in control, AgentKit is outer-controller code, and the model workspace starts with the language reference and inner prompt.
+- The root VFS is divided into `/control`, `/workspace`, and `/agentkit`. The outer prompt stays in control, AgentKit is outer-controller code, and the model workspace starts with `sericite手册/` (all Chinese scripting guides and API reference pages) and the inner prompt.
 - Between runs, file tools operate on the detached VFS. A run exclusively moves it into a VM and takes it back afterward, so file tools and `run(path)` always see the same world.
 - The model-written code creates the child agent's workspace separately instead of automatically copying outer files. The innermost run can access neither control files, the network, nor outer VM variables.
 - `run(path)` reports errors without erasing files produced before the failure. Syntax errors, runtime errors, and failure artifacts remain inspectable. Waiting for input ends a non-interactive run: the VM is terminated before its workspace is retrieved.
@@ -29,11 +29,11 @@ Copy `.env.example` to `.env` in this directory and configure the OpenAI-compati
 
 ```bash
 uv run --extra demo sericite \
-  --capabilities demos/root-agent/capabilities.py \
+  --addons demos/root-agent/addons.py \
   demos/root-agent/agent.sericite
 ```
 
-`DEMO_ENV` can select another environment file. Never commit API keys; for the capability file's trust boundary, see the [CLI reference](../../docs/cli-reference.md) §4.2.
+`DEMO_ENV` can select another environment file. Never commit API keys; for the addon configuration file's trust boundary, see the [CLI reference](../../docs/manual/cli/reference/01-cli.md#data-and-trust-boundary).
 
 ## Full verification without a real API
 
@@ -48,7 +48,7 @@ Run the same root application in another:
 ```bash
 API_URL=http://127.0.0.1:8399/v1/chat/completions API_KEY=mock API_MODEL=mock \
   uv run --extra demo sericite \
-  --capabilities demos/root-agent/capabilities.py \
+  --addons demos/root-agent/addons.py \
   demos/root-agent/agent.sericite
 ```
 
@@ -73,17 +73,17 @@ Default stdout shows only the execution story: one heading per round, compact to
 - Each `run(path)` shows at most its first `MAX_LIVE_LINES` (8) lines; when folding occurs, it ends with a size summary and the last `LIVE_TAIL_LINES` (3) lines.
 - `MODEL` responses, the `FINAL` response, and root result text are always shown in full. Folding applies only to live VM output, where lines longer than `MAX_LIVE_LINE_CHARS` (240) characters are also shortened by default.
 - Append `--verbose` after `agent.sericite` to show full tool arguments/results and disable live-output folding; tool arguments and results use `repr`.
-- Neither display path changes the raw tool results sent back to the model. VM stdout remains buffered because `run()` also returns that text as the tool result; see the [VM reference](../../docs/vm-reference.md) §4 for buffering semantics.
+- Neither display path changes the raw tool results sent back to the model. VM stdout remains buffered because `run()` also returns that text as the tool result; see the [VM reference](../../docs/manual/scripting/reference/06-vm.md) for buffering semantics.
 
 ```bash
 uv run --extra demo sericite \
-  --capabilities demos/root-agent/capabilities.py \
+  --addons demos/root-agent/addons.py \
   demos/root-agent/agent.sericite --verbose
 ```
 
 ### stderr logging
 
-Two constants at the top of `capabilities.py` control low-level **stderr** logging:
+Two constants at the top of `addons.py` control low-level **stderr** logging:
 
 ```python
 LOG_LLM = False
@@ -105,8 +105,8 @@ Full JSON contains prompts, model-generated code, and tool results; review it be
 - `agentkit/workspace.sericite`: persistent workspace, file tools, and the exclusive VM-transfer loop behind `run(path)`.
 - `agentkit/runtime.sericite`: outer-agent assembly; it does not generate a child agent.
 - `agentkit/display.sericite`: live-output folding, result-truncation feedback, and terminal presentation.
-- `capabilities.py`: trusted host adapter. It loads the environment, performs HTTP requests and protocol normalization, handles terminal colors, and returns `functions`, a demo-specific instruction budget, and initial root VFS files through `configure()`. It has no application session loop.
+- `addons.py`: trusted host adapter. It loads the environment, performs HTTP requests and protocol normalization, handles terminal colors, and returns `addons`, a demo-specific instruction budget, and initial root VFS files (including the complete Chinese scripting manual) through `configure()`. It has no application session loop.
 - `prompt_outer.txt`: outer prompt kept in the control area; `prompt_inner.txt`: inner prompt seeded into the model workspace and read by the model-written child agent.
 - `mock_server.py`: local OpenAI-compatible stub; `.env.example`: environment template.
 
-`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/cli-reference.md) for general options, multi-file projects, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [Sericite-PY reference](../../docs/sericite-py-reference.md).
+`requests` and `python-dotenv` belong only to the `demo` extra, not to the engine or base CLI. See the [CLI reference](../../docs/manual/cli/reference/01-cli.md) for general options, multi-file projects, exit codes, and trust boundaries. To let an existing Python system own VM lifecycles, use the embedding API in the [Python host manual](../../docs/manual/host-python/README.md).
