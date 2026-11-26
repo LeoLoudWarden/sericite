@@ -1,0 +1,130 @@
+site_name: Sericite Manual
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, ""]
+docs_dir: ../manual
+site_dir: site
+repo_url: https://github.com/LeoLoudWarden/sericite
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: false
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh-CN
+          name: 简体中文
+          site_name: Sericite 手册
+          build: true
+          theme:
+            language: zh
+          nav_translations:
+            Home: 首页
+            Scripting manual: 脚本手册
+            CLI manual: 命令行手册
+            Python host manual: Python 宿主手册
+            Overview: 手册首页
+            Guides: 指南
+            API reference: API 参考
+            Quick start: 快速开始
+            Modules and addons: 模块与功能拓展
+            Records: 自定义记录对象
+            Errors: 异常处理
+            Files: 文件系统
+            Virtual machines: 独立运行空间
+            Safety: 安全注意事项
+            Language and modules: 语言与模块
+            Built-ins: 通用内建
+            Value methods: 值类型方法
+            Files and directories: 文件与目录
+            Errors and exceptions: 错误与异常
+            VM: VM
+            VFS: VFS
+            Running programs: 运行程序
+            Multi-file projects: 运行多文件项目
+            Configuring addons: 配置 addon
+            IO and diagnostics: 输入、输出与错误诊断
+            CLI reference: 命令行参考
+            Sessions and virtual IO: 执行会话与虚拟 IO
+            Granting host capabilities: 授予宿主能力
+            Preparing workspaces: 准备工作区
+            Debugging VMs: 调试 VM
+            Observing VM activity: 观察 VM 活动
+            Engine and limits: 引擎与配额
+            VM handles: VM 句柄
+            VFS and files: VFS 与文件
+            Addons: addon
+            Observation: 观察
+            Errors and diagnostics: 错误与诊断
+
+theme:
+  name: material
+  language: en
+  features:
+    - content.code.copy
+    - navigation.sections
+    - toc.follow
+
+nav:
+  - Home: README.md
+  - Scripting manual:
+      - Overview: scripting/README.md
+      - Guides:
+          - Quick start: scripting/guides/01-quick-start.md
+          - Modules and addons: scripting/guides/02-modules.md
+          - Records: scripting/guides/03-record.md
+          - Errors: scripting/guides/04-errors.md
+          - Files: scripting/guides/05-files.md
+          - Virtual machines: scripting/guides/06-vm.md
+          - Safety: scripting/guides/07-vm-safety.md
+      - API reference:
+          - Language and modules: scripting/reference/01-language.md
+          - Built-ins: scripting/reference/02-builtins.md
+          - Value methods: scripting/reference/03-types.md
+          - Files and directories: scripting/reference/04-files.md
+          - Errors and exceptions: scripting/reference/05-errors.md
+          - VM: scripting/reference/06-vm.md
+          - VFS: scripting/reference/07-vfs.md
+  - CLI manual:
+      - Overview: cli/README.md
+      - Guides:
+          - Running programs: cli/guides/01-running-programs.md
+          - Multi-file projects: cli/guides/02-projects.md
+          - Configuring addons: cli/guides/03-addons.md
+          - IO and diagnostics: cli/guides/04-io-and-diagnostics.md
+      - API reference:
+          - CLI reference: cli/reference/01-cli.md
+  - Python host manual:
+      - Overview: host-python/README.md
+      - Guides:
+          - Quick start: host-python/guides/01-quick-start.md
+          - Sessions and virtual IO: host-python/guides/02-sessions-and-io.md
+          - Granting host capabilities: host-python/guides/03-addons.md
+          - Preparing workspaces: host-python/guides/04-workspaces.md
+          - Debugging VMs: host-python/guides/05-debugging.md
+          - Observing VM activity: host-python/guides/06-observation.md
+      - API reference:
+          - Engine and limits: host-python/reference/01-engine-and-limits.md
+          - VM handles: host-python/reference/02-vm.md
+          - VFS and files: host-python/reference/03-vfs-and-files.md
+          - Addons: host-python/reference/04-addons.md
+          - Observation: host-python/reference/05-observation.md
+          - Errors and diagnostics: host-python/reference/06-errors.md

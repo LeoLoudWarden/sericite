@@ -94,7 +94,7 @@ The configuration file and the Python functions it grants can import third-party
 
 Arguments and return values between host and script are deep-copied in both directions; only `None`, booleans, numbers, strings, and lists, dicts, and tuples recursively built from these pure data are allowed. An arbitrary Python object does not enter the script merely because an addon returns it.
 
-The engine guarantees that ungranted capabilities are unreachable, but it does not judge for capability implementers whether an operation is safe. Before executing untrusted code, read the [security model](../../../security.md), validate arguments and limit resources for your addons yourself; for genuinely adversarial code, you also need independent operating-system-level isolation.
+The engine guarantees that ungranted capabilities are unreachable, but it does not judge for capability implementers whether an operation is safe. Before executing untrusted code, validate arguments and limit resources for your addons yourself; for genuinely adversarial code, you also need independent operating-system-level isolation.
 
 ## REPL
 

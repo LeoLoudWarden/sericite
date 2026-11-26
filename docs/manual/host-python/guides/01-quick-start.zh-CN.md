@@ -87,4 +87,4 @@ raise_error failed
 
 - 需要多次投递代码或处理输入等待时，阅读[执行会话与虚拟 IO](02-sessions-and-io.zh-CN.md)。
 - 需要调用 Python 函数时，阅读[授予宿主能力](03-addons.zh-CN.md)。
-- 执行不完全可信的代码前，阅读[安全模型](../../../security.zh-CN.md)，并根据任务设置[执行配额](../reference/01-engine-and-limits.zh-CN.md#sericitelimits)。
+- 执行不完全可信的代码前，阅读[手册安全使用总则](../../README.zh-CN.md#安全使用总则)，并根据任务设置[执行配额](../reference/01-engine-and-limits.zh-CN.md#sericitelimits)。

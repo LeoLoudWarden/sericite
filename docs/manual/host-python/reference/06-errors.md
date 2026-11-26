@@ -98,4 +98,4 @@ A file constraint that refuses a change uses the ordinary, catchable `file_limit
 
 An addon's contract errors, non-contract exceptions, and `BaseException` each follow different propagation and safe-message rules; for the complete contract, see [addon exceptions and reentrancy](04-addons.md#exceptions-and-reentrancy). An observation sink's ordinary `Exception` only closes the failed observation session and does not terminate the VM; see [observation failure](05-observation.md#delivery-failure-and-reentrancy).
 
-After catching `resource_exhausted`, `host_error`, and `internal_error`, handle them according to a failure policy rather than blindly driving on as ordinary business branches. For the complete security responsibilities when executing untrusted code, see the [security model](../../../security.md).
+After catching `resource_exhausted`, `host_error`, and `internal_error`, handle them according to a failure policy rather than blindly driving on as ordinary business branches.

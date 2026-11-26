@@ -11,7 +11,7 @@ Sericite's documentation is organized by reader task and rate of change: user ma
 
 ## User manuals
 
-Each manual provides task-organized guides and an API reference for looking up precise contracts.
+Each manual provides task-organized guides and an API reference for looking up precise contracts. For the shared introduction and safety essentials, see the [manual home](manual/README.md) ([中文](manual/README.zh-CN.md)).
 
 | Manual | Audience and contents | 中文 |
 |---|---|---|

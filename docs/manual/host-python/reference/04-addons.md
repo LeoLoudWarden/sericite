@@ -97,4 +97,4 @@ Granting an addon is therefore an explicit promise of trust. The capability impl
 - prevent untrusted input from triggering process-level behavior such as `sys.exit()`;
 - add operating-system-level isolation such as a separate process or container for genuinely adversarial code.
 
-The engine guarantees that ungranted capabilities are unreachable, but it does not judge for the capability implementer whether a granted operation is safe. For the complete threat model, see the [security model](../../../security.md).
+The engine guarantees that ungranted capabilities are unreachable, but it does not judge for the capability implementer whether a granted operation is safe.

@@ -42,4 +42,4 @@ When embedding for the first time, read the quick start, then pick later guides 
 
 ## Security boundary
 
-Sericite is responsible for language-level isolation and resource governance; the host is responsible for addon argument validation, execution time, memory, external side effects, and secret protection. When executing untrusted code in production, tighten quotas explicitly, grant only necessary capabilities, and add operating-system-level isolation such as a separate process or container. For the complete division of responsibilities, see the [security model](../../security.md).
+Sericite is responsible for language-level isolation and resource governance; the host is responsible for addon argument validation, execution time, memory, external side effects, and secret protection. When executing untrusted code in production, tighten quotas explicitly, grant only necessary capabilities, and add operating-system-level isolation such as a separate process or container. For the shared usage precautions, see the manual's [safety essentials](../README.md#safety-essentials).

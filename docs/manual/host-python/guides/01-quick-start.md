@@ -87,4 +87,4 @@ raise_error failed
 
 - To deliver code multiple times or handle input waits, read [Execution sessions and virtual IO](02-sessions-and-io.md).
 - To call Python functions, read [Granting host capabilities](03-addons.md).
-- Before executing code that is not fully trusted, read the [security model](../../../security.md) and set [execution limits](../reference/01-engine-and-limits.md#sericitelimits) for the task.
+- Before executing code that is not fully trusted, read the manual's [safety essentials](../../README.md#safety-essentials) and set [execution limits](../reference/01-engine-and-limits.md#sericitelimits) for the task.
