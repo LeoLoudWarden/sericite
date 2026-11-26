@@ -117,7 +117,7 @@ CLI 标准流沿用运行环境的编码，不主动重新配置。Windows 等�
 - `sericite -` 先消费全部 stdin 作为源码，再开始执行，因此源码中的 `input()` 无法继续从同一 stdin 读取数据。
 - REPL 命令与脚本 `input()` 共用 stdin。一条命令调用 `input()` 后，接下来的一行先作为脚本数据。
 - 入口程序每次 `print()` 都立即写入并刷新 stdout，包括 `end=""` 的无换行输出。CLI 不额外保留一份程序输出缓冲。
-- 只有入口程序的输出会自动连接到宿主 stdout。子 VM 输出由父程序通过 VM 接口显式取得或转发，见 [VM 参考](../../scripting/reference/06-vm.zh-CN.md)。
+- 只有入口程序的输出会自动连接到宿主 stdout。子程序的输出由父程序通过 VM 接口显式取得或转发，见 [VM 参考](../../scripting/reference/06-vm.zh-CN.md)。
 
 下游 stdout 管道关闭表示外部消费者已经结束：CLI 停止当前执行，丢弃后续输出并安静退出 0。这不是脚本错误，也不保证执行 Sericite 的 `finally` 块。
 

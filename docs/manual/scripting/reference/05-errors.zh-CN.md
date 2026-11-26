@@ -18,7 +18,7 @@ finally:
 - `try` 体无错误时执行 `else`，然后执行 `finally`。
 - 发生可捕获错误时按源码顺序尝试 `except` 分支，命中后跳过 `else`。
 - `finally` 在正常完成、错误传播以及 `return`、`break`、`continue` 提前退出时执行。
-- 同一份源码不能捕获自己的编译期 `syntax_error`，因为尚未开始执行；控制方可以捕获子 VM 源码的编译错误。
+- 同一份源码不能捕获自己的编译期 `syntax_error`，因为尚未开始执行；控制方可以捕获 VM 源码的编译错误。
 - VM 断点暂停不是异常，不触发目标脚本的 `except` 或 `finally`。强制销毁运行中的目标也不执行目标脚本的 `finally`。
 
 ## 静态过滤器

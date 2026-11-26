@@ -18,7 +18,7 @@ finally:
 - When the `try` body has no error, `else` runs, then `finally` runs.
 - When a catchable error occurs, `except` branches are tried in source order, and `else` is skipped after a hit.
 - `finally` runs on normal completion, on error propagation, and on early exit via `return`, `break`, or `continue`.
-- The same source cannot catch its own compile-time `syntax_error`, because execution has not begun; a controller can catch compile errors of child VM source.
+- The same source cannot catch its own compile-time `syntax_error`, because execution has not begun; a controller can catch compile errors of VM source.
 - A VM breakpoint pause is not an exception and does not trigger the target script's `except` or `finally`. Forcefully disposing a running target also does not run the target script's `finally`.
 
 ## Static filters

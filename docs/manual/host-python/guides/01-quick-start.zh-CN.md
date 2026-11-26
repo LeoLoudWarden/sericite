@@ -36,7 +36,7 @@ state: done
 
 一个 `SericiteEngine` 可以创建和管理多台 VM。宿主直接创建的是 root VM；root 或其他脚本还可以通过 Sericite 内建的 `VM()` 创建后代。所有层级都由同一个引擎执行，而不是在每层再嵌入一个 Python 解释器。
 
-`VMHandle` 是宿主控制这台 VM 的入口，与创建它的引擎绑定。保留句柄后，可以继续执行代码、提供输入、读取快照、设置断点或销毁 VM。脚本内部创建和驱动子 VM 的方法见[独立运行空间](../../scripting/guides/06-vm.zh-CN.md)。
+`VMHandle` 是宿主控制这台 VM 的入口，与创建它的引擎绑定。保留句柄后，可以继续执行代码、提供输入、读取快照、设置断点或销毁 VM。脚本内部创建和驱动 VM 的方法见[独立运行空间](../../scripting/guides/06-vm.zh-CN.md)。
 
 新 VM 默认拥有：
 

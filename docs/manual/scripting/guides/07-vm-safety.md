@@ -81,13 +81,13 @@ Consider the following scenario:
 
 Alice is writing an application that supports modules, one of which is developed by Bob. Alice wants to use this module but does not want it to directly access all of her variables, files, and other capabilities, so she runs it in a VM as an independent program and provides only the necessary workspace, addons, and execution limits.
 
-"Untrusted" here does not mean Alice has concluded that Bob is malicious; it means Alice does not want the module to have the same access scope as her own business code.
-
-Auditing and isolation do not contradict each other: auditing is for finding problems, and isolation limits the impact of problems that were not found. Real-world modules may be hot-updated, and third-party dependencies keep changing; developers usually cannot continuously audit every implementation they did not write themselves. Even if a version was reviewed, that does not mean all later versions can be trusted.
+> "Untrusted" here does not mean Alice has concluded that Bob is malicious; it means Alice does not want the module to have the same access scope as her own business code.
+> 
+> Auditing and isolation do not contradict each other: auditing is for finding problems, and isolation limits the impact of problems that were not found. Real-world modules may be hot-updated, and third-party dependencies keep changing; developers usually cannot continuously audit every implementation they did not write themselves. Even if a version was reviewed, that does not mean all later versions can be trusted.
 
 Bob's module then needs a data-analysis feature provided by Carol as executable code. After Bob takes Carol's code, he faces the same problem as Alice: if he executes it directly in his own execution space, Carol's code can use the files and capabilities Bob currently holds, which may include content Alice granted to Bob.
 
-So Bob can also create a child VM, put Carol's code inside, provide only the workspace and capabilities the data-analysis feature actually needs, and set the corresponding execution limits:
+So Bob can also create a VM, put Carol's code inside, provide only the workspace and capabilities the data-analysis feature actually needs, and set the corresponding execution limits:
 
 ```text
 Alice's application

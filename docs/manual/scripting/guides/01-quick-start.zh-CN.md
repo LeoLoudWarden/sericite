@@ -44,8 +44,6 @@ hello Sericite
 a += b       # 自动转为 a = a + b
 
 1 < 2        # 支持 == != < <= > >=
-nan = float("nan")
-nan == nan   # False：NaN 不等于自身
 
 2 ** 3       # 8
 2 ** 3 ** 2  # 512：右结合，即 2 ** (3 ** 2)

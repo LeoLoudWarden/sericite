@@ -60,7 +60,7 @@ Frozen constrains reassigning the event fields; it does not turn `data` into an 
 
 Observable state-change reasons include `exec`, `resume`, `breakpoint`, `input`, `output_writer`, `return`, `error`, `terminate`, and `dispose`. A script catching an exception does not by itself produce a terminal state change, and disposing an already-disposed VM produces no additional event.
 
-An output event belongs to the VM that actually commits the text to its own virtual stdout. When a child VM forwards output to its parent, every VM that actually writes produces its own event. With `buffer_output=False`, `data["text"]` still reports the committed output, even though `stdout()` and the buffered view in snapshots are empty.
+An output event belongs to the VM that actually commits the text to its own virtual stdout. When a child program forwards output to its parent program, every VM that actually writes produces its own event. With `buffer_output=False`, `data["text"]` still reports the committed output, even though `stdout()` and the buffered view in snapshots are empty.
 
 An output event only means the text has been committed. A later output-writer failure does not retract that event.
 
