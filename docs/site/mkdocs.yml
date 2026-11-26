@@ -77,6 +77,9 @@ plugins:
             Observation: 观察
             Errors and diagnostics: 错误与诊断
 
+extra_css:
+  - assets/stylesheets/extra.css
+
 theme:
   name: material
   language: en
