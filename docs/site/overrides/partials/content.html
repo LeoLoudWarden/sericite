@@ -1,0 +1,33 @@
+{#-
+  Based on Material for MkDocs 9.8.2 partials/content.html
+  Adds a previous-page link above the title and a next-page link below the body.
+-#}
+{% include "partials/tags.html" %}
+{% include "partials/actions.html" %}
+{% if page.previous_page %}
+  {% set direction = lang.t("footer.previous") %}
+  <nav class="md-prevnext md-prevnext--top" aria-label="{{ direction }}">
+    <a href="{{ page.previous_page.url | url }}" class="md-prevnext__link" aria-label="{{ direction }}: {{ page.previous_page.title | e }}">
+      <span class="md-prevnext__icon">{% include ".icons/material/arrow-left.svg" %}</span>
+      <span class="md-prevnext__direction">{{ direction }}</span>
+      <span class="md-prevnext__title">{{ page.previous_page.title }}</span>
+    </a>
+  </nav>
+{% endif %}
+{% if "\u003ch1" not in page.content %}
+  <h1>{{ page.title | d(config.site_name, true)}}</h1>
+{% endif %}
+{{ page.content }}
+{% if page.next_page %}
+  {% set direction = lang.t("footer.next") %}
+  <nav class="md-prevnext md-prevnext--bottom" aria-label="{{ direction }}">
+    <a href="{{ page.next_page.url | url }}" class="md-prevnext__link" aria-label="{{ direction }}: {{ page.next_page.title | e }}">
+      <span class="md-prevnext__direction">{{ direction }}</span>
+      <span class="md-prevnext__title">{{ page.next_page.title }}</span>
+      <span class="md-prevnext__icon">{% include ".icons/material/arrow-right.svg" %}</span>
+    </a>
+  </nav>
+{% endif %}
+{% include "partials/source-file.html" %}
+{% include "partials/feedback.html" %}
+{% include "partials/comments.html" %}
