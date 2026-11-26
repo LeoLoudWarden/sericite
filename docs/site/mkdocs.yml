@@ -41,7 +41,9 @@ plugins:
             Scripting manual: 脚本手册
             CLI manual: 命令行手册
             Python host manual: Python 宿主手册
-            Overview: 手册首页
+            Scripting overview: 脚本手册概览
+            CLI overview: 命令行手册概览
+            Python host overview: Python 宿主手册概览
             Guides: 指南
             API reference: API 参考
             Quick start: 快速开始
@@ -78,6 +80,8 @@ plugins:
 theme:
   name: material
   language: en
+  custom_dir: overrides
+  font: false
   features:
     - content.code.copy
     - navigation.sections
@@ -86,7 +90,7 @@ theme:
 nav:
   - Home: README.md
   - Scripting manual:
-      - Overview: scripting/README.md
+      - Scripting overview: scripting/README.md
       - Guides:
           - Quick start: scripting/guides/01-quick-start.md
           - Modules and addons: scripting/guides/02-modules.md
@@ -104,7 +108,7 @@ nav:
           - VM: scripting/reference/06-vm.md
           - VFS: scripting/reference/07-vfs.md
   - CLI manual:
-      - Overview: cli/README.md
+      - CLI overview: cli/README.md
       - Guides:
           - Running programs: cli/guides/01-running-programs.md
           - Multi-file projects: cli/guides/02-projects.md
@@ -113,7 +117,7 @@ nav:
       - API reference:
           - CLI reference: cli/reference/01-cli.md
   - Python host manual:
-      - Overview: host-python/README.md
+      - Python host overview: host-python/README.md
       - Guides:
           - Quick start: host-python/guides/01-quick-start.md
           - Sessions and virtual IO: host-python/guides/02-sessions-and-io.md
