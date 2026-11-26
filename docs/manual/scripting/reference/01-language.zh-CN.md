@@ -455,7 +455,7 @@ from __addon__ import first, second as alias
 
 只允许绝对 `from __addon__ import ...`。以下形式不合法：`import __addon__`、`import __addon__.http`、相对导入、从包中导入 `__addon__`、通配符导入和双下划线导出名。
 
-缺失导出的普通错误为 `import_error`。addon 自身的调用契约由提供方定义；数据边界违规使用 `addon_error`。创建子 VM 和转授 addon 见 [VM](06-vm.zh-CN.md#addon-授予)。
+缺失导出的普通错误为 `import_error`。addon 自身的调用契约由提供方定义；数据边界违规使用 `addon_error`。创建 VM 和转授 addon 见 [VM](06-vm.zh-CN.md#addon-授予)。
 
 ## 编译期拒绝的常见形式
 

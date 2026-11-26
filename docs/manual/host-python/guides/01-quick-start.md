@@ -36,7 +36,7 @@ Here `print()` writes to the VM's own virtual stdout, not automatically to the P
 
 One `SericiteEngine` can create and manage multiple VMs. A VM created directly by the host is a root VM; the root or other scripts can also create descendants through the Sericite built-in `VM()`. All levels are executed by the same engine rather than embedding another Python interpreter at each level.
 
-`VMHandle` is the host's entry point for controlling that VM and is bound to the engine that created it. While you hold the handle, you can keep executing code, provide input, read snapshots, set breakpoints, or dispose the VM. For creating and driving child VMs from inside a script, see [isolated execution spaces](../../scripting/guides/06-vm.md).
+`VMHandle` is the host's entry point for controlling that VM and is bound to the engine that created it. While you hold the handle, you can keep executing code, provide input, read snapshots, set breakpoints, or dispose the VM. For creating and driving a VM from inside a script, see [isolated execution spaces](../../scripting/guides/06-vm.md).
 
 A new VM has, by default:
 

@@ -27,7 +27,7 @@ from __addon__ import len as host_len
 from __addon__ import public_name
 ```
 
-Import aliases, retention across `exec()`, and further re-granting by the script to child VMs are supported. A name that was not granted is reported with `import_error`. Addons are no longer injected directly into the global namespace; there is no name fallback that omits the import.
+Import aliases, retention across `exec()`, and further re-granting by the script to a child program are supported. A name that was not granted is reported with `import_error`. Addons are no longer injected directly into the global namespace; there is no name fallback that omits the import.
 
 A Python callback can receive positional arguments, keyword arguments, and variadic arguments expanded by the script; the actual call forms it accepts are up to that Python callable. The engine copies and validates the arguments first and only then calls the callback; an argument boundary failure does not call it.
 

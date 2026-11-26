@@ -455,7 +455,7 @@ This module corresponds to no VFS file and cannot be overridden by a same-named 
 
 Only absolute `from __addon__ import ...` is allowed. The following forms are invalid: `import __addon__`, `import __addon__.http`, relative imports, importing `__addon__` from a package, wildcard imports, and double-underscore export names.
 
-A missing export is an ordinary `import_error`. An addon's own call contract is defined by its provider; data-boundary violations use `addon_error`. For creating child VMs and re-granting addons, see [VM](06-vm.md#addon-granting).
+A missing export is an ordinary `import_error`. An addon's own call contract is defined by its provider; data-boundary violations use `addon_error`. For creating VMs and re-granting addons, see [VM](06-vm.md#addon-granting).
 
 ## Commonly rejected compile-time forms
 

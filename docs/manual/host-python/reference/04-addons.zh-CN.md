@@ -27,7 +27,7 @@ from __addon__ import len as host_len
 from __addon__ import public_name
 ```
 
-支持 import 别名、跨 `exec()` 保留和由脚本继续向子 VM 转授。没有授予的名字以 `import_error` 报告。addon 不再直接注入全局命名空间，不存在省略 import 的名字回退。
+支持 import 别名、跨 `exec()` 保留和由脚本继续向子程序授予转授。没有授予的名字以 `import_error` 报告。addon 不再直接注入全局命名空间，不存在省略 import 的名字回退。
 
 Python 回调可以接收位置参数、关键字参数以及脚本展开的可变参数，实际能接受的调用形式由该 Python callable 自己决定。引擎先复制并验证参数，再调用回调；参数边界失败时不会调用它。
 

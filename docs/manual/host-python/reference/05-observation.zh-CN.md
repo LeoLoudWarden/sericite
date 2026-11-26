@@ -60,7 +60,7 @@ frozen 约束事件字段的重新赋值，不把 `data` 变成不可变映射�
 
 可观察的状态变化原因包括 `exec`、`resume`、`breakpoint`、`input`、`output_writer`、`return`、`error`、`terminate`、`dispose`。脚本捕获异常本身不产生终态变化，重复销毁已销毁 VM 也不会产生额外事件。
 
-输出事件归属于实际把文本提交到自身虚拟 stdout 的 VM。子 VM 向父级转发输出时，每台真实写入的 VM 都会产生各自的事件。`buffer_output=False` 时，`data["text"]` 仍报告已提交输出，尽管 `stdout()` 和快照中的缓冲视图为空。
+输出事件归属于实际把文本提交到自身虚拟 stdout 的 VM。子程序向父程序转发输出，每台真实写入的 VM 都会产生各自的事件。`buffer_output=False` 时，`data["text"]` 仍报告已提交输出，尽管 `stdout()` 和快照中的缓冲视图为空。
 
 输出事件只表示文本已经提交。随后的 output writer 失败不会撤回该事件。
 

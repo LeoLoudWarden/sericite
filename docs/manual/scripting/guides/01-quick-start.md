@@ -44,8 +44,6 @@ Only the program's stdout is listed here; any input echo the runtime environment
 a += b       # automatically a = a + b
 
 1 < 2        # supports == != < <= > >=
-nan = float("nan")
-nan == nan   # False: NaN is not equal to itself
 
 2 ** 3       # 8
 2 ** 3 ** 2  # 512: right-associative, i.e. 2 ** (3 ** 2)

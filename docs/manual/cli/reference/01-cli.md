@@ -117,7 +117,7 @@ The CLI standard streams inherit the runtime environment's encoding and are not 
 - `sericite -` first consumes all of stdin as source and only then starts executing, so `input()` in that source cannot continue reading data from the same stdin.
 - REPL commands and script `input()` share stdin. After one command calls `input()`, the next line is first consumed as script data.
 - Every entry-program `print()` writes to stdout immediately and flushes, including unterminated output with `end=""`. The CLI keeps no additional program-output buffer.
-- Only the entry program's output is connected to the host stdout automatically. Child VM output is obtained or forwarded explicitly by the parent through the VM interface; see the [VM reference](../../scripting/reference/06-vm.md).
+- Only the entry program's output is connected to the host stdout automatically. The child program's output is obtained or forwarded explicitly by the parent program through the VM interface; see the [VM reference](../../scripting/reference/06-vm.md).
 
 A closed downstream stdout pipe means the external consumer has ended: the CLI stops the current execution, discards further output, and exits quietly with 0. This is not a script error, and execution of Sericite `finally` blocks is not guaranteed.
 
