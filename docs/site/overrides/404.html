@@ -1,0 +1,60 @@
+{% extends "main.html" %}
+
+{% block htmltitle %}
+  <title>404 - Page not found / 页面不存在</title>
+{% endblock %}
+
+{% block styles %}
+  {{ super() }}
+  <style>
+    .md-main__inner {
+      display: block;
+      max-width: 40rem;
+      margin: 14vh auto 0;
+      padding: 0 1rem;
+    }
+    .md-content { max-width: none; }
+    .notfound-page h1 {
+      font-size: 3rem;
+      line-height: 1;
+      margin: 0 0 1.5rem;
+    }
+    .notfound-page .notfound-brand {
+      margin: 0 0 1.25rem;
+      color: var(--md-default-fg-color--light);
+      font-size: .75rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .notfound-page section + section {
+      border-top: 1px solid var(--md-default-fg-color--lightest);
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+    }
+    .notfound-page h2 { margin-top: 0; }
+    .notfound-page .md-button { margin-top: .5rem; }
+  </style>
+{% endblock %}
+
+{% block header %}{% endblock %}
+{% block tabs %}{% endblock %}
+{% block site_nav %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+  {% set base = config.site_url or "/" %}
+  <div class="notfound-page">
+    <p class="notfound-brand">Sericite Manual · Sericite 手册</p>
+    <h1>404</h1>
+    <section lang="en">
+      <h2>Page not found</h2>
+      <p>The requested page does not exist or has moved.</p>
+      <p><a class="md-button md-button--primary" href="{{ base }}">English manual</a></p>
+    </section>
+    <section lang="zh-CN">
+      <h2>页面不存在</h2>
+      <p>请求的页面不存在，或已移动。</p>
+      <p><a class="md-button" href="{{ base.rstrip('/') }}/zh-CN/">中文手册</a></p>
+    </section>
+  </div>
+{% endblock %}
