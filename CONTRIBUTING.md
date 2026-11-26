@@ -44,6 +44,15 @@ CI 只在 Ubuntu 上运行。CLI 测试的子进程统一使用 `-X utf8` 和显
 
 文档语言规范：**中文文档统一使用 `.zh-CN.md` 后缀，英文文档统一使用 `.md` 后缀，同一文件内不混排两种语言**；同名文档的中英文版互链。例外：`CHANGELOG.md`、`SECURITY.md`、`CONTRIBUTING.md` 等受平台或社区约定固定文件名的文档，保留固定文件名，正文以中文书写，不拆分双语版本。
 
+在线手册只发布 `docs/manual/`，跟随 `main` 更新，不与 PyPI 发版同步。站点构建是 `docs/site/` 下独立、非打包的 uv 项目，其 `uv.lock` 需要纳入版本控制；根项目的 `/uv.lock` 仍保持本地忽略。修改手册或站点配置后运行：
+
+```bash
+uv sync --project docs/site --locked
+uv run --project docs/site --locked mkdocs build -f docs/site/mkdocs.yml --strict
+```
+
+需要人工检查页面时可运行 `uv run --project docs/site --locked mkdocs serve -f docs/site/mkdocs.yml`。该命令默认使用本地 8000 端口，可用 `-a` 指定其他端口，例如 `-a 127.0.0.1:1234`。文档构建依赖变化时，通过 `uv lock --project docs/site` 单独更新文档锁文件。
+
 代码语言规范：**Python 源码与示例中的注释和 docstring 统一使用英文**。字符串内容（demo 提示词、测试夹具数据等）不是注释，语言按内容需要保留。
 
 ## 提交信息

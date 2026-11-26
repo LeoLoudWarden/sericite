@@ -1,0 +1,27 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/manual/**"
+      - "docs/site/**"
+      - ".readthedocs.yaml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/manual/**"
+      - "docs/site/**"
+      - ".readthedocs.yaml"
+      - ".github/workflows/docs.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --project docs/site --locked
+      - run: uv run --project docs/site --locked mkdocs build -f docs/site/mkdocs.yml --strict

@@ -154,6 +154,6 @@ When a script creates a child VM, each quota takes the stricter of the parent's 
 - `max_descendant_vms=0` forbids that VM from creating any descendant, without affecting its parent creating it;
 - unlimited quotas only disable the limit check; they do not stop accounting, and they do not mean physical resources are infinite.
 
-For the complete script-side inheritance rules, see [VM limits](../../scripting/reference/06-vm.md#limits); for the charging model and approximate cost boundaries, see the [architecture notes](../../../architecture.md#5-resource-quotas).
+For the complete script-side inheritance rules, see [VM limits](../../scripting/reference/06-vm.md#limits). The instruction quota includes work scaled by operation size, while the memory total is an approximate high-water mark rather than an exact measurement of host memory.
 
 The three `max_fs_*` fields constrain the file world that one actual call chain can expand to; they are not quotas carried permanently with the VFS. When taking over an already-over-limit workspace, operations that shrink it or do not expand the over-limit items further may still be allowed; a constraint that refuses a change uses the ordinary, catchable `file_limit_error`, unlike the `resource_exhausted` of an exhausted execution quota.

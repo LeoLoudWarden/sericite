@@ -154,6 +154,6 @@ SericiteLimits(
 - `max_descendant_vms=0` 禁止该 VM 创建任何后代，不影响其父级创建它；
 - 无限配额只取消上限检查，不停止记账，也不代表物理资源无限。
 
-脚本侧完整继承规则见[VM 配额](../../scripting/reference/06-vm.zh-CN.md#配额)，计费模型和近似成本边界见[架构说明](../../../architecture.zh-CN.md#5-资源配额)。
+脚本侧完整继承规则见[VM 配额](../../scripting/reference/06-vm.zh-CN.md#配额)。指令配额包含按规模折算的工作量，内存总账采用近似高水位，而不是宿主实际内存的精确测量。
 
 三个 `max_fs_*` 字段约束一次实际调用链可扩张到的文件世界，不是随 VFS 永久携带的配额。接管已有超限工作区时，收缩或不进一步扩张的操作仍可被允许；约束拒绝变更使用普通、可捕获的 `file_limit_error`，与执行配额耗尽的 `resource_exhausted` 不同。

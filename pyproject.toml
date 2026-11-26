@@ -31,6 +31,7 @@ sericite = "sericite.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/LeoLoudWarden/sericite"
+Documentation = "https://sericite.readthedocs.io/"
 Repository = "https://github.com/LeoLoudWarden/sericite"
 Issues = "https://github.com/LeoLoudWarden/sericite/issues"
 Changelog = "https://github.com/LeoLoudWarden/sericite/blob/main/CHANGELOG.md"

@@ -98,4 +98,4 @@ SericiteFrame(function: str, line: int | None)
 
 addon 的契约错误、非契约异常和 `BaseException` 分别遵循不同的传播与安全消息规则，完整契约见[addon 异常与重入](04-addons.zh-CN.md#异常与重入)。观察 sink 的普通 `Exception` 只关闭出故障的观察会话，不终止 VM，见[观察故障](05-observation.zh-CN.md#投递故障与重入)。
 
-捕获 `resource_exhausted`、`host_error` 和 `internal_error` 后应按失败策略处理，不要把它们当作普通业务分支继续盲目驱动。执行不可信代码时的完整安全责任见[安全模型](../../../security.zh-CN.md)。
+捕获 `resource_exhausted`、`host_error` 和 `internal_error` 后应按失败策略处理，不要把它们当作普通业务分支继续盲目驱动。

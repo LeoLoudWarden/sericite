@@ -89,4 +89,4 @@ Ordinary contract kinds can be caught by scripts under the language rules, so th
 
 Granting a function grants not only a name but also the impact that function can actually cause. The host should validate arguments and permissions inside the callback, and limit input size, call frequency, CPU, memory, blocking, and external side effects; consumption inside the callback is not governed by the VM instruction quota. Grant only the operations the script needs, and do not re-enter the same VM's driving methods from a callback. When executing adversarial code, also add operating-system-level isolation outside Sericite.
 
-For the detailed trust boundary, see the [security model](../../../security.md); for cost responsibility and the complete reentrancy rules, see the [addon reference](../reference/04-addons.md).
+For cost responsibility and the complete reentrancy rules, see the [addon reference](../reference/04-addons.md).

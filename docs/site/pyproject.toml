@@ -1,0 +1,12 @@
+[project]
+name = "sericite-docs"
+version = "0.0.0"
+description = "Internal build environment for the Sericite manual"
+requires-python = ">=3.12"
+dependencies = [
+    "mkdocs-material>=9.7,<10",
+    "mkdocs-static-i18n>=1.0,<2",
+]
+
+[tool.uv]
+package = false
