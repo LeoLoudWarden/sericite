@@ -399,59 +399,88 @@ def _equals(
     *,
     meter: Meter,
 ) -> bool:
-    """Compare structurally, charging each visited node before processing it."""
-    meter.work(1)
-    if _is_number(left) and _is_number(right):
-        return left == right
-    if left is right:
-        return True
-    if type(left) is not type(right):
-        return False
-    if type(left) is str:
-        meter.work(len(left))
-        return left == right
-    if isinstance(left, bool) or left is None:
-        return left == right
-    if isinstance(left, (list, tuple, dict, SericiteRecord)):
-        pair = (id(left), id(right))
+    """Compare structurally with an explicit stack, charging each visited node."""
+    pending = [(left, right, None)]
+
+    def unequal(pair: tuple[int, int] | None = None) -> bool:
         if _active is not None:
-            if pair in _active:
-                return True
-            cached = _cache.get(pair)
-            if cached is not None:
-                return cached
-            _active.add(pair)
-            result = _equals_container(left, right, _active, _cache, meter)
-            _active.discard(pair)
-            _cache[pair] = result
-            return result
-        return _equals_container(left, right, _active, _cache, meter)
-    if isinstance(left, SericiteSchema):
-        meter.work(len(left.key))
-        return left.key == right.key
-    return left is right
+            if pair is not None:
+                _active.discard(pair)
+                _cache[pair] = False
+            for _, _, state in reversed(pending):
+                if state is not None:
+                    active_pair = state[0]
+                    _active.discard(active_pair)
+                    _cache[active_pair] = False
+        return False
 
+    while pending:
+        left, right, state = pending.pop()
+        if state is not None:
+            pair, children = state
+            try:
+                child_left, child_right = next(children)
+            except StopIteration:
+                if _active is not None:
+                    _active.discard(pair)
+                    _cache[pair] = True
+                continue
+            pending.append((left, right, state))
+            pending.append((child_left, child_right, None))
+            continue
 
-def _equals_container(
-    left: object,
-    right: object,
-    active: set | None,
-    cache: dict | None,
-    meter: Meter,
-) -> bool:
-    if type(left) in (list, tuple):
-        return len(left) == len(right) and all(
-            _equals(a, b, active, cache, meter=meter) for a, b in zip(left, right)
-        )
-    if type(left) is dict:
-        meter.work(len(left))
-        return left.keys() == right.keys() and all(
-            _equals(left[key], right[key], active, cache, meter=meter) for key in left
-        )
-    meter.work(len(left.schema.key))
-    return left.schema.key == right.schema.key and _equals(
-        left.fields, right.fields, active, cache, meter=meter
-    )
+        meter.work(1)
+        if _is_number(left) and _is_number(right):
+            if left != right:
+                return unequal()
+            continue
+        if left is right:
+            continue
+        if type(left) is not type(right):
+            return unequal()
+        if type(left) is str:
+            meter.work(len(left))
+            if left != right:
+                return unequal()
+            continue
+        if isinstance(left, bool) or left is None:
+            if left != right:
+                return unequal()
+            continue
+        if isinstance(left, (list, tuple, dict, SericiteRecord)):
+            pair = (id(left), id(right))
+            if _active is not None:
+                if pair in _active:
+                    continue
+                cached = _cache.get(pair)
+                if cached is not None:
+                    if cached:
+                        continue
+                    return unequal()
+                _active.add(pair)
+            if type(left) in (list, tuple):
+                if len(left) != len(right):
+                    return unequal(pair)
+                children = zip(left, right)
+            elif type(left) is dict:
+                meter.work(len(left))
+                if left.keys() != right.keys():
+                    return unequal(pair)
+                children = ((left[key], right[key]) for key in left)
+            else:
+                meter.work(len(left.schema.key))
+                if left.schema.key != right.schema.key:
+                    return unequal(pair)
+                children = iter(((left.fields, right.fields),))
+            pending.append((left, right, (pair, children)))
+            continue
+        if isinstance(left, SericiteSchema):
+            meter.work(len(left.key))
+            if left.key != right.key:
+                return unequal()
+            continue
+        return unequal()
+    return True
 
 
 def _contains(

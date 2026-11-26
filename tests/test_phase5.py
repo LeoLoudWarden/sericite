@@ -140,6 +140,40 @@ class SecurityQuotaTests(unittest.TestCase):
         source = "a = [None]\na[0] = a\nb = [None]\nb[0] = b\nprint(a == b)\n"
         self.assertEqual(run(source), "True\n")
 
+    def test_deep_structure_equality_uses_iterative_comparison(self):
+        for right, expected in (("0", "True\n"), ("1", "False\n")):
+            with self.subTest(right=right):
+                source = (
+                    f"x = 0\ny = {right}\n"
+                    "for i in range(1000):\n"
+                    "    x = [x]\n"
+                    "    y = [y]\n"
+                    "print(x == y)\n"
+                )
+                self.assertEqual(run(source), expected)
+
+    def test_deep_structure_membership_uses_iterative_comparison(self):
+        source = (
+            "x = 0\ny = 0\n"
+            "for i in range(1000):\n"
+            "    x = [x]\n"
+            "    y = [y]\n"
+            "print(y in [x])\n"
+        )
+        self.assertEqual(run(source), "True\n")
+
+    def test_deep_record_equality_uses_iterative_comparison(self):
+        source = (
+            "class Box:\n"
+            "    value\n"
+            "x = 0\ny = 0\n"
+            "for i in range(1000):\n"
+            "    x = Box(x)\n"
+            "    y = Box(y)\n"
+            "print(x == y)\n"
+        )
+        self.assertEqual(run(source), "True\n")
+
     def test_dict_equality_charges_key_scan_before_early_value_mismatch(self):
         counts = {}
         for size in (100, 1000):
