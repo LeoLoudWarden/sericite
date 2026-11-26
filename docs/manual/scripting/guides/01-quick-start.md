@@ -107,6 +107,7 @@ The values treated as false are: `None`, `False`, `0`, the empty string `""`, th
 ### Object comparison
 
 The rules are applied in order:
+
 1. a float NaN is not equal to itself
 2. the same object is always equal to itself
 3. container elements are compared one by one, recursively
