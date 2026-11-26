@@ -40,12 +40,12 @@ p2 = wrap(Point, d)      # a new object
 
 ```python
 class A:
-    x: float
-    y: float
+    x: int
+    y: int
 
 class B:
-    y: float
-    x: float
+    y: int
+    x: int
 
 print(A == B)              # True: independent of declaration order
 print(A(1, 2) == B(2, 1))  # True: bound by each declaration order

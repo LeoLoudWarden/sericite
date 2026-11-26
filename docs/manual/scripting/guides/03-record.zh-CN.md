@@ -40,12 +40,12 @@ p2 = wrap(Point, d)      # 新对象
 
 ```python
 class A:
-    x: float
-    y: float
+    x: int
+    y: int
 
 class B:
-    y: float
-    x: float
+    y: int
+    x: int
 
 print(A == B)              # True：与声明顺序无关
 print(A(1, 2) == B(2, 1))  # True：按各自声明顺序绑定
