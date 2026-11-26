@@ -82,6 +82,7 @@ An output excerpt (each run uses fresh random test cases):
 
 | Next step | English | 中文 |
 |---|---|---|
+|Read the online manual | [Sericite manual](https://sericite.readthedocs.io/en/latest/) | [Sericite 手册](https://sericite.readthedocs.io/en/latest/zh-CN/) |
 | Explore more complete applications | [More demos](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.md) | [更多演示](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.zh-CN.md) |
 | Write Sericite programs | [Sericite scripting manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.md) | [Sericite 脚本手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.zh-CN.md) |
 | Run programs from a terminal | [Sericite CLI manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.md) | [Sericite 命令行手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.zh-CN.md) |
