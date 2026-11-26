@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- 深层 list、tuple、dict 与 record 的结构相等及成员判断改用迭代遍历，不再因 CPython 递归上限而意外终止 VM；环、共享子结构缓存与逐节点资源计量保持原有语义。
+
 ## [0.22.0] - 2026-11-26
 
 ### Added
