@@ -82,6 +82,7 @@ sericite --addons demos/sorting-arena/addons.py demos/sorting-arena/arena.serici
 
 | 下一步 | 中文 | English |
 |---|---|---|
+| 阅读在线手册 | [Sericite 手册](https://sericite.readthedocs.io/en/latest/zh-CN/) | [Sericite manual](https://sericite.readthedocs.io/en/latest/) |
 | 看更多完整应用 | [更多演示](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.zh-CN.md) | [More demos](https://github.com/LeoLoudWarden/sericite/blob/main/demos/README.md) |
 | 学习编写 Sericite 程序 | [Sericite 脚本手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.zh-CN.md) | [Sericite scripting manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/scripting/README.md) |
 | 从终端运行程序 | [Sericite 命令行手册](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.zh-CN.md) | [Sericite CLI manual](https://github.com/LeoLoudWarden/sericite/blob/main/docs/manual/cli/README.md) |
